@@ -26,6 +26,9 @@ coverage/
 *.coveragexml
 TestResults/
 
+# BenchmarkDotNet artifacts
+BenchmarkDotNet.Artifacts/
+
 # NuGet
 *.nupkg
 *.snupkg

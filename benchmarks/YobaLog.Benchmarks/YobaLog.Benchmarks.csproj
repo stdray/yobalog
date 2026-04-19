@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<IsPackable>false</IsPackable>
+		<NoWarn>$(NoWarn);CA1707;CA1848;CA1822;CA1034;CA1050;CA1515;CA2007;CA1812</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="BenchmarkDotNet" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\YobaLog.Core\YobaLog.Core.csproj" />
+	</ItemGroup>
+
+</Project>

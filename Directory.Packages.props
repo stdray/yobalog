@@ -24,4 +24,8 @@
 		<PackageVersion Include="FluentAssertions" Version="7.0.0" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+	</ItemGroup>
+
 </Project>

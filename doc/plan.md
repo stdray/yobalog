@@ -57,6 +57,14 @@
     - [ ] TSV export.
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
+## Perf / регрессии
+См. [`performance-testing.md`](performance-testing.md) для философии и tier'ов, [`perf-baseline.md`](perf-baseline.md) для актуальных чисел.
+- [x] BDN-проект `benchmarks/YobaLog.Benchmarks/` + стартовые бенчи (CleFParser, KqlTransformer на всех операторах, SqliteLogStore ingest + 3 способа query).
+- [x] `perf-baseline.md` как живой snapshot (TBD-таблицы, заполняются после первого `-j Short` прогона).
+- [ ] **Первый честный baseline-run** — `dotnet run -c Release -- --filter "*" -j Short`, результаты в `perf-baseline.md`. ~10 минут локально.
+- [ ] Stopwatch/GC.GetTotalMemory никогда — только BDN (см. антипаттерны в `performance-testing.md`).
+- [ ] Tier 3 (NBomber load), memory footprint через `dotnet-counters` — когда появится hot-path; сейчас преждевременно.
+
 ## Отложено / tech debt после Фазы A
 Накопленный долг, намеренно пропущенный ради dog-food ready.
 - [x] **Hashed admin password.** `AdminPasswordHasher` (PBKDF2/HMACSHA256, 600k iter, 32-byte key, 16-byte salt), формат `v1:{iter}:{b64salt}:{b64hash}`. `AdminAuthOptions.PasswordHash` — приоритет над plaintext `Password`. CLI: `dotnet run --project YobaLog.Web -- --hash-password <plain>` печатает hash и выходит. 7 unit + 2 integration-теста.
