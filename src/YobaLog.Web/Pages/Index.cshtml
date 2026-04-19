@@ -8,17 +8,17 @@
 
 @if (Model.Workspaces.Length == 0)
 {
-	<p class="text-gray-600">No workspaces configured. Add API keys in <code>appsettings.json</code>.</p>
+	<p class="opacity-70">No workspaces configured. Add API keys in <code class="kbd kbd-sm">appsettings.json</code>.</p>
 }
 else
 {
-	<ul class="divide-y divide-gray-200 rounded-md border border-gray-200 bg-white">
+	<ul class="menu bg-base-200 rounded-box border border-base-300 w-full">
 		@foreach (var ws in Model.Workspaces)
 		{
-			<li class="p-4 hover:bg-gray-50">
+			<li>
 				<a asp-page="/Workspace" asp-route-id="@ws.Value" class="flex items-center justify-between">
-					<span class="font-mono @(ws.IsSystem ? "text-purple-700" : "text-gray-900")">@ws.Value</span>
-					<span class="text-sm text-gray-500">View events →</span>
+					<span class="font-mono @(ws.IsSystem ? "text-secondary" : "")">@ws.Value</span>
+					<span class="text-sm opacity-60">View events →</span>
 				</a>
 			</li>
 		}

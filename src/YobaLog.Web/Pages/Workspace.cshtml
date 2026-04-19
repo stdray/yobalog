@@ -3,90 +3,90 @@
 @{
 	ViewData["Title"] = Model.Workspace.Value;
 
-	string LevelClass(YobaLog.Core.LogLevel l) => l switch
+	string LevelBadge(YobaLog.Core.LogLevel l) => l switch
 	{
-		YobaLog.Core.LogLevel.Verbose => "text-gray-400",
-		YobaLog.Core.LogLevel.Debug => "text-gray-500",
-		YobaLog.Core.LogLevel.Information => "text-blue-600",
-		YobaLog.Core.LogLevel.Warning => "text-amber-600",
-		YobaLog.Core.LogLevel.Error => "text-red-600 font-medium",
-		YobaLog.Core.LogLevel.Fatal => "text-red-700 font-bold",
-		_ => "",
+		YobaLog.Core.LogLevel.Verbose => "badge-ghost",
+		YobaLog.Core.LogLevel.Debug => "badge-ghost",
+		YobaLog.Core.LogLevel.Information => "badge-info",
+		YobaLog.Core.LogLevel.Warning => "badge-warning",
+		YobaLog.Core.LogLevel.Error => "badge-error",
+		YobaLog.Core.LogLevel.Fatal => "badge-error",
+		_ => "badge-ghost",
 	};
 }
 
-<div class="mb-4 flex items-baseline gap-2">
-	<a asp-page="/Index" class="text-sm text-gray-500 hover:text-gray-700">← workspaces</a>
-	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-purple-700" : "")">@Model.Workspace.Value</h1>
+<div class="mb-4 flex items-baseline gap-3">
+	<a asp-page="/Index" class="text-sm opacity-60 hover:opacity-100">← workspaces</a>
+	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-secondary" : "")">@Model.Workspace.Value</h1>
 </div>
 
-<form method="get" class="mb-4 bg-white border border-gray-200 rounded-md p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
-	<div class="md:col-span-2">
-		<label class="block text-xs text-gray-500 mb-1">Message contains</label>
-		<input type="text" name="message" value="@Model.Message" class="w-full rounded border-gray-300 text-sm px-2 py-1 border" />
-	</div>
-	<div>
-		<label class="block text-xs text-gray-500 mb-1">Min level</label>
-		<select name="minLevel" class="w-full rounded border-gray-300 text-sm px-2 py-1 border">
+<form method="get" class="mb-4 bg-base-200 border border-base-300 rounded-box p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+	<label class="form-control md:col-span-2">
+		<span class="label-text text-xs opacity-70">Message contains</span>
+		<input type="text" name="message" value="@Model.Message" class="input input-sm input-bordered" />
+	</label>
+	<label class="form-control">
+		<span class="label-text text-xs opacity-70">Min level</span>
+		<select name="minLevel" class="select select-sm select-bordered">
 			<option value="">(any)</option>
 			@foreach (var lvl in Enum.GetValues<YobaLog.Core.LogLevel>())
 			{
 				<option value="@lvl" selected="@(Model.MinLevel == lvl)">@lvl</option>
 			}
 		</select>
-	</div>
-	<div>
-		<label class="block text-xs text-gray-500 mb-1">Trace ID</label>
-		<input type="text" name="traceId" value="@Model.TraceId" class="w-full rounded border-gray-300 text-sm px-2 py-1 border font-mono" />
-	</div>
-	<div>
-		<label class="block text-xs text-gray-500 mb-1">From (UTC)</label>
-		<input type="datetime-local" name="from" value="@Model.From" class="w-full rounded border-gray-300 text-sm px-2 py-1 border" />
-	</div>
-	<div>
-		<label class="block text-xs text-gray-500 mb-1">To (UTC)</label>
-		<input type="datetime-local" name="to" value="@Model.To" class="w-full rounded border-gray-300 text-sm px-2 py-1 border" />
-	</div>
+	</label>
+	<label class="form-control">
+		<span class="label-text text-xs opacity-70">Trace ID</span>
+		<input type="text" name="traceId" value="@Model.TraceId" class="input input-sm input-bordered font-mono" />
+	</label>
+	<label class="form-control">
+		<span class="label-text text-xs opacity-70">From (UTC)</span>
+		<input type="datetime-local" name="from" value="@Model.From" class="input input-sm input-bordered" />
+	</label>
+	<label class="form-control">
+		<span class="label-text text-xs opacity-70">To (UTC)</span>
+		<input type="datetime-local" name="to" value="@Model.To" class="input input-sm input-bordered" />
+	</label>
 	<div class="md:col-span-6 flex gap-2">
-		<button type="submit" class="rounded bg-gray-900 text-white text-sm px-3 py-1 hover:bg-gray-700">Apply</button>
-		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="rounded border border-gray-300 text-sm px-3 py-1 hover:bg-gray-50">Reset</a>
+		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
+		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
 	</div>
 </form>
 
 @if (Model.SchemaMissing)
 {
-	<div class="text-gray-600">Workspace has no events yet.</div>
+	<div class="alert">Workspace has no events yet.</div>
 }
 else if (Model.Events.Count == 0)
 {
-	<div class="text-gray-600">No events match the filter.</div>
+	<div class="alert">No events match the filter.</div>
 }
 else
 {
-	<div class="overflow-x-auto rounded-md border border-gray-200 bg-white">
-		<table class="min-w-full text-sm">
-			<thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+	<div class="overflow-x-auto rounded-box border border-base-300 bg-base-200">
+		<table class="table table-sm">
+			<thead>
 				<tr>
-					<th class="text-left px-3 py-2 font-medium w-44">Time (UTC)</th>
-					<th class="text-left px-3 py-2 font-medium w-24">Level</th>
-					<th class="text-left px-3 py-2 font-medium">Message</th>
-					<th class="text-left px-3 py-2 font-medium w-40">Trace</th>
+					<th class="w-44">Time (UTC)</th>
+					<th class="w-24">Level</th>
+					<th>Message</th>
+					<th class="w-40">Trace</th>
 				</tr>
 			</thead>
-			<tbody class="divide-y divide-gray-100">
+			<tbody>
 				@foreach (var e in Model.Events)
 				{
-					<tr class="align-top hover:bg-gray-50">
-						<td class="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
-						<td class="px-3 py-2 @LevelClass(e.Level)">@e.Level</td>
-						<td class="px-3 py-2 break-words">
+					<tr class="align-top hover">
+						<td class="font-mono text-xs opacity-70 whitespace-nowrap">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
+						<td><span class="badge badge-sm @LevelBadge(e.Level)">@e.Level</span></td>
+						<td class="break-words">
 							<div>@e.Message</div>
 							@if (!string.IsNullOrEmpty(e.Exception))
 							{
-								<pre class="mt-1 text-xs text-red-600 whitespace-pre-wrap">@e.Exception</pre>
+								<pre class="mt-1 text-xs text-error whitespace-pre-wrap">@e.Exception</pre>
 							}
 						</td>
-						<td class="px-3 py-2 font-mono text-xs text-gray-500 truncate">@e.TraceId</td>
+						<td class="font-mono text-xs opacity-70 truncate">@e.TraceId</td>
 					</tr>
 				}
 			</tbody>
@@ -104,7 +104,7 @@ else
 				asp-route-traceId="@Model.TraceId"
 				asp-route-message="@Model.Message"
 				asp-route-cursor="@Model.NextCursor"
-				class="rounded border border-gray-300 text-sm px-3 py-1 hover:bg-gray-50">
+				class="btn btn-sm btn-ghost">
 				Load older →
 			</a>
 		</div>

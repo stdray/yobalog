@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "bun",
+      "args": [
+        "x",
+        "@playwright/mcp@latest",
+        "--browser",
+        "msedge"
+      ],
+      "env": {}
+    }
+  }
+}

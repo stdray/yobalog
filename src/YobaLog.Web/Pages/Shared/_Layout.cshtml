@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en" data-theme="dark" class="h-full">
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,15 +7,13 @@
 	<link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
 	<script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
 </head>
-<body class="h-full bg-gray-50 text-gray-900">
-	<header class="border-b border-gray-200 bg-white">
-		<div class="mx-auto max-w-6xl px-4 py-3 flex items-center gap-6">
-			<a class="font-semibold text-lg" asp-page="/Index">YobaLog</a>
-			<nav class="text-sm text-gray-600">
-				<a class="hover:text-gray-900" asp-page="/Index">Workspaces</a>
-			</nav>
+<body class="min-h-full">
+	<div class="navbar bg-base-200 border-b border-base-300">
+		<div class="mx-auto max-w-6xl w-full px-4 flex gap-6 items-center">
+			<a class="text-lg font-semibold" asp-page="/Index">YobaLog</a>
+			<a class="text-sm opacity-70 hover:opacity-100" asp-page="/Index">Workspaces</a>
 		</div>
-	</header>
+	</div>
 	<main class="mx-auto max-w-6xl px-4 py-6">
 		@RenderBody()
 	</main>

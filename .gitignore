@@ -74,3 +74,6 @@ desktop.ini
 
 # Claude Code (personal)
 .claude/settings.local.json
+
+# Playwright MCP artifacts (screenshots, snapshots)
+.playwright-mcp/
