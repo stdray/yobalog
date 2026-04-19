@@ -22,7 +22,7 @@
 - **Конфигурация сервиса:** две полки, разделены по характеру. (1) Инфраструктура — `appsettings.json` (пути к данным, HTTPS, логирование, seed admin, ключ HMAC если когда-нибудь появится). (2) Операционный state (workspaces, API-ключи, retention policies, users, share links, field-masking policies) — в `$system.meta.db`, управляется через админку (Phase D). Config → DB миграция при первом старте, если DB пустая. Прямая зависимость от YobaConf запрещена — иначе получим цикл (YobaConf будет писать логи сюда же).
 
 ## 2. Интеграция (Стандартные таргеты)
-Используем существующие библиотеки, поддерживающие протокол Seq. Клиент настраивается на base URL `https://<host>/seq-compat` — библиотека сама конкатенирует `/api/events/raw` (см. §1).
+Используем существующие библиотеки, поддерживающие протокол Seq. Клиент настраивается на base URL `https://<host>/compat/seq` — библиотека сама конкатенирует `/api/events/raw` (см. §1).
 - **.NET:** Serilog + Serilog.Sinks.Seq. Проверено integration-тестом `SerilogSeqSinkCompatTests`.
 - **TS/JS:** Winston + `@datalust/winston-seq` (и Pino через аналогичные sink'ы). Проверено `WinstonSeqCompatTests` под bun.
 - **Python:** `logging` + `seqlog`. Пока не покрыто тестом.

@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-04-19 — Ingestion namespace split: `/api/v1/ingest/<fmt>` (native) + `/compat/<tech>/…` (vendor compat)
+
+**Решение:** два независимых URL-корня под ingestion.
+- **Нативный канонический** — `POST /api/v1/ingest/<fmt>` (версия в пути, формат в последнем сегменте). Сегодня: `/api/v1/ingest/clef`. Будущее: `/api/v1/ingest/gelf`, `/api/v1/ingest/otlp`, и т.п.
+- **Вендор-совместимый** — `POST /compat/<tech>/…`. Сегодня: `/compat/seq/api/events/raw`. Будущее: `/compat/hec/...` (Splunk HEC), `/compat/statsd/...` и т.п. Внутренний path внутри `/compat/<tech>/` диктуется форматом клиентского URL-конструктора: Seq-клиенты (Serilog.Sinks.Seq, seq-logging, seqlog) жёстко конкатят `/api/events/raw` к base URL, поэтому наш handler сидит по этому хвосту и пользователь прописывает в Serilog-конфиге `serverUrl: https://<host>/compat/seq`.
+
+**Причина:**
+- Нативный surface заслуживает версии в пути — когда пайплайн/ingestion/shape нативно поменяется, выкатим `/api/v2/ingest/clef` без поломки `v1`. Seq-совместимость версионировать бесполезно — контракт не наш.
+- Смешивать Seq-specific path с будущими HEC/statsd слотами нельзя: каждый vendor диктует свой URL-shape (HEC например требует `/services/collector/event`), общего суффикса нет. Дать каждому свой `/compat/<tech>/` namespace — один слот, одна ответственность, нет conflict'а на корне.
+- Auth (`X-Seq-ApiKey` / `?apiKey=`) и pipeline-dispatch общие — шарятся через `IngestionHandlers.ResolveScopeAsync` + `IIngestionPipeline.IngestAsync`. Добавление нового формата = один `MapPost` + формат-специфичный парсер; middleware и DI не трогаются.
+- Корень `/api/events/raw` освобождён под будущие нужды, не захватывается legacy-именем в Seq-стиле.
+
+**Откатили:** идею "`/api/events/raw` в корне + всё compat подсасывать туда же" (захват корня легаси-названием), идею "`/seq-compat/*` как generic compat-namespace" (Seq-specific имя для не-Seq будущих форматов).
+
 ## 2026-04-19 — Рендер timestamps в TZ смотрящего (закрывает open question §98 spec)
 
 **Решение:** event-row рендерит `<time class="local-time" datetime="<ISO-UTC>Z">UTC-fallback</time>`, tiny TS-pass на `DOMContentLoaded` + `htmx:afterSwap` переписывает `textContent` в локальный `YYYY-MM-DD HH:mm:ss.SSS`. UTC остаётся в `title=` для прозрачности. Без JS — видна UTC-строка. Формат статический (не culture-aware) до появления i18n-каркаса.
