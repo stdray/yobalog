@@ -2,22 +2,38 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Kusto.Language;
 using LinqToDB;
 using LinqToDB.Data;
 using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
+using YobaLog.Core.Kql;
 
 namespace YobaLog.Core.Storage.Sqlite;
 
 public sealed class SqliteLogStore : ILogStore
 {
 	readonly SqliteLogStoreOptions _options;
+	readonly KqlTransformer _kql = new();
 	readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
 
 	public SqliteLogStore(IOptions<SqliteLogStoreOptions> options)
 	{
 		_options = options.Value;
+	}
+
+	public async IAsyncEnumerable<LogEvent> QueryKqlAsync(
+		WorkspaceId workspaceId,
+		KustoCode kql,
+		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+	{
+		await using var db = Open(workspaceId);
+		var source = db.GetTable<EventRecord>().AsQueryable();
+		var translated = _kql.Apply(source, kql);
+
+		await foreach (var r in translated.AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
+			yield return ToLogEvent(r);
 	}
 
 	string PathFor(WorkspaceId ws) =>
