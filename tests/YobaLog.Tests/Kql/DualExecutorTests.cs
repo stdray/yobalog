@@ -62,4 +62,16 @@ public sealed class DualExecutorTests
 	{
 		await DualExecutor.AssertSameAsync("LogEvents | where Level == 5", Dataset);
 	}
+
+	[Theory]
+	[InlineData("LogEvents | order by Id")]
+	[InlineData("LogEvents | order by Id asc")]
+	[InlineData("LogEvents | order by Id desc")]
+	[InlineData("LogEvents | order by Level asc, Id desc")]
+	[InlineData("LogEvents | order by Level desc, Id asc")]
+	[InlineData("LogEvents | where Level >= 3 | order by Id")]
+	public async Task OrderBy_PreservesOrdering(string kql)
+	{
+		await DualExecutor.AssertSameAsync(kql, Dataset, ordered: true);
+	}
 }

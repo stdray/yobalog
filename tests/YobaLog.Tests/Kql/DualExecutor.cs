@@ -34,13 +34,22 @@ static class DualExecutor
 {
 	static readonly KqlTransformer Transformer = new();
 
-	public static async Task AssertSameAsync(string kql, IReadOnlyList<TestEvent> dataset)
+	public static async Task AssertSameAsync(string kql, IReadOnlyList<TestEvent> dataset, bool ordered = false)
 	{
 		var refIds = await RunReferenceAsync(kql, dataset);
 		var prodIds = RunProduction(kql, dataset);
 
-		prodIds.Should().BeEquivalentTo(refIds,
-			$"production and reference executors must agree on {kql}");
+		if (ordered)
+		{
+			prodIds.Should().ContainInOrder(refIds,
+				$"production and reference must agree on order for {kql}");
+			prodIds.Count.Should().Be(refIds.Count);
+		}
+		else
+		{
+			prodIds.Should().BeEquivalentTo(refIds,
+				$"production and reference executors must agree on {kql}");
+		}
 	}
 
 	static async Task<IReadOnlyList<long>> RunReferenceAsync(string kql, IReadOnlyList<TestEvent> dataset)

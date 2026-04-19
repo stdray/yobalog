@@ -117,6 +117,39 @@ public sealed class KqlTransformerTests
 	}
 
 	[Fact]
+	public void OrderBy_DefaultDescending()
+	{
+		var ast = Parse("LogEvents | order by Id");
+		var result = _transformer.Apply(Src(), ast).ToList();
+		result.Select(r => r.Id).Should().ContainInOrder(4L, 3L, 2L, 1L);
+	}
+
+	[Fact]
+	public void OrderBy_AscendingExplicit()
+	{
+		var ast = Parse("LogEvents | order by Id asc");
+		var result = _transformer.Apply(Src(), ast).ToList();
+		result.Select(r => r.Id).Should().ContainInOrder(1L, 2L, 3L, 4L);
+	}
+
+	[Fact]
+	public void OrderBy_MultipleColumns_ThenBy()
+	{
+		var ast = Parse("LogEvents | order by Level asc, Id desc");
+		var result = _transformer.Apply(Src(), ast).ToList();
+		// Level asc: Info(2)=1, Warning(3)=3, Error(4)=2,4. Id desc within Error: 4, 2.
+		result.Select(r => r.Id).Should().ContainInOrder(1L, 3L, 4L, 2L);
+	}
+
+	[Fact]
+	public void OrderBy_UnknownColumn_Throws()
+	{
+		var ast = Parse("LogEvents | order by Bogus");
+		var act = () => _transformer.Apply(Src(), ast).ToList();
+		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Bogus*");
+	}
+
+	[Fact]
 	public void ParseError_Throws()
 	{
 		var ast = Parse("LogEvents | where Level ==");

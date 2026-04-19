@@ -35,10 +35,58 @@ sealed class KqlTransformer
 			{
 				FilterOperator f => ApplyWhere(q, f),
 				TakeOperator t => ApplyTake(q, t),
+				SortOperator s => ApplySort(q, s),
 				_ => throw new UnsupportedKqlException($"operator '{op.Kind}' not supported in yobalog"),
 			};
 		}
 		return q;
+	}
+
+	static IQueryable<EventRecord> ApplySort(IQueryable<EventRecord> source, SortOperator sort)
+	{
+		IOrderedQueryable<EventRecord>? ordered = null;
+		foreach (var element in sort.Expressions)
+		{
+			var (columnName, descending) = element.Element switch
+			{
+				OrderedExpression { Expression: NameReference n, Ordering: var o }
+					=> (n.SimpleName, !string.Equals(o?.AscOrDescKeyword?.Text, "asc", StringComparison.Ordinal)),
+				NameReference n => (n.SimpleName, true),
+				_ => throw new UnsupportedKqlException($"order-by expression '{element.Element.Kind}' not supported"),
+			};
+
+			ordered = ApplyOrder(source, ordered, columnName, descending);
+		}
+		return ordered ?? source;
+	}
+
+	static IOrderedQueryable<EventRecord> ApplyOrder(
+		IQueryable<EventRecord> source,
+		IOrderedQueryable<EventRecord>? prior,
+		string columnName,
+		bool descending)
+	{
+		var row = Expr.Parameter(typeof(EventRecord), "e");
+		var access = BuildColumnAccess(row, columnName);
+		var keyType = access.Type;
+		var keyLambda = Expr.Lambda(access, row);
+
+		var methodName = (prior is null, descending) switch
+		{
+			(true, true) => nameof(Queryable.OrderByDescending),
+			(true, false) => nameof(Queryable.OrderBy),
+			(false, true) => nameof(Queryable.ThenByDescending),
+			(false, false) => nameof(Queryable.ThenBy),
+		};
+
+		var queryableMethod = typeof(Queryable).GetMethods()
+			.Single(m => m.Name == methodName
+				&& m.GetParameters().Length == 2
+				&& m.GetGenericArguments().Length == 2)
+			.MakeGenericMethod(typeof(EventRecord), keyType);
+
+		var callExpr = Expr.Call(queryableMethod, (prior ?? source).Expression, Expr.Quote(keyLambda));
+		return (IOrderedQueryable<EventRecord>)source.Provider.CreateQuery<EventRecord>(callExpr);
 	}
 
 	static IEnumerable<SyntaxNode> FlattenPipeline(SyntaxNode root)
