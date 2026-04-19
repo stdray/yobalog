@@ -126,6 +126,37 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task MessageHas_UsesFts5()
+	{
+		var messages = await RunAsync("LogEvents | where Message has 'boom'");
+		messages.Should().BeEquivalentTo(["boom"]);
+	}
+
+	[Fact]
+	public async Task MessageHas_WordBoundary_IgnoresPartial()
+	{
+		// "boom" should match "boom" but NOT a substring of "booming" (word-boundary).
+		await _store.AppendBatchAsync(Ws,
+			[Mk(20, LogLevel.Information, "booming business")],
+			CancellationToken.None);
+
+		var messages = await RunAsync("LogEvents | where Message has 'boom'");
+		messages.Should().NotContain("booming business");
+		messages.Should().Contain("boom");
+	}
+
+	[Fact]
+	public async Task MessageHas_CaseInsensitive()
+	{
+		await _store.AppendBatchAsync(Ws,
+			[Mk(25, LogLevel.Information, "THUNDER strike")],
+			CancellationToken.None);
+
+		var messages = await RunAsync("LogEvents | where Message has 'thunder'");
+		messages.Should().Contain("THUNDER strike");
+	}
+
+	[Fact]
 	public async Task TimestampRange_TranslatesToSql()
 	{
 		var messages = await RunAsync(

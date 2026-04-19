@@ -37,6 +37,16 @@ public sealed class DualExecutorTests
 	}
 
 	[Theory]
+	[InlineData("LogEvents | where Message has 'boom'")]
+	[InlineData("LogEvents | where Message has 'hello'")]
+	[InlineData("LogEvents | where Message has 'Earth'")]
+	[InlineData("LogEvents | where Message has 'unknown-word'")]
+	public async Task Has_WordBoundary_MatchesReference(string kql)
+	{
+		await DualExecutor.AssertSameAsync(kql, Dataset);
+	}
+
+	[Theory]
 	[InlineData("LogEvents | where Message contains 'boom'")]
 	[InlineData("LogEvents | where Message contains 'BOOM'")]
 	[InlineData("LogEvents | where Message contains 'earth'")]

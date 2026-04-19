@@ -179,6 +179,18 @@ sealed class KqlTransformer
 		if (binary.Kind is SyntaxKind.ContainsExpression or SyntaxKind.ContainsCsExpression)
 			return BuildContains(access, column, literal, binary.Kind == SyntaxKind.ContainsCsExpression);
 
+		if (binary.Kind == SyntaxKind.HasExpression)
+		{
+			if (column != "Message")
+				throw new UnsupportedKqlException($"'has' is only supported on Message (got '{column}')");
+			if (literal.LiteralValue is not string term)
+				throw new UnsupportedKqlException("'has' requires a string literal");
+			return BuildFtsHas(row, term);
+		}
+
+		if (binary.Kind == SyntaxKind.HasCsExpression)
+			throw new UnsupportedKqlException("'has_cs' not supported — FTS5 tokenizer is case-insensitive");
+
 		var coerced = CoerceLiteral(literal, access.Type, column);
 
 		return binary.Kind switch
@@ -240,6 +252,14 @@ sealed class KqlTransformer
 		}
 
 		throw new UnsupportedKqlException($"cannot coerce literal for column '{column}' of type {targetType.Name}");
+	}
+
+	static Expr BuildFtsHas(ParamExpr row, string term)
+	{
+		var id = Expr.Property(row, nameof(EventRecord.Id));
+		var message = Expr.Property(row, nameof(EventRecord.Message));
+		var method = typeof(KqlSqlExpressions).GetMethod(nameof(KqlSqlExpressions.FtsHas))!;
+		return Expr.Call(method, id, message, Expr.Constant(term, typeof(string)));
 	}
 
 	static Expr BuildContains(Expr access, string column, LiteralExpression literal, bool caseSensitive)

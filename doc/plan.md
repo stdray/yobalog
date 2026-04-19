@@ -39,7 +39,7 @@
     - [x] Dual-executor тесты — 34 property-случая, reference = `KustoQueryContext`, production = `IQueryable<EventRecord>`.
     - [x] `SqliteLogStore.QueryKqlAsync` — реальный SQL через linq2db, 7 integration-тестов.
     - [ ] `project`, `extend`, `summarize`, `count` — нужен shape-changing result type (`KqlResult { Columns, Rows }`), большой рефакторинг. Отложено до явной необходимости.
-    - [ ] FTS5 MATCH special case для `Message contains` — сейчас через LIKE (full scan, spec §7 warning ок). Оптимизация, не блокер.
+    - [x] FTS5 MATCH — добавлен KQL-оператор `has` для `Message`. Транслятор детектит `Message has '...'` и зовёт `KqlSqlExpressions.FtsHas(id, message, term)` с `[Sql.Expression("{0} IN (SELECT rowid FROM EventsFts WHERE Message MATCH {2})", IsPredicate=true)]` — linq2db рендерит FTS5-subquery, использует indexed MATCH вместо full scan. C#-fallback через word-boundary Tokenize (для in-memory/dual-executor). `has_cs` не поддержан (FTS5 default tokenizer case-insensitive). `contains` по-прежнему LIKE full scan по spec §7. 3 integration-теста + 4 dual-executor случая.
     - [ ] Timestamp в dual-executor — kusto-loco странно обрабатывает `datetime()`-литерал; production корректен, reference закомментирован.
     - [x] Unsupported operators/predicates → explicit `UnsupportedKqlException` с actionable message.
 - [x] **Фаза C — swap на KQL.** Viewer прозрачно переехал на KQL: форма та же, page-model билдит KQL-строку и гоняет через `SqliteLogStore.QueryKqlAsync`. Pagination через `where Timestamp < cursor or (Timestamp == cursor and Id < id)`. Протестировано через Playwright end-to-end (55 событий, 2 страницы, фильтры сходятся).
