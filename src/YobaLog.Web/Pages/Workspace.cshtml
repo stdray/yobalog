@@ -4,13 +4,32 @@
 	ViewData["Title"] = Model.Workspace.Value;
 }
 
-<div class="mb-4 flex items-baseline gap-3 flex-wrap">
+<div class="mb-4 flex items-center gap-3 flex-wrap">
 	<a asp-page="/Index" class="text-sm opacity-60 hover:opacity-100">← workspaces</a>
 	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-secondary" : "")">@Model.Workspace.Value</h1>
 	@if (Model.ActiveSavedName is not null)
 	{
 		<span class="badge badge-primary font-mono">saved: @Model.ActiveSavedName</span>
 	}
+
+	<div class="ml-auto flex items-center gap-1">
+		<form method="post" asp-page-handler="save" asp-route-id="@Model.Workspace.Value" class="flex items-center gap-1">
+			<input type="text" name="name" value="@Model.ActiveSavedName" required
+				placeholder="save as…"
+				pattern="[A-Za-z0-9 _\-]+"
+				class="input input-xs input-bordered w-36" />
+			<input type="hidden" name="kql" value="@Model.UserKql" />
+			<button type="submit" class="btn btn-xs btn-ghost" data-flash title="Save current query">Save</button>
+		</form>
+		@if (!Model.IsShapeChanged)
+		{
+			<button type="button" class="btn btn-xs btn-ghost"
+				data-share-modal-open
+				data-workspace="@Model.Workspace.Value"
+				data-kql="@Model.UserKql"
+				title="Share query as TSV">Share</button>
+		}
+	</div>
 </div>
 
 @if (Model.SavedQueries.Count > 0)
@@ -65,25 +84,6 @@
 	</div>
 </form>
 
-<form method="post" asp-page-handler="save" asp-route-id="@Model.Workspace.Value"
-	class="mb-4 flex gap-2 items-end flex-wrap">
-	<label class="form-control flex-1 min-w-48">
-		<span class="label-text text-xs opacity-70">Save current query as</span>
-		<input type="text" name="name" value="@Model.ActiveSavedName" required
-			placeholder="errors-last-hour"
-			pattern="[A-Za-z0-9 _\-]+"
-			class="input input-sm input-bordered" />
-	</label>
-	<input type="hidden" name="kql" value="@Model.UserKql" />
-	<button type="submit" class="btn btn-sm btn-secondary">Save as…</button>
-	@if (!Model.IsShapeChanged)
-	{
-		<button type="button" class="btn btn-sm btn-accent"
-			data-share-modal-open
-			data-workspace="@Model.Workspace.Value"
-			data-kql="@Model.UserKql">Share as TSV…</button>
-	}
-</form>
 
 <dialog id="share-modal" class="modal">
 	<div class="modal-box max-w-2xl">
