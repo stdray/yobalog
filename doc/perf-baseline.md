@@ -58,6 +58,37 @@ Throughput: ~1.35M events/sec линейно. Allocations ~1.5 KB/event — до
 - **Indexed query** (`Level >= 4 | take 50`): sub-100 μs независимо от fixture size — индекс `ix_events_ts_id` отрабатывает мгновенно.
 - **🔥 FTS5 MATCH vs LIKE на частом слове:** с `.Take(50)` и словом, матчащим почти все строки (100k), **`contains` через LIKE быстрее FTS5 MATCH в 100x** (78 μs vs 8 мс). Причина: `LIKE` с `Take(50)` делает early-exit после 50-го match в table scan; FTS5 MATCH сначала материализует полный rowid-set из inverted index, потом join с Events, потом LIMIT. Для редких слов (`has 'rare-term'`) FTS5 будет быстрее. Открытый вопрос — переписать `FtsHas` на `SELECT ... FROM EventsFts ORDER BY rank LIMIT N` + JOIN, либо дать UI-hint что `has` выгоден только на селективных запросах.
 
+## Tier 2 — IngestionPipeline vs direct AppendBatchAsync
+
+| Method                                    | TotalEvents | Mean      | Allocated | events/sec |
+|-------------------------------------------|-------------|----------:|----------:|-----------:|
+| Pipeline: IngestAsync + drain (StopAsync) |   1 000     |   6.3 ms  |   1 MB    |   159k     |
+| Direct: AppendBatchAsync (reference)      |   1 000     |   6.1 ms  |   1 MB    |   163k     |
+| Pipeline                                  |  10 000     |  71 ms    |  10 MB    |   140k     |
+| Direct                                    |  10 000     |  52 ms    |   6 MB    |   194k     |
+| Pipeline                                  | 100 000     | 826 ms    |  97 MB    |   121k     |
+| Direct                                    | 100 000     | 880 ms    |  57 MB    |   114k     |
+
+Наблюдения:
+- **Pipeline overhead ~30%** на 10k событий (single-shot), ~0% на 100k (в пределах noise). Pipeline батчит по `MaxBatchSize=1000` — на 100k получается ~100 SQLite-транзакций, amortize затраты.
+- **Allocation penalty** pipeline'а: ~1.7x (99 MB vs 57 MB на 100k) — `Channel<T>` boxing + writer-loop state.
+- **Real win pipeline'а не виден в single-shot bench** — он раскрывается под concurrent HTTP-writers (decoupling между ingest-request и SQLite-write). Нужен Tier 3 NBomber-сценарий.
+
+**Throughput-порядок:** ~120k events/sec sustained на single-writer локально (NVMe).
+
+## Tier 2 — Mixed: query latency под ingest-нагрузкой
+
+20 indexed queries (`| where Level >= 4 | take 50`).
+
+| Scenario                                  | Total     | Per query |
+|-------------------------------------------|----------:|----------:|
+| Queries only (no concurrent writers)      |   1.6 ms  |   80 μs   |
+| Queries while pipeline ingests 1k events  | 119.5 ms  |    6 ms   |
+
+**75x slowdown под concurrent ingest.** Причина — SQLite writer-lock: пока pipeline пишет batch, reader ждёт. WAL-режим позволяет concurrent readers, но параллельная write-транзакция сериализует их по одному. Error bar огромный (0.7 sec stddev) — timing зависит от оверлапа query с write.
+
+На сотнях событий/сек query-latency < 10 ms — приемлемо. На тысячах — нужен Tier 3 для реалистичного sustained-load профиля.
+
 ## Когда обновлять
 
 - После значимых правок в hot paths (ingestion, transformer, storage) — перед коммитом.
