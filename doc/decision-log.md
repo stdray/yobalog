@@ -4,6 +4,11 @@
 
 ---
 
+## 2026-04-19 — KQL: `Level` как int rank + `LevelName` как string
+**Решение:** в KQL-схеме `Level` — int от 0 (Verbose) до 5 (Fatal), поддерживает все сравнения (`==`, `!=`, `<`, `<=`, `>`, `>=`). Рядом `LevelName` — string-колонка с именем уровня, поддерживает только равенства (`==`, `!=`). Пример: `where Level >= 3` (Warning и выше), `where LevelName == 'Error'`.
+**Причина:** dual-executor должен согласовываться с reference-engine (kusto-loco). Если Level строка — lexicographic ordering не совпадает с ожидаемым numeric (`'Warning' < 'Error'` по строке, но `Warning` < `Error` по rank). Делать pre-translation KQL для reference — дорого и хрупко. Два канонических канала (int rank для ordering, string name для ergonomic equality) решают без магии: оба executor'а видят одни и те же данные, KQL пишется на одной стороне. Правило спеки §1 "Level — индексируемый" сохраняется; хранение по-прежнему int в `EventRecord.Level`.
+**Откатили:** идею "только string-equality на Level" (ограничивало viewer, спрятано от пользователей); идею "транслировать `Level >= 'Warning'` в int автоматически" (требовало rewrite KQL для reference executor'а, хрупко).
+
 ## 2026-04-19 — Тестовый проект: подавление CA1707, CA1848, CA1861, CA1873, CA2007
 **Решение:** `<NoWarn>$(NoWarn);CA1707;CA1848;CA1861;CA1873;CA2007</NoWarn>` в `tests/YobaLog.Tests/YobaLog.Tests.csproj`. В production-коде все эти правила остаются активными (escalate to error).
 **Причина:**

@@ -8,10 +8,27 @@ namespace YobaLog.Tests.Kql;
 public sealed record TestEvent(
 	long Id,
 	DateTime Timestamp,
-	string Level,
+	int Level,
 	string Message,
 	string? TraceId = null,
-	string? SpanId = null);
+	string? SpanId = null)
+{
+	public string LevelName => ((LogLevel)Level).ToString();
+
+	public static TestEvent FromName(
+		long id,
+		DateTime ts,
+		string levelName,
+		string message,
+		string? traceId = null,
+		string? spanId = null) => new(
+			id,
+			ts,
+			(int)(LogLevelParser.Parse(levelName) ?? throw new ArgumentException($"unknown level '{levelName}'")),
+			message,
+			traceId,
+			spanId);
+}
 
 static class DualExecutor
 {
@@ -46,20 +63,15 @@ static class DualExecutor
 		return [.. result.Select(r => r.Id)];
 	}
 
-	static EventRecord ToRecord(TestEvent t)
+	static EventRecord ToRecord(TestEvent t) => new()
 	{
-		var level = LogLevelParser.Parse(t.Level)
-			?? throw new ArgumentException($"unknown level '{t.Level}' in test data");
-		return new EventRecord
-		{
-			Id = t.Id,
-			TimestampMs = new DateTimeOffset(t.Timestamp, TimeSpan.Zero).ToUnixTimeMilliseconds(),
-			Level = (int)level,
-			Message = t.Message,
-			MessageTemplate = t.Message,
-			TraceId = t.TraceId,
-			SpanId = t.SpanId,
-			PropertiesJson = "{}",
-		};
-	}
+		Id = t.Id,
+		TimestampMs = new DateTimeOffset(t.Timestamp, TimeSpan.Zero).ToUnixTimeMilliseconds(),
+		Level = t.Level,
+		Message = t.Message,
+		MessageTemplate = t.Message,
+		TraceId = t.TraceId,
+		SpanId = t.SpanId,
+		PropertiesJson = "{}",
+	};
 }

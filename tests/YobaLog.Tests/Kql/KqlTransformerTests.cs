@@ -21,9 +21,27 @@ public sealed class KqlTransformerTests
 	static KustoCode Parse(string kql) => KustoCode.Parse(kql);
 
 	[Fact]
-	public void Where_LevelEquals_FiltersByInt()
+	public void Where_LevelEqualsInt_FiltersByRank()
 	{
-		var ast = Parse("LogEvents | where Level == 'Error'");
+		var ast = Parse("LogEvents | where Level == 4");
+		var result = _transformer.Apply(Src(), ast).ToList();
+
+		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
+	}
+
+	[Fact]
+	public void Where_LevelOrdering_Works()
+	{
+		var ast = Parse("LogEvents | where Level >= 3");
+		var result = _transformer.Apply(Src(), ast).ToList();
+
+		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 3L, 4L]);
+	}
+
+	[Fact]
+	public void Where_LevelNameEquals_FiltersByName()
+	{
+		var ast = Parse("LogEvents | where LevelName == 'Error'");
 		var result = _transformer.Apply(Src(), ast).ToList();
 
 		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
@@ -59,7 +77,7 @@ public sealed class KqlTransformerTests
 	[Fact]
 	public void Where_Then_Take_Composes()
 	{
-		var ast = Parse("LogEvents | where Level == 'Error' | take 1");
+		var ast = Parse("LogEvents | where Level == 4 | take 1");
 		var result = _transformer.Apply(Src(), ast).ToList();
 
 		result.Should().HaveCount(1);
@@ -69,7 +87,7 @@ public sealed class KqlTransformerTests
 	[Fact]
 	public void UnknownTable_Throws()
 	{
-		var ast = Parse("WrongTable | where Level == 'Error'");
+		var ast = Parse("WrongTable | where Level == 4");
 		var act = () => _transformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*WrongTable*");
 	}
@@ -91,11 +109,11 @@ public sealed class KqlTransformerTests
 	}
 
 	[Fact]
-	public void UnknownLogLevel_Throws()
+	public void LevelWithStringLiteral_Throws()
 	{
-		var ast = Parse("LogEvents | where Level == 'Purple'");
+		var ast = Parse("LogEvents | where Level == 'Error'");
 		var act = () => _transformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Purple*");
+		act.Should().Throw<UnsupportedKqlException>().WithMessage("*integer literal*");
 	}
 
 	[Fact]

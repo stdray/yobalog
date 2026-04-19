@@ -15,8 +15,7 @@ sealed class KqlTransformer
 
 	public IQueryable<EventRecord> Apply(IQueryable<EventRecord> source, KustoCode code)
 	{
-		var diagnostics = code.GetDiagnostics();
-		var parseErrors = diagnostics.Where(d => d.Severity == "Error").ToList();
+		var parseErrors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
 		if (parseErrors.Count > 0)
 			throw new UnsupportedKqlException("KQL parse error: " + string.Join("; ", parseErrors.Select(d => d.Message)));
 
@@ -53,7 +52,6 @@ sealed class KqlTransformer
 			yield break;
 		}
 
-		// outermost = the pipe whose parent isn't another pipe
 		PipeExpression? outermost = null;
 		for (var i = 0; i < pipes.Count; i++)
 		{
@@ -99,44 +97,112 @@ sealed class KqlTransformer
 	static Expr BuildExpression(Expression node, ParamExpr row) => node switch
 	{
 		BinaryExpression binary => BuildBinary(binary, row),
+		FunctionCallExpression call when IsNotCall(call) => Expr.Not(BuildExpression(NotArgument(call), row)),
+		ParenthesizedExpression paren => BuildExpression(paren.Expression, row),
 		_ => throw new UnsupportedKqlException($"expression '{node.Kind}' not supported"),
 	};
 
+	static bool IsNotCall(FunctionCallExpression call) =>
+		string.Equals(call.Name.SimpleName, "not", StringComparison.Ordinal);
+
+	static Expression NotArgument(FunctionCallExpression call)
+	{
+		var args = call.ArgumentList.Expressions;
+		if (args.Count != 1)
+			throw new UnsupportedKqlException($"not() takes exactly one argument, got {args.Count}");
+		return args[0].Element;
+	}
+
 	static Expr BuildBinary(BinaryExpression binary, ParamExpr row)
 	{
-		if (binary.Kind != SyntaxKind.EqualExpression)
-			throw new UnsupportedKqlException($"binary '{binary.Kind}' not supported (yet)");
+		if (binary.Kind == SyntaxKind.AndExpression)
+			return Expr.AndAlso(BuildExpression(binary.Left, row), BuildExpression(binary.Right, row));
+		if (binary.Kind == SyntaxKind.OrExpression)
+			return Expr.OrElse(BuildExpression(binary.Left, row), BuildExpression(binary.Right, row));
 
-		if (binary.Left is not NameReference column)
-			throw new UnsupportedKqlException($"left side of == must be a column name, got {binary.Left.Kind}");
+		if (binary.Left is not NameReference columnRef)
+			throw new UnsupportedKqlException($"left side of '{binary.Kind}' must be a column name, got {binary.Left.Kind}");
 		if (binary.Right is not LiteralExpression literal)
-			throw new UnsupportedKqlException($"right side of == must be a literal, got {binary.Right.Kind}");
+			throw new UnsupportedKqlException($"right side of '{binary.Kind}' must be a literal, got {binary.Right.Kind}");
 
-		return column.SimpleName switch
+		var column = columnRef.SimpleName;
+		var access = BuildColumnAccess(row, column);
+
+		if (binary.Kind is SyntaxKind.ContainsExpression or SyntaxKind.ContainsCsExpression)
+			return BuildContains(access, column, literal, binary.Kind == SyntaxKind.ContainsCsExpression);
+
+		var coerced = CoerceLiteral(literal, access.Type, column);
+
+		return binary.Kind switch
 		{
-			"Level" => BuildLevelEquals(row, literal),
-			"TraceId" => BuildStringEquals(row, nameof(EventRecord.TraceId), literal),
-			"SpanId" => BuildStringEquals(row, nameof(EventRecord.SpanId), literal),
-			"Message" => BuildStringEquals(row, nameof(EventRecord.Message), literal),
-			_ => throw new UnsupportedKqlException($"column '{column.SimpleName}' not supported (yet)"),
+			SyntaxKind.EqualExpression => Expr.Equal(access, coerced),
+			SyntaxKind.NotEqualExpression => Expr.NotEqual(access, coerced),
+			SyntaxKind.LessThanExpression => Expr.LessThan(access, coerced),
+			SyntaxKind.LessThanOrEqualExpression => Expr.LessThanOrEqual(access, coerced),
+			SyntaxKind.GreaterThanExpression => Expr.GreaterThan(access, coerced),
+			SyntaxKind.GreaterThanOrEqualExpression => Expr.GreaterThanOrEqual(access, coerced),
+			_ => throw new UnsupportedKqlException($"binary '{binary.Kind}' not supported"),
 		};
 	}
 
-	static Expr BuildLevelEquals(ParamExpr row, LiteralExpression literal)
+	static Expr BuildColumnAccess(ParamExpr row, string column) => column switch
 	{
-		if (literal.LiteralValue is not string name)
-			throw new UnsupportedKqlException("Level comparison requires a string like \"Error\"");
-		if (!LogLevelParser.TryParse(name, out var level))
-			throw new UnsupportedKqlException($"unknown log level '{name}'");
-		var column = Expr.Property(row, nameof(EventRecord.Level));
-		return Expr.Equal(column, Expr.Constant((int)level));
+		"Id" => Expr.Property(row, nameof(EventRecord.Id)),
+		"Level" => Expr.Property(row, nameof(EventRecord.Level)),
+		"LevelName" => BuildLevelName(row),
+		"Timestamp" => Expr.Property(row, nameof(EventRecord.TimestampMs)),
+		"TraceId" => Expr.Property(row, nameof(EventRecord.TraceId)),
+		"SpanId" => Expr.Property(row, nameof(EventRecord.SpanId)),
+		"Message" => Expr.Property(row, nameof(EventRecord.Message)),
+		_ => throw new UnsupportedKqlException($"column '{column}' not supported (yet)"),
+	};
+
+	static Expr BuildLevelName(ParamExpr row)
+	{
+		var level = Expr.Property(row, nameof(EventRecord.Level));
+		var toName = typeof(KqlTransformer).GetMethod(nameof(ToLevelName),
+			System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+		return Expr.Call(toName, level);
 	}
 
-	static Expr BuildStringEquals(ParamExpr row, string propertyName, LiteralExpression literal)
+	internal static string ToLevelName(int level) => ((LogLevel)level).ToString();
+
+	static Expr CoerceLiteral(LiteralExpression literal, Type targetType, string column)
 	{
-		if (literal.LiteralValue is not string s)
-			throw new UnsupportedKqlException($"{propertyName} comparison requires a string literal");
-		var column = Expr.Property(row, propertyName);
-		return Expr.Equal(column, Expr.Constant(s, typeof(string)));
+		if (column == "Timestamp")
+		{
+			if (literal.LiteralValue is not DateTime dt)
+				throw new UnsupportedKqlException("Timestamp comparison requires a datetime() literal");
+			var utc = dt.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt.ToUniversalTime();
+			return Expr.Constant(new DateTimeOffset(utc).ToUnixTimeMilliseconds());
+		}
+
+		if (targetType == typeof(long) || targetType == typeof(int))
+		{
+			if (literal.LiteralValue is long n)
+				return targetType == typeof(int) ? Expr.Constant(checked((int)n)) : Expr.Constant(n);
+			throw new UnsupportedKqlException($"{column} comparison requires an integer literal");
+		}
+
+		if (targetType == typeof(string))
+		{
+			if (literal.LiteralValue is string s)
+				return Expr.Constant(s, typeof(string));
+			throw new UnsupportedKqlException($"{column} comparison requires a string literal");
+		}
+
+		throw new UnsupportedKqlException($"cannot coerce literal for column '{column}' of type {targetType.Name}");
+	}
+
+	static Expr BuildContains(Expr access, string column, LiteralExpression literal, bool caseSensitive)
+	{
+		if (access.Type != typeof(string))
+			throw new UnsupportedKqlException($"contains requires a string column, got '{column}'");
+		if (literal.LiteralValue is not string needle)
+			throw new UnsupportedKqlException("contains requires a string literal");
+
+		var method = typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)])!;
+		var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+		return Expr.Call(access, method, Expr.Constant(needle), Expr.Constant(comparison));
 	}
 }
