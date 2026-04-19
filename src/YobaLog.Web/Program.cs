@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using YobaLog.Core;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Ingestion;
@@ -13,6 +16,7 @@ builder.Services.Configure<IngestionOptions>(builder.Configuration.GetSection("I
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection("ApiKeys"));
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 builder.Services.Configure<SystemLoggerOptions>(builder.Configuration.GetSection("SystemLogger"));
+builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("Admin"));
 
 builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
 builder.Services.AddSingleton<IApiKeyStore, ConfigApiKeyStore>();
@@ -27,6 +31,20 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ChannelIngestionPi
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.AddHostedService<SystemLogFlusher>();
 
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+	.AddCookie(o =>
+	{
+		o.LoginPath = "/Login";
+		o.AccessDeniedPath = "/Login";
+		o.ExpireTimeSpan = TimeSpan.FromDays(7);
+		o.SlidingExpiration = true;
+	});
+
+builder.Services.AddAuthorizationBuilder()
+	.SetFallbackPolicy(new AuthorizationPolicyBuilder()
+		.RequireAuthenticatedUser()
+		.Build());
+
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -38,7 +56,9 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseRouting();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapPost("/api/events/raw", async (
@@ -69,11 +89,15 @@ app.MapPost("/api/events/raw", async (
 		await pipeline.IngestAsync(scope, candidates, ct);
 
 	return Results.Created("/api/events/raw", new IngestResponse(candidates.Count, errorCount));
+}).AllowAnonymous();
+
+app.MapPost("/Logout", async (HttpContext ctx) =>
+{
+	await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+	return Results.Redirect("/Login");
 });
 
-app.MapStaticAssets();
-app.MapRazorPages()
-	.WithStaticAssets();
+app.MapRazorPages();
 
 app.Run();
 

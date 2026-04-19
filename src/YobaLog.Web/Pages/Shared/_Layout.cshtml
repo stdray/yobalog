@@ -12,6 +12,13 @@
 		<div class="mx-auto max-w-6xl w-full px-4 flex gap-6 items-center">
 			<a class="text-lg font-semibold" asp-page="/Index">YobaLog</a>
 			<a class="text-sm opacity-70 hover:opacity-100" asp-page="/Index">Workspaces</a>
+			@if (User.Identity?.IsAuthenticated == true)
+			{
+				<form method="post" action="/Logout" class="ml-auto flex items-center gap-3">
+					<span class="text-sm opacity-70">@User.Identity.Name</span>
+					<button type="submit" class="btn btn-xs btn-ghost">Sign out</button>
+				</form>
+			}
 		</div>
 	</div>
 	<main class="mx-auto max-w-6xl px-4 py-6">
