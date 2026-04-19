@@ -212,4 +212,29 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 		var messages = await RunAsync("events | where Properties.email contains 'example'");
 		messages.Should().BeEquivalentTo(["e1"]);
 	}
+
+	[Fact]
+	public async Task SummarizeByProperty_GroupsViaJsonExtract()
+	{
+		await _store.AppendBatchAsync(Ws,
+			[
+				Mk(55, LogLevel.Information, "a", props: Props("""{"SourceContext":"Web"}""")),
+				Mk(56, LogLevel.Information, "b", props: Props("""{"SourceContext":"Web"}""")),
+				Mk(57, LogLevel.Information, "c", props: Props("""{"SourceContext":"Worker"}""")),
+			],
+			CancellationToken.None);
+
+		var code = KustoCode.Parse("events | summarize count() by Properties.SourceContext");
+		var result = await _store.QueryKqlResultAsync(Ws, code, CancellationToken.None);
+
+		var rows = new List<object?[]>();
+		await foreach (var row in result.Rows) rows.Add(row);
+
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Properties.SourceContext", "count_");
+		var byCtx = rows
+			.Where(r => r[0] is string)
+			.ToDictionary(r => (string)r[0]!, r => (long)r[1]!);
+		byCtx["Web"].Should().Be(2);
+		byCtx["Worker"].Should().Be(1);
+	}
 }

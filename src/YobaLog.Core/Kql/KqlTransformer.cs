@@ -177,38 +177,54 @@ sealed class KqlTransformer
 			aggSpecs.Add((name, kind));
 		}
 
-		var groupCols = new List<string>();
+		var extractors = new List<Func<object?[], object?>>();
+		var outputColumns = new List<KqlColumn>();
+
 		if (op.ByClause is not null)
 		{
 			foreach (var element in op.ByClause.Expressions)
 			{
-				if (element.Element is not NameReference n)
-					throw new UnsupportedKqlException($"summarize by '{element.Element.Kind}' not supported (column refs only)");
-				groupCols.Add(n.SimpleName);
+				switch (element.Element)
+				{
+					case NameReference n:
+					{
+						var idx = FindColumnIndex(input.Columns, n.SimpleName);
+						if (idx < 0)
+							throw new UnsupportedKqlException($"summarize by: unknown column '{n.SimpleName}'");
+						outputColumns.Add(new KqlColumn(n.SimpleName, input.Columns[idx].ClrType));
+						var captured = idx;
+						extractors.Add(row => row[captured]);
+						break;
+					}
+					case PathExpression p when IsPropertiesPath(p, out var propKey):
+					{
+						var propIdx = FindColumnIndex(input.Columns, nameof(Storage.Sqlite.EventRecord.PropertiesJson));
+						if (propIdx < 0)
+							throw new UnsupportedKqlException(
+								"summarize by Properties.<key>: input shape has no PropertiesJson column");
+						var path = "$." + propKey;
+						outputColumns.Add(new KqlColumn("Properties." + propKey, typeof(string)));
+						extractors.Add(row => KqlSqlExpressions.JsonExtract(row[propIdx] as string, path));
+						break;
+					}
+					default:
+						throw new UnsupportedKqlException(
+							$"summarize by '{element.Element.Kind}' not supported (column ref or Properties.<key>)");
+				}
 			}
 		}
 
-		var groupIndices = new int[groupCols.Count];
-		var outputColumns = new List<KqlColumn>();
-		for (var i = 0; i < groupCols.Count; i++)
-		{
-			var idx = FindColumnIndex(input.Columns, groupCols[i]);
-			if (idx < 0)
-				throw new UnsupportedKqlException($"summarize by: unknown column '{groupCols[i]}'");
-			groupIndices[i] = idx;
-			outputColumns.Add(new KqlColumn(groupCols[i], input.Columns[idx].ClrType));
-		}
 		foreach (var (name, _) in aggSpecs)
 			outputColumns.Add(new KqlColumn(name, typeof(long)));
 
-		return new KqlResult(outputColumns, StreamSummarize(input.Rows, groupIndices, aggSpecs.Count));
+		return new KqlResult(outputColumns, StreamSummarize(input.Rows, [.. extractors], aggSpecs.Count));
 	}
 
 	enum KqlAggregate { Count }
 
 	static async IAsyncEnumerable<object?[]> StreamSummarize(
 		IAsyncEnumerable<object?[]> source,
-		int[] groupIndices,
+		Func<object?[], object?>[] groupExtractors,
 		int aggCount,
 		[EnumeratorCancellation] CancellationToken ct = default)
 	{
@@ -216,9 +232,9 @@ sealed class KqlTransformer
 
 		await foreach (var row in source.WithCancellation(ct).ConfigureAwait(false))
 		{
-			var keyValues = new object?[groupIndices.Length];
-			for (var i = 0; i < groupIndices.Length; i++)
-				keyValues[i] = row[groupIndices[i]];
+			var keyValues = new object?[groupExtractors.Length];
+			for (var i = 0; i < groupExtractors.Length; i++)
+				keyValues[i] = groupExtractors[i](row);
 			var key = new GroupKey(keyValues);
 			groups.TryGetValue(key, out var count);
 			groups[key] = count + 1;
