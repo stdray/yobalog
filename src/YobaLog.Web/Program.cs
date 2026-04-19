@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using YobaLog.Core;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Ingestion;
+using YobaLog.Core.Kql;
+using YobaLog.Web;
 using YobaLog.Core.Retention;
 using YobaLog.Core.SelfLogging;
 using YobaLog.Core.Storage;
@@ -21,6 +24,7 @@ builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("A
 builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
 builder.Services.AddSingleton<IApiKeyStore, ConfigApiKeyStore>();
 builder.Services.AddSingleton<ICleFParser, CleFParser>();
+builder.Services.AddSingleton<KqlCompletionService>();
 builder.Services.AddSingleton<ChannelIngestionPipeline>();
 builder.Services.AddSingleton<IIngestionPipeline>(sp => sp.GetRequiredService<ChannelIngestionPipeline>());
 builder.Services.AddSingleton<SystemLoggerProvider>();
@@ -95,6 +99,15 @@ app.MapPost("/Logout", async (HttpContext ctx) =>
 {
 	await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 	return Results.Redirect("/Login");
+});
+
+app.MapGet("/api/kql/completions", (
+	[FromQuery(Name = "q")] string? query,
+	[FromQuery(Name = "pos")] int? position,
+	KqlCompletionService completions) =>
+{
+	var result = completions.Complete(query ?? "", position ?? 0);
+	return Results.Extensions.CompletionsHtml(result);
 });
 
 app.MapRazorPages();

@@ -46,7 +46,7 @@
     - [x] Form → KQL builder в `WorkspaceModel.BuildKql()` — from/to/minLevel/trace/message/cursor.
     - [x] `ILogStore.QueryKqlAsync` — часть контракта; `SqliteLogStore` реализует.
     - [x] `<textarea>` с сырым KQL — collapsible под формой. Когда непусто → форма дизейблится, `RawKql` летит в page-model. Pager (order by, take, cursor) всегда добавляется на сервере. Parse-ошибки и `UnsupportedKqlException` рендерятся красным alert'ом с сохранением пользовательского ввода.
-    - [ ] Server-side автокомплит через htmx (`KustoCode.GetCompletions`).
+    - [x] Server-side автокомплит через htmx + `KustoCodeService.GetCompletionItems`. Endpoint `GET /api/kql/completions?q=...&pos=...` возвращает HTML-fragment с дропдауном. Схема `LogEvents` зарегистрирована в `GlobalState` — completions знают про Id/Timestamp/Level/LevelName/TraceId/SpanId/Message/Exception. Insert-on-click через minimal TS (`ts/admin.ts`): замена EditRange → BeforeText+AfterText, caret между ними, Escape закрывает панель. Live-проверено: `Le` → {Level, LevelName}; после `|` → {where, count, extend, join, …}; click вставляет `LevelName ` с пробелом-разделителем.
     - [ ] Saved queries (CRUD) — `.meta.db` per workspace.
     - [ ] Retention-политики с фильтрами-ссылками на saved queries.
 - [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail.

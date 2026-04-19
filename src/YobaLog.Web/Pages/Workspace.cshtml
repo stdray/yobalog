@@ -54,9 +54,17 @@
 		<summary class="cursor-pointer text-xs opacity-70 select-none">
 			KQL @(Model.RawKqlMode ? "(raw mode — form disabled)" : "(derived from form above)")
 		</summary>
-		<textarea name="kql" rows="6"
-			placeholder="LogEvents | where Level >= 3 | where Message contains 'boom'"
-			class="textarea textarea-sm textarea-bordered w-full mt-2 font-mono text-xs">@(Model.RawKqlMode ? Model.RawKql : Model.UserKql)</textarea>
+		<div class="relative mt-2" id="kql-editor">
+			<textarea name="kql" rows="6" id="kql-textarea"
+				placeholder="LogEvents | where Level >= 3 | where Message contains 'boom'"
+				hx-get="/api/kql/completions"
+				hx-trigger="keyup changed delay:250ms, click"
+				hx-target="#kql-completions"
+				hx-swap="innerHTML"
+				hx-vals='js:{ q: document.getElementById("kql-textarea").value, pos: document.getElementById("kql-textarea").selectionStart }'
+				class="textarea textarea-sm textarea-bordered w-full font-mono text-xs">@(Model.RawKqlMode ? Model.RawKql : Model.UserKql)</textarea>
+			<div id="kql-completions" class="absolute left-0 right-0 top-full"></div>
+		</div>
 		<p class="text-xs opacity-60 mt-1">
 			Typing here overrides the form above. Clear to re-enable form mode. Paging (order by, take, cursor) appended automatically.
 		</p>
