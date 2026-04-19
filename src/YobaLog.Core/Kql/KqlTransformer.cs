@@ -1,5 +1,7 @@
+using System.Runtime.CompilerServices;
 using Kusto.Language;
 using Kusto.Language.Syntax;
+using LinqToDB;
 using YobaLog.Core.Storage.Sqlite;
 using Expr = System.Linq.Expressions.Expression;
 using ParamExpr = System.Linq.Expressions.ParameterExpression;
@@ -12,6 +14,48 @@ namespace YobaLog.Core.Kql;
 sealed class KqlTransformer
 {
 	public const string EventsTable = "LogEvents";
+
+	public static readonly IReadOnlyList<KqlColumn> EventRecordColumns =
+	[
+		new("Id", typeof(long)),
+		new("Timestamp", typeof(DateTimeOffset)),
+		new("Level", typeof(int)),
+		new("MessageTemplate", typeof(string)),
+		new("Message", typeof(string)),
+		new("Exception", typeof(string)),
+		new("TraceId", typeof(string)),
+		new("SpanId", typeof(string)),
+		new("EventId", typeof(int)),
+		new("PropertiesJson", typeof(string)),
+	];
+
+	public KqlResult Execute(IQueryable<EventRecord> source, KustoCode code)
+	{
+		var filtered = Apply(source, code);
+		return new KqlResult(EventRecordColumns, StreamEventRecordRows(filtered));
+	}
+
+	static async IAsyncEnumerable<object?[]> StreamEventRecordRows(
+		IQueryable<EventRecord> query,
+		[EnumeratorCancellation] CancellationToken ct = default)
+	{
+		await foreach (var r in query.AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
+		{
+			yield return
+			[
+				r.Id,
+				DateTimeOffset.FromUnixTimeMilliseconds(r.TimestampMs),
+				r.Level,
+				r.MessageTemplate,
+				r.Message,
+				r.Exception,
+				r.TraceId,
+				r.SpanId,
+				r.EventId,
+				r.PropertiesJson,
+			];
+		}
+	}
 
 	public IQueryable<EventRecord> Apply(IQueryable<EventRecord> source, KustoCode code)
 	{

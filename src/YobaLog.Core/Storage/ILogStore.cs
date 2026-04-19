@@ -1,4 +1,5 @@
 using Kusto.Language;
+using YobaLog.Core.Kql;
 
 namespace YobaLog.Core.Storage;
 
@@ -8,6 +9,7 @@ public interface ILogStore
 
 	IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 	IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
+	KqlResult QueryKqlResult(WorkspaceId workspaceId, KustoCode kql);
 	ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 
 	ValueTask<long> DeleteOlderThanAsync(WorkspaceId workspaceId, DateTimeOffset cutoff, CancellationToken ct);

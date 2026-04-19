@@ -36,6 +36,21 @@ public sealed class SqliteLogStore : ILogStore
 			yield return ToLogEvent(r);
 	}
 
+	public KqlResult QueryKqlResult(WorkspaceId workspaceId, KustoCode kql) =>
+		new(KqlTransformer.EventRecordColumns, StreamKqlRows(workspaceId, kql));
+
+	async IAsyncEnumerable<object?[]> StreamKqlRows(
+		WorkspaceId workspaceId,
+		KustoCode kql,
+		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+	{
+		await using var db = Open(workspaceId);
+		var source = db.GetTable<EventRecord>().AsQueryable();
+		var result = _kql.Execute(source, kql);
+		await foreach (var row in result.Rows.WithCancellation(ct).ConfigureAwait(false))
+			yield return row;
+	}
+
 	string PathFor(WorkspaceId ws) =>
 		_pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.logs.db"));
 
