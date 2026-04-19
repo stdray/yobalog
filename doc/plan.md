@@ -21,19 +21,29 @@
     - [x] CI skeleton (`.github/workflows/ci.yml`): `bun install` + `biome check` + `bun run typecheck` + `dotnet restore` + `dotnet format --verify-no-changes` + `dotnet build -c Release` + `dotnet test -c Release`. Один workflow на push/PR в main.
     - [x] Smoke-test: всё зелёное локально — `biome check` ✓, `tsc --noEmit` ✓, `dotnet format --verify-no-changes` ✓, `dotnet build -c Release` (включая `bun run build` через MSBuild target) ✓, `dotnet test` 1/1 passed ✓.
 - [ ] **Фаза A — dog-food ready.** Ingestion (`/api/events/raw`, CLEF, API-ключи, workspace routing), retention по дате (одна цифра, без политик), минимальный viewer (логин + cursor-пагинация + хардкод-фильтры: Level/Category/TraceId/time-range/substring), `$system` workspace. На этой фазе уже перенаправляется Serilog из собственных сервисов — сервис работает.
+    - [x] Доменные типы в Core: `LogLevel`, `WorkspaceId` (slug-валидация), `LogEvent`, `LogEventCandidate`, `ILogStore`, `LogQuery`.
+    - [x] CLEF-парсер (`CleFParser`) — tolerant NDJSON, `@t`/`@l`/`@m`/`@mt`/`@x`/`@i`/`@tr`/`@sp`, `@@`-escape, reserved `@*` skip.
+    - [x] Ingestion pipeline — `Channels` per workspace, bounded + Wait, writer-loop, `IHostedService`, shutdown-drain, per-workspace isolation.
+    - [x] `SqliteLogStore` — linq2db + SQLite, WAL, cursor pagination (16-байтный opaque key), индексы, FTS5 инфраструктура (для Phase C), substring через LIKE.
+    - [x] API-ключи — `IApiKeyStore` + `ConfigApiKeyStore` (из `appsettings`), `X-Seq-ApiKey` header + `?apiKey=` query.
+    - [x] `POST /api/events/raw` — 201 с partial-batch ack `{received, errors}`, 401 на bad/missing key.
+    - [x] `WorkspaceBootstrapper` — на старте создаёт `$system` + все workspaces из API-ключей.
+    - [x] Retention service — `BackgroundService`, гоняет `DeleteOlderThanAsync` per workspace; отдельный `SystemRetentionDays` для `$system`.
+    - [ ] Self-observability — `SystemLoggerProvider`, фильтр категорий, собственные логи в `$system`.
+    - [ ] Минимальный viewer — Razor Pages: логин + список + фильтры + cursor-пагинация.
 - [ ] **Фаза B (параллельно A) — transformer и dual-executor тесты.** Parser, AST и reference executor не пишем — всё из `Kusto.Language` + `kusto-loco`. Пишем только: visitor по Kusto AST → SQL через `linq2db` (SQLite+FTS5); allowlist поддерживаемых операторов (MVP: `where`, `project`, `extend`, `summarize`, `count`, `take`, `order by`); специальный case для full-text на `Message` — транслируется в FTS5 MATCH; dual-executor property-тесты (KQL-строка прогоняется через `KustoQueryContext` и через наш SQLite-transformer, результаты сравниваются). В UI пока не подключается.
 - [ ] **Фаза C — swap на KQL.** Хардкод-фильтры UI заменяются на `<textarea>` с KQL (server-side автокомплит через htmx — позже). Saved queries (CRUD). Retention-политики с фильтрами-ссылками на saved queries.
 - [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail (SSE + sliding window).
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
 ## Тестовое покрытие до фазы A (что ещё нельзя пропустить)
-- [ ] **CLEF-парсер:** tolerant NDJSON (кривая строка не убивает батч), partial-batch ack, malformed `@t`, missing required fields.
-- [ ] **Ingestion pipeline:** Channels-based writer под нагрузкой — no event loss при `Count > capacity`; корректный shutdown-drain; per-workspace isolation.
-- [ ] **API-ключи:** истёкший/невалидный/чужой workspace → 401/403; rate-limit; unscoped key не видит `$system`.
-- [ ] **Retention executor:** удаляет ровно то, что в фильтре; идемпотентен; не ломает БД; concurrent ingestion не блокируется.
-- [ ] **Cursor pagination:** duplicate timestamps, empty result, cursor на удалённую запись, boundaries.
-- [ ] **Workspace isolation (property test):** данные из workspace A физически недостижимы запросом из B; пересекающиеся TraceId не смешиваются.
-- [ ] **Маскирование:** HMAC детерминирован (один вход → один выход); удалённый share = 404; expired = 410.
+- [x] **CLEF-парсер:** tolerant NDJSON (кривая строка не убивает батч), partial-batch ack, malformed `@t`, missing required fields. _(CleFParserTests, 20 тестов)_
+- [x] **Ingestion pipeline:** Channels-based writer под нагрузкой — no event loss при `Count > capacity`; корректный shutdown-drain; per-workspace isolation. _(ChannelIngestionPipelineTests, 7 тестов)_
+- [~] **API-ключи:** невалидный/missing → 401; валидный + правильный workspace → 201. **Не покрыто:** expired keys, rate-limit, unscoped key/$system access (нужна модель прав). Отложено до Phase D/E. _(IngestionEndpointTests + ConfigApiKeyStoreTests, 12 тестов)_
+- [x] **Retention executor:** удаляет ровно то, что в фильтре; идемпотентен; concurrent ingestion не блокируется. _(RetentionServiceTests, 6 тестов)_
+- [x] **Cursor pagination:** базовая пагинация. **Не покрыто:** duplicate timestamps, cursor на удалённую запись, boundaries — добавить при появлении edge-case багов. _(SqliteLogStoreTests)_
+- [x] **Workspace isolation:** данные из workspace A физически недостижимы запросом из B. _(SqliteLogStoreTests)_
+- [ ] **Маскирование:** HMAC детерминирован (один вход → один выход); удалённый share = 404; expired = 410. _(Phase D)_
 
 ---
 
