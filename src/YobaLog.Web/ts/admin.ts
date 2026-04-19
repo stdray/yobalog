@@ -148,9 +148,11 @@ document.addEventListener("click", (event) => {
 	const value = textarea.value;
 	const left = value.substring(0, editStart);
 	const right = value.substring(editStart + editLength);
-	// Pure insertion (editLength === 0) adjacent to an identifier char means Kusto's
-	// BeforeText ran into the previous token without a separator — add one.
-	const needsLeadingSpace = editLength === 0 && /[A-Za-z0-9_]/.test(left.slice(-1));
+	// Pure insertion (editLength === 0) adjacent to a non-separator produces things
+	// like 'eventswhere' or 'count()by'. Prepend a space unless the char before the
+	// cursor is already whitespace, an opening paren, or start-of-input.
+	const prevChar = left.slice(-1);
+	const needsLeadingSpace = editLength === 0 && prevChar !== "" && !/[\s(]/.test(prevChar);
 	const prefix = needsLeadingSpace ? ` ${before}` : before;
 	textarea.value = left + prefix + after + right;
 
