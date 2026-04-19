@@ -97,7 +97,7 @@ public sealed class SqliteLogStore : ILogStore
 
 		await using var db = Open(workspaceId);
 		await db.GetTable<EventRecord>()
-			.BulkCopyAsync(batch.Select(ToRecord), ct)
+			.BulkCopyAsync(batch.Select(EventRecord.FromCandidate), ct)
 			.ConfigureAwait(false);
 	}
 
@@ -221,20 +221,6 @@ public sealed class SqliteLogStore : ILogStore
 		return q;
 	}
 
-	static EventRecord ToRecord(LogEventCandidate c) => new()
-	{
-		TimestampMs = c.Timestamp.ToUnixTimeMilliseconds(),
-		Level = (int)c.Level,
-		MessageTemplate = c.MessageTemplate,
-		Message = c.Message,
-		Exception = c.Exception,
-		TraceId = c.TraceId,
-		SpanId = c.SpanId,
-		EventId = c.EventId,
-		TemplateHash = StableHash(c.MessageTemplate),
-		PropertiesJson = SerializeProperties(c.Properties),
-	};
-
 	static LogEvent ToLogEvent(EventRecord r) => new(
 		r.Id,
 		DateTimeOffset.FromUnixTimeMilliseconds(r.TimestampMs),
@@ -247,24 +233,6 @@ public sealed class SqliteLogStore : ILogStore
 		r.EventId,
 		DeserializeProperties(r.PropertiesJson));
 
-	static string SerializeProperties(ImmutableDictionary<string, JsonElement> props)
-	{
-		if (props.IsEmpty)
-			return "{}";
-		using var stream = new MemoryStream();
-		using (var writer = new Utf8JsonWriter(stream))
-		{
-			writer.WriteStartObject();
-			foreach (var (k, v) in props)
-			{
-				writer.WritePropertyName(k);
-				v.WriteTo(writer);
-			}
-			writer.WriteEndObject();
-		}
-		return System.Text.Encoding.UTF8.GetString(stream.ToArray());
-	}
-
 	static ImmutableDictionary<string, JsonElement> DeserializeProperties(string json)
 	{
 		if (string.IsNullOrEmpty(json) || json == "{}")
@@ -275,20 +243,6 @@ public sealed class SqliteLogStore : ILogStore
 		foreach (var prop in doc.RootElement.EnumerateObject())
 			builder[prop.Name] = prop.Value.Clone();
 		return builder.ToImmutable();
-	}
-
-	static long StableHash(string s)
-	{
-		// FNV-1a 64-bit — stable across runs (unlike string.GetHashCode).
-		const long offset = unchecked((long)14695981039346656037);
-		const long prime = 1099511628211;
-		var h = offset;
-		foreach (var c in s)
-		{
-			h ^= c;
-			h *= prime;
-		}
-		return h;
 	}
 
 	static string SanitizeIndexName(string path)

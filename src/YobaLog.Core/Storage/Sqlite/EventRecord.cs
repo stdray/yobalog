@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using System.Text;
+using System.Text.Json;
 using LinqToDB.Mapping;
 
 namespace YobaLog.Core.Storage.Sqlite;
@@ -16,4 +19,50 @@ sealed class EventRecord
 	[Column, Nullable] public int? EventId { get; set; }
 	[Column, NotNull] public long TemplateHash { get; set; }
 	[Column, NotNull] public string PropertiesJson { get; set; } = "{}";
+
+	public static EventRecord FromCandidate(LogEventCandidate c) => new()
+	{
+		TimestampMs = c.Timestamp.ToUnixTimeMilliseconds(),
+		Level = (int)c.Level,
+		MessageTemplate = c.MessageTemplate,
+		Message = c.Message,
+		Exception = c.Exception,
+		TraceId = c.TraceId,
+		SpanId = c.SpanId,
+		EventId = c.EventId,
+		TemplateHash = StableHash(c.MessageTemplate),
+		PropertiesJson = SerializeProperties(c.Properties),
+	};
+
+	static string SerializeProperties(ImmutableDictionary<string, JsonElement> props)
+	{
+		if (props.IsEmpty)
+			return "{}";
+		using var stream = new MemoryStream();
+		using (var writer = new Utf8JsonWriter(stream))
+		{
+			writer.WriteStartObject();
+			foreach (var (k, v) in props)
+			{
+				writer.WritePropertyName(k);
+				v.WriteTo(writer);
+			}
+			writer.WriteEndObject();
+		}
+		return Encoding.UTF8.GetString(stream.ToArray());
+	}
+
+	static long StableHash(string s)
+	{
+		// FNV-1a 64-bit — stable across runs (unlike string.GetHashCode).
+		const long offset = unchecked((long)14695981039346656037);
+		const long prime = 1099511628211;
+		var h = offset;
+		foreach (var c in s)
+		{
+			h ^= c;
+			h *= prime;
+		}
+		return h;
+	}
 }

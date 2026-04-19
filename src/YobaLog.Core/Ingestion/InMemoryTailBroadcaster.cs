@@ -74,22 +74,8 @@ public sealed class InMemoryTailBroadcaster : ITailBroadcaster
 
 		return candidate =>
 		{
-			var record = ToRecord(candidate);
+			var record = EventRecord.FromCandidate(candidate);
 			return _transformer.Apply(new[] { record }.AsQueryable(), query).Any();
 		};
 	}
-
-	static EventRecord ToRecord(LogEventCandidate c) => new()
-	{
-		Id = 0,
-		TimestampMs = c.Timestamp.ToUnixTimeMilliseconds(),
-		Level = (int)c.Level,
-		MessageTemplate = c.MessageTemplate,
-		Message = c.Message,
-		Exception = c.Exception,
-		TraceId = c.TraceId,
-		SpanId = c.SpanId,
-		EventId = c.EventId,
-		PropertiesJson = "{}",
-	};
 }
