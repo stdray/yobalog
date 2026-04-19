@@ -1,5 +1,11 @@
 export const version = "0.0.0" as const;
 
+declare global {
+	interface Window {
+		htmx?: { process(el: Element): void };
+	}
+}
+
 // ---------- KQL completion ----------
 
 document.addEventListener("click", (event) => {
@@ -54,6 +60,32 @@ document.addEventListener("click", (event) => {
 			btn.removeAttribute("data-state");
 		}, 1200);
 	});
+});
+
+// ---------- Live-tail toggle ----------
+
+document.addEventListener("change", (event) => {
+	const target = event.target as HTMLInputElement | null;
+	if (target?.id !== "live-tail-toggle") return;
+
+	const wsId = target.dataset["workspace"];
+	const kql = target.dataset["kql"] ?? "";
+	const tbody = document.getElementById("events-body");
+	if (!wsId || !tbody?.parentElement) return;
+
+	const containerId = "live-tail-sse";
+	document.getElementById(containerId)?.remove();
+
+	if (!target.checked) return;
+
+	const url = `/api/ws/${encodeURIComponent(wsId)}/tail?kql=${encodeURIComponent(kql)}`;
+	const container = document.createElement("div");
+	container.id = containerId;
+	container.setAttribute("hx-ext", "sse");
+	container.setAttribute("sse-connect", url);
+	container.innerHTML = '<div sse-swap="event" hx-target="#events-body" hx-swap="afterbegin"></div>';
+	tbody.parentElement.parentElement?.insertBefore(container, tbody.parentElement);
+	window.htmx?.process(container);
 });
 
 // ---------- Expandable event row ----------

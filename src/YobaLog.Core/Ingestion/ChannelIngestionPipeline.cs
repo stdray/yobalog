@@ -10,6 +10,7 @@ namespace YobaLog.Core.Ingestion;
 public sealed class ChannelIngestionPipeline : IIngestionPipeline, IHostedService, IAsyncDisposable
 {
 	readonly ILogStore _store;
+	readonly ITailBroadcaster? _tail;
 	readonly IngestionOptions _options;
 	readonly ILogger<ChannelIngestionPipeline> _logger;
 	readonly ConcurrentDictionary<WorkspaceId, WorkspaceChannel> _channels = new();
@@ -18,9 +19,11 @@ public sealed class ChannelIngestionPipeline : IIngestionPipeline, IHostedServic
 	public ChannelIngestionPipeline(
 		ILogStore store,
 		IOptions<IngestionOptions> options,
-		ILogger<ChannelIngestionPipeline> logger)
+		ILogger<ChannelIngestionPipeline> logger,
+		ITailBroadcaster? tail = null)
 	{
 		_store = store;
+		_tail = tail;
 		_options = options.Value;
 		_logger = logger;
 	}
@@ -65,6 +68,7 @@ public sealed class ChannelIngestionPipeline : IIngestionPipeline, IHostedServic
 			try
 			{
 				await _store.AppendBatchAsync(ws, batch, CancellationToken.None).ConfigureAwait(false);
+				_tail?.Publish(ws, batch);
 			}
 			catch (Exception ex)
 			{

@@ -34,6 +34,9 @@ builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
 builder.Services.AddSingleton<IApiKeyStore, ConfigApiKeyStore>();
 builder.Services.AddSingleton<ICleFParser, CleFParser>();
 builder.Services.AddSingleton<KqlCompletionService>();
+builder.Services.AddSingleton<InMemoryTailBroadcaster>();
+builder.Services.AddSingleton<ITailBroadcaster>(sp => sp.GetRequiredService<InMemoryTailBroadcaster>());
+builder.Services.AddSingleton<IRazorPartialRenderer, RazorPartialRenderer>();
 builder.Services.AddSingleton<ChannelIngestionPipeline>();
 builder.Services.AddSingleton<IIngestionPipeline>(sp => sp.GetRequiredService<ChannelIngestionPipeline>());
 builder.Services.AddSingleton<SystemLoggerProvider>();
@@ -117,6 +120,23 @@ app.MapGet("/api/kql/completions", (
 {
 	var result = completions.Complete(query ?? "", position ?? 0);
 	return Results.Extensions.CompletionsHtml(result);
+});
+
+app.MapGet("/api/ws/{id}/tail", (
+	string id,
+	[FromQuery(Name = "kql")] string? kql,
+	ITailBroadcaster broadcaster,
+	IRazorPartialRenderer renderer) =>
+{
+	if (!WorkspaceId.TryParse(id, out var ws))
+		return Results.NotFound();
+
+	var code = Kusto.Language.KustoCode.Parse(string.IsNullOrWhiteSpace(kql) ? "LogEvents" : kql);
+	var errors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
+	if (errors.Count > 0)
+		return Results.BadRequest("KQL parse error: " + string.Join("; ", errors.Select(d => d.Message)));
+
+	return Results.Extensions.LiveTail(ws, code, broadcaster, renderer);
 });
 
 app.MapRazorPages();

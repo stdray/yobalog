@@ -1,0 +1,25 @@
+@model YobaLog.Core.LogEventCandidate
+@{
+	string LevelBadge(YobaLog.Core.LogLevel l) => l switch
+	{
+		YobaLog.Core.LogLevel.Verbose => "badge-ghost",
+		YobaLog.Core.LogLevel.Debug => "badge-ghost",
+		YobaLog.Core.LogLevel.Information => "badge-info",
+		YobaLog.Core.LogLevel.Warning => "badge-warning",
+		YobaLog.Core.LogLevel.Error => "badge-error",
+		YobaLog.Core.LogLevel.Fatal => "badge-error",
+		_ => "badge-ghost",
+	};
+}
+<tr class="align-top hover event-live">
+	<td class="font-mono text-xs opacity-70 whitespace-nowrap">@Model.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
+	<td><span class="badge badge-sm @LevelBadge(Model.Level)">@Model.Level</span></td>
+	<td class="break-words">
+		<div>@Model.Message</div>
+		@if (!string.IsNullOrEmpty(Model.Exception))
+		{
+			<pre class="mt-1 text-xs text-error whitespace-pre-wrap">@Model.Exception</pre>
+		}
+	</td>
+	<td class="font-mono text-xs opacity-70 truncate">@Model.TraceId</td>
+</tr>

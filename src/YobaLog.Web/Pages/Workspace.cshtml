@@ -116,6 +116,12 @@
 	<div class="flex gap-2 flex-wrap items-center">
 		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
 		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
+		<label class="label cursor-pointer gap-2 ml-auto">
+			<span class="label-text text-xs">Live tail</span>
+			<input type="checkbox" id="live-tail-toggle" class="toggle toggle-sm toggle-primary"
+				data-workspace="@Model.Workspace.Value"
+				data-kql="@Model.UserKql" />
+		</label>
 	</div>
 </form>
 
@@ -158,7 +164,7 @@ else
 					<th class="w-40">Trace</th>
 				</tr>
 			</thead>
-			<tbody>
+			<tbody id="events-body">
 				@foreach (var e in Model.Events)
 				{
 					var propsJson = PropertiesJson(e);

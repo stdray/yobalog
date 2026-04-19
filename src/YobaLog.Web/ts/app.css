@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+	.event-live {
+		animation: event-live-flash 1.4s ease-out;
+	}
+
+	@keyframes event-live-flash {
+		0% {
+			background-color: oklch(var(--p) / 0.35);
+		}
+		60% {
+			background-color: oklch(var(--p) / 0.15);
+		}
+		100% {
+			background-color: transparent;
+		}
+	}
+}
