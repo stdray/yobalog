@@ -6,6 +6,43 @@ declare global {
 	}
 }
 
+// ---------- Hotkey toast ----------
+
+function showHotkeyToast(combo: string, action: string): void {
+	const root = ensureToastRoot();
+	const toast = document.createElement("div");
+	toast.className =
+		"alert alert-info py-1 px-2 shadow-lg flex-row items-center gap-2 opacity-0 transition-opacity duration-150 pointer-events-auto";
+
+	const kbd = document.createElement("kbd");
+	kbd.className = "kbd kbd-xs";
+	kbd.textContent = combo;
+
+	const text = document.createElement("span");
+	text.className = "text-xs";
+	text.textContent = action;
+
+	toast.appendChild(kbd);
+	toast.appendChild(text);
+	root.appendChild(toast);
+
+	requestAnimationFrame(() => toast.classList.remove("opacity-0"));
+	setTimeout(() => {
+		toast.classList.add("opacity-0");
+		setTimeout(() => toast.remove(), 150);
+	}, 1500);
+}
+
+function ensureToastRoot(): HTMLDivElement {
+	const existing = document.getElementById("hotkey-toast-root") as HTMLDivElement | null;
+	if (existing) return existing;
+	const root = document.createElement("div");
+	root.id = "hotkey-toast-root";
+	root.className = "fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end pointer-events-none";
+	document.body.appendChild(root);
+	return root;
+}
+
 // ---------- Global focus shortcut: "/" jumps to KQL textarea ----------
 
 document.addEventListener("keydown", (event) => {
@@ -18,6 +55,7 @@ document.addEventListener("keydown", (event) => {
 	event.preventDefault();
 	textarea.focus();
 	textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+	showHotkeyToast("/", "фокус на запрос");
 });
 
 // ---------- KQL completion ----------
@@ -61,6 +99,7 @@ document.addEventListener("keydown", (event) => {
 		closeKqlPanel();
 		const submit = target.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
 		submit?.classList.add("btn-active");
+		showHotkeyToast(event.metaKey ? "⌘+Enter" : "Ctrl+Enter", "применить");
 		target.form?.requestSubmit();
 		return;
 	}
