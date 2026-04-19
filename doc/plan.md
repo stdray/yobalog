@@ -36,6 +36,14 @@
 - [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail (SSE + sliding window).
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
+## Отложено / tech debt после Фазы A
+Накопленный долг, намеренно пропущенный ради dog-food ready. Забираем **после** Фазы B.
+- [ ] **Hashed admin password.** Сейчас Admin:Password лежит plaintext в `appsettings.Development.json`. Миграция на PBKDF2 (`Rfc2898DeriveBytes`, HMACSHA256, ~600k iterations) с версионированным форматом `v1:{iter}:{b64salt}:{b64hash}`. Заодно добавить CLI-команду `yobalog hash-password` или Razor-handler для генерации хеша из plaintext.
+- [ ] **Copy-to-clipboard** в event-row: кнопка у каждого Message/Exception копирует текст (навигатор API, без deps).
+- [ ] **Expandable event row:** клик по строке разворачивает JSON Properties (dict → definition list), удобно для `SourceContext`, `TraceId`, кастомных полей. Событие уже содержит `Properties` dictionary — дело только в UI.
+- [ ] **Antiforgery на Login.** Сейчас `[IgnoreAntiforgeryToken]` — работает, но включим обратно, как добавится второй admin или мутирующие формы в UI.
+- [ ] **Edge case тесты cursor-пагинации:** duplicate timestamps, cursor на удалённую запись, boundaries (empty result, last page exactly at PageSize). Добавить при появлении багов либо до Фазы C (когда cursor станет частью KQL-пайплайна).
+
 ## Тестовое покрытие до фазы A (что ещё нельзя пропустить)
 - [x] **CLEF-парсер:** tolerant NDJSON (кривая строка не убивает батч), partial-batch ack, malformed `@t`, missing required fields. _(CleFParserTests, 20 тестов)_
 - [x] **Ingestion pipeline:** Channels-based writer под нагрузкой — no event loss при `Count > capacity`; корректный shutdown-drain; per-workspace isolation. _(ChannelIngestionPipelineTests, 7 тестов)_
