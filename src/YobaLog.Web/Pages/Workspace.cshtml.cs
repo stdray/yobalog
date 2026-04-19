@@ -14,6 +14,8 @@ namespace YobaLog.Web.Pages;
 
 public sealed class WorkspaceModel : PageModel
 {
+	const int ShapeChangedRowCap = 10_000;
+
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
@@ -42,6 +44,12 @@ public sealed class WorkspaceModel : PageModel
 	public const int PageSize = 50;
 
 	public List<LogEvent> Events { get; } = [];
+
+	public KqlResult? KqlResult { get; private set; }
+
+	public List<object?[]> KqlRows { get; } = [];
+
+	public bool IsShapeChanged { get; private set; }
 
 	public string? NextCursor { get; private set; }
 
@@ -82,7 +90,28 @@ public sealed class WorkspaceModel : PageModel
 		}
 
 		UserKql = string.IsNullOrWhiteSpace(RawKql) ? "events" : RawKql.Trim();
-		EffectiveKql = AppendPageLimits(UserKql);
+
+		// Detect shape-changing ops on the user's KQL before appending paging / cap — our own
+		// `order by Timestamp` doesn't make sense after `count` / `summarize`.
+		KustoCode userCode;
+		try
+		{
+			userCode = KustoCode.Parse(UserKql);
+			var parseErrors = userCode.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
+			if (parseErrors.Count > 0)
+			{
+				KqlError = "KQL parse error: " + string.Join("; ", parseErrors.Select(d => d.Message));
+				return Page();
+			}
+		}
+		catch (Exception ex)
+		{
+			KqlError = ex.Message;
+			return Page();
+		}
+
+		IsShapeChanged = KqlTransformer.HasShapeChangingOps(userCode);
+		EffectiveKql = IsShapeChanged ? AppendRowCap(UserKql) : AppendPageLimits(UserKql);
 
 		KustoCode code;
 		try
@@ -103,8 +132,17 @@ public sealed class WorkspaceModel : PageModel
 
 		try
 		{
-			await foreach (var e in _store.QueryKqlAsync(ws, code, ct))
-				Events.Add(e);
+			if (IsShapeChanged)
+			{
+				KqlResult = await _store.QueryKqlResultAsync(ws, code, ct);
+				await foreach (var row in KqlResult.Rows.WithCancellation(ct))
+					KqlRows.Add(row);
+			}
+			else
+			{
+				await foreach (var e in _store.QueryKqlAsync(ws, code, ct))
+					Events.Add(e);
+			}
 		}
 		catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
 		{
@@ -117,14 +155,14 @@ public sealed class WorkspaceModel : PageModel
 			return Page();
 		}
 
-		if (Events.Count > PageSize)
+		if (!IsShapeChanged && Events.Count > PageSize)
 		{
 			var last = Events[PageSize - 1];
 			Events.RemoveAt(Events.Count - 1);
 			NextCursor = EncodeCursor(last);
 		}
 
-		if (Request.Headers.ContainsKey("HX-Request"))
+		if (Request.Headers.ContainsKey("HX-Request") && !IsShapeChanged)
 			return Partial("_RowsFragment", this);
 
 		MaskingPolicy = await _maskingPolicies.GetAsync(ws, ct);
@@ -209,6 +247,9 @@ public sealed class WorkspaceModel : PageModel
 		sb.Append(CultureInfo.InvariantCulture, $"\n| take {PageSize + 1}");
 		return sb.ToString();
 	}
+
+	static string AppendRowCap(string userKql) =>
+		string.Create(CultureInfo.InvariantCulture, $"{userKql.TrimEnd()}\n| take {ShapeChangedRowCap}");
 
 	static ReadOnlyMemory<byte>? DecodeCursor(string? s)
 	{

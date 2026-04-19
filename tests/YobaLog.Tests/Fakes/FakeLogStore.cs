@@ -29,7 +29,7 @@ public sealed class FakeLogStore : ILogStore
 	public IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>
 		throw new NotSupportedException();
 
-	public KqlResult QueryKqlResult(WorkspaceId workspaceId, KustoCode kql) =>
+	public Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>
 		throw new NotSupportedException();
 
 	public ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct) =>

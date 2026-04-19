@@ -62,6 +62,12 @@ sealed class KqlTransformer
 	static bool IsShapeChangingOp(SyntaxNode op) =>
 		op is ProjectOperator or CountOperator or SummarizeOperator or ExtendOperator;
 
+	public static bool HasShapeChangingOps(KustoCode code)
+	{
+		ArgumentNullException.ThrowIfNull(code);
+		return FlattenPipeline(code.Syntax).Any(IsShapeChangingOp);
+	}
+
 	static KqlResult ApplyShapeChanges(KqlResult input, IReadOnlyList<SyntaxNode> ops)
 	{
 		var current = input;

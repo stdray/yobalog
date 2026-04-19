@@ -9,7 +9,7 @@ public interface ILogStore
 
 	IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 	IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
-	KqlResult QueryKqlResult(WorkspaceId workspaceId, KustoCode kql);
+	Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
 	ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 
 	ValueTask<long> DeleteOlderThanAsync(WorkspaceId workspaceId, DateTimeOffset cutoff, CancellationToken ct);

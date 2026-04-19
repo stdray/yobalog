@@ -52,12 +52,15 @@
 	<div class="flex gap-2 flex-wrap items-center">
 		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
 		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
-		<label class="label cursor-pointer gap-2 ml-auto">
-			<span class="label-text text-xs">Live tail</span>
-			<input type="checkbox" id="live-tail-toggle" class="toggle toggle-sm toggle-primary"
-				data-workspace="@Model.Workspace.Value"
-				data-kql="@Model.UserKql" />
-		</label>
+		@if (!Model.IsShapeChanged)
+		{
+			<label class="label cursor-pointer gap-2 ml-auto">
+				<span class="label-text text-xs">Live tail</span>
+				<input type="checkbox" id="live-tail-toggle" class="toggle toggle-sm toggle-primary"
+					data-workspace="@Model.Workspace.Value"
+					data-kql="@Model.UserKql" />
+			</label>
+		}
 	</div>
 </form>
 
@@ -72,10 +75,13 @@
 	</label>
 	<input type="hidden" name="kql" value="@Model.UserKql" />
 	<button type="submit" class="btn btn-sm btn-secondary">Save as…</button>
-	<button type="button" class="btn btn-sm btn-accent"
-		data-share-modal-open
-		data-workspace="@Model.Workspace.Value"
-		data-kql="@Model.UserKql">Share as TSV…</button>
+	@if (!Model.IsShapeChanged)
+	{
+		<button type="button" class="btn btn-sm btn-accent"
+			data-share-modal-open
+			data-workspace="@Model.Workspace.Value"
+			data-kql="@Model.UserKql">Share as TSV…</button>
+	}
 </form>
 
 <dialog id="share-modal" class="modal">
@@ -148,6 +154,39 @@
 else if (Model.SchemaMissing)
 {
 	<div class="alert">Workspace has no events yet.</div>
+}
+else if (Model.IsShapeChanged)
+{
+	if (Model.KqlRows.Count == 0)
+	{
+		<div class="alert">Query returned no rows.</div>
+	}
+	else
+	{
+		<div class="overflow-x-auto rounded-box border border-base-300 bg-base-200">
+			<table class="table table-sm">
+				<thead>
+					<tr>
+						@foreach (var col in Model.KqlResult!.Columns)
+						{
+							<th class="font-mono text-xs">@col.Name</th>
+						}
+					</tr>
+				</thead>
+				<tbody>
+					@foreach (var row in Model.KqlRows)
+					{
+						<tr class="align-top">
+							@foreach (var cell in row)
+							{
+								<td class="font-mono text-xs">@(cell?.ToString() ?? "")</td>
+							}
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
 }
 else if (Model.Events.Count == 0)
 {
