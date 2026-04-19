@@ -31,7 +31,17 @@
     - [x] Retention service — `BackgroundService`, гоняет `DeleteOlderThanAsync` per workspace; отдельный `SystemRetentionDays` для `$system`.
     - [x] Self-observability — `SystemLoggerProvider` + `SystemLogFlusher`, фильтр по префиксу категории (`YobaLog.*`), собственные логи в `$system` через прямой `ILogStore.AppendBatchAsync` (минуя pipeline, чтобы не словить рекурсию). Queue-full → drop (DropWrite).
     - [x] Минимальный viewer — Razor Pages: список workspaces (`/`), event-таблица (`/ws/{id}`) с фильтрами (message substring / min level / trace / from-to) и cursor-пагинацией. Tailwind + DaisyUI, `data-theme="dark"`. Cookie-auth с единственным админом из `appsettings` (Username+Password, constant-time сравнение через `CryptographicOperations.FixedTimeEquals`). `/api/events/raw` остался `AllowAnonymous` — API-ключи не ломаются. Протестировано end-to-end через Playwright MCP (Edge): unauth → redirect на `/Login`, wrong creds → alert, correct → `ReturnUrl` ведёт обратно, logout чистит cookie.
-- [ ] **Фаза B (параллельно A) — transformer и dual-executor тесты.** Parser, AST и reference executor не пишем — всё из `Kusto.Language` + `kusto-loco`. Пишем только: visitor по Kusto AST → SQL через `linq2db` (SQLite+FTS5); allowlist поддерживаемых операторов (MVP: `where`, `project`, `extend`, `summarize`, `count`, `take`, `order by`); специальный case для full-text на `Message` — транслируется в FTS5 MATCH; dual-executor property-тесты (KQL-строка прогоняется через `KustoQueryContext` и через наш SQLite-transformer, результаты сравниваются). В UI пока не подключается.
+- [~] **Фаза B — transformer и dual-executor тесты.** Parser/AST/reference executor — готовые (`Kusto.Language` + `kusto-loco`).
+    - [x] Visitor по Kusto AST → LINQ expression tree (через `linq2db` → SQL для SQLite).
+    - [x] Операторы: `where`, `take`, `order by` (single + multi, asc/desc).
+    - [x] Предикаты `where`: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contains` (case-insensitive), `and`, `or`, `not()`.
+    - [x] Колонки: `Id` (long), `Level` (int rank 0..5), `LevelName` (string), `Timestamp` (datetime literal → Unix ms), `TraceId`, `SpanId`, `Message`.
+    - [x] Dual-executor тесты — 34 property-случая, reference = `KustoQueryContext`, production = `IQueryable<EventRecord>`.
+    - [x] `SqliteLogStore.QueryKqlAsync` — реальный SQL через linq2db, 7 integration-тестов.
+    - [ ] `project`, `extend`, `summarize`, `count` — нужен shape-changing result type (`KqlResult { Columns, Rows }`), большой рефакторинг. Отложено до явной необходимости.
+    - [ ] FTS5 MATCH special case для `Message contains` — сейчас через LIKE (full scan, spec §7 warning ок). Оптимизация, не блокер.
+    - [ ] Timestamp в dual-executor — kusto-loco странно обрабатывает `datetime()`-литерал; production корректен, reference закомментирован.
+    - [x] Unsupported operators/predicates → explicit `UnsupportedKqlException` с actionable message.
 - [ ] **Фаза C — swap на KQL.** Хардкод-фильтры UI заменяются на `<textarea>` с KQL (server-side автокомплит через htmx — позже). Saved queries (CRUD). Retention-политики с фильтрами-ссылками на saved queries.
 - [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail (SSE + sliding window).
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
