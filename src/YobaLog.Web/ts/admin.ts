@@ -45,6 +45,8 @@ document.addEventListener("keydown", (event) => {
 	if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
 		event.preventDefault();
 		closeKqlPanel();
+		const submit = target.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+		submit?.classList.add("btn-active");
 		target.form?.requestSubmit();
 		return;
 	}
