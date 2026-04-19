@@ -97,6 +97,15 @@ function closeKqlPanel(): void {
 	if (panel) panel.innerHTML = "";
 }
 
+// Click outside the panel or textarea → dismiss. Clicks on .kql-suggestion go through the insertion
+// handler above (which closes the panel itself) before reaching here.
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	if (!target) return;
+	if (target.closest("#kql-completions") || target.closest("#kql-textarea")) return;
+	closeKqlPanel();
+});
+
 function highlightKqlItem(items: readonly HTMLButtonElement[], i: number): void {
 	for (let idx = 0; idx < items.length; idx++) {
 		const btn = items[idx];
