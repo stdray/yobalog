@@ -70,7 +70,6 @@
 {
 	var idLit = Model.Id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 	var levelLit = ((int)Model.Level).ToString(System.Globalization.CultureInfo.InvariantCulture);
-	var tsKql = EventRowViewModel.KqlDatetime(Model.Timestamp);
 
 	<tr class="event-details hidden bg-base-300/50">
 		<td colspan="4" class="text-xs">
@@ -86,10 +85,10 @@
 					<time class="local-time" datetime="@EventRowViewModel.IsoUtc(Model.Timestamp)" title="UTC: @EventRowViewModel.IsoUtc(Model.Timestamp)">@EventRowViewModel.IsoUtc(Model.Timestamp)</time>
 					<span class="hidden group-hover/field:inline-flex items-center gap-1">
 						<button type="button" class="filter-chip text-success text-xs font-semibold leading-none px-1"
-							data-filter-field="Timestamp" data-filter-op="ge" data-filter-value="@tsKql"
+							data-filter-field="Timestamp" data-filter-op="ge" data-filter-value="@EventRowViewModel.KqlDatetime(Model.Timestamp)"
 							title="search from this moment (inclusive)">from</button>
 						<button type="button" class="filter-chip text-error text-xs font-semibold leading-none px-1"
-							data-filter-field="Timestamp" data-filter-op="le" data-filter-value="@tsKql"
+							data-filter-field="Timestamp" data-filter-op="le" data-filter-value="@EventRowViewModel.KqlDatetime(Model.Timestamp)"
 							title="search up to this moment (inclusive)">to</button>
 					</span>
 				</dd>
