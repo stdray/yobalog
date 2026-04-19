@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 
 $frontCmd = '$Host.UI.RawUI.WindowTitle = ''yobalog-frontend''; Set-Location ''{0}\src\YobaLog.Web''; bun run dev' -f $Root
-$backCmd  = '$Host.UI.RawUI.WindowTitle = ''yobalog-backend''; Set-Location ''{0}''; $env:RunBunBuild = ''false''; dotnet watch --project src/YobaLog.Web' -f $Root
+$backCmd  = '$Host.UI.RawUI.WindowTitle = ''yobalog-backend''; Set-Location ''{0}''; dotnet watch --project src/YobaLog.Web' -f $Root
 
 Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontCmd
 Start-Process powershell -ArgumentList '-NoExit', '-Command', $backCmd

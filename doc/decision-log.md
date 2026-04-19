@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-04-19 — Рендер timestamps в TZ смотрящего (закрывает open question §98 spec)
+
+**Решение:** event-row рендерит `<time class="local-time" datetime="<ISO-UTC>Z">UTC-fallback</time>`, tiny TS-pass на `DOMContentLoaded` + `htmx:afterSwap` переписывает `textContent` в локальный `YYYY-MM-DD HH:mm:ss.SSS`. UTC остаётся в `title=` для прозрачности. Без JS — видна UTC-строка. Формат статический (не culture-aware) до появления i18n-каркаса.
+**Причина:** Seq-конвенция хранит UTC, `@t` тайм-зона клиента не компенсируется. Оператор в Москве смотрит логи из сервиса в UTC — мгновенный mental-convert ("+3") съедает внимание быстрее, чем рендер в локаль. Выбор "TZ смотрящего" закрывает open question из `plan.md` §98 (было "TZ смотрящего или TZ события?").
+**Откатили:** статический UTC в заголовке колонки + в ячейках — заголовок теперь просто "Time".
+
+## 2026-04-19 — UX-полировка клавиатуры и кнопок: `/` фокус, Ctrl+Enter submit, hotkey-toast, yellow-flash на .btn
+
+**Решение:** пакет мелких подтверждений действий:
+- `/` (GitHub-style) — фокус в KQL-textarea из любого места, кроме input'ов.
+- Ctrl/Cmd+Enter внутри textarea — submit формы, предварительно триггерит flash на кнопке.
+- Hotkey-toast в правом нижнем на 1.5с с `<kbd>` + описанием действия (`/` → focus query; Ctrl+Enter → apply). Для Ctrl+Enter toast переносится через `sessionStorage` между страницами — navigation иначе убил бы DOM до анимации.
+- Жёлтый flash (`.btn-flash` CSS-animation на daisyUI `--wa/--wac` палитре, 450ms) на всех `.btn` в приложении (Apply/Reset/Save/Share/copy/модалки). Заменяет тупой scale-down daisyUI-`:active`, который воспринимался как "шрифт чуть дёрнулся".
+**Причина:** live-dogfood показал, что без явного feedback'а пользователь не уверен, что шорткат сработал или кнопка нажалась (особенно Ctrl+Enter — сабмит навигации съедает любой тонкий отклик). Toast + flash — минимально навязчивое, неаффектит layout.
+**Откатили:** ничего — раньше был только дефолтный daisyUI-`:active`, теперь поверх.
+
 ## 2026-04-19 — FTS5 MATCH в IN-subquery медленнее LIKE на частых словах: известная особенность SQLite
 **Решение:** текущую реализацию `has` через `{rowid} IN (SELECT rowid FROM EventsFts WHERE Message MATCH ?)` оставляем в MVP. В `perf-baseline.md` задокументировано: на частом слове + `take 50` она в 100x медленнее `contains` через LIKE. Это — **не баг нашей интеграции**, а стандартный failure-mode SQLite FTS5 query-planner'а при LIMIT поверх IN-подзапроса. Оптимизация отложена до Phase D/E (когда появятся реальные use-case'ы).
 **Причина:** SQLite community подтверждает (см. ссылки ниже):

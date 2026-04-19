@@ -4,16 +4,11 @@
 		<ProjectReference Include="..\YobaLog.Core\YobaLog.Core.csproj" />
 	</ItemGroup>
 
-	<!-- Frontend rebuilt on every configuration so Debug doesn't ship a stale wwwroot/js/admin.js.
-	     Install step stays Release-only: once node_modules exists it's redundant, and we don't want dev
-	     iterations to block on npm-registry reachability. -->
-	<Target Name="InstallFrontendDeps" BeforeTargets="BuildFrontend" Condition="'$(Configuration)' == 'Release'">
+	<!-- Frontend is Release-only from MSBuild. Debug relies on `bun run dev` (via run_dev.ps1)
+	     so dotnet watch doesn't fight the bun watcher for wwwroot/ output, and Rider's long-lived
+	     Web process doesn't block the bun-build output-copy step. -->
+	<Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
 		<Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildProjectDirectory)" />
-	</Target>
-
-	<!-- Set RunBunBuild=false (env var or MSBuild prop) to skip — dev script uses this so
-	     `dotnet watch` doesn't fight the `bun run dev` watcher for wwwroot/ output. -->
-	<Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(RunBunBuild)' != 'false'">
 		<Exec Command="bun run build" WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 

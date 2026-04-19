@@ -34,7 +34,9 @@ When editing: spec changes go to `spec.md`, progress updates to `plan.md`, and a
 - **`$system` workspace for self-observability.** Internal categories (`YobaLog.Ingestion.*`, `YobaLog.Query.*`, `YobaLog.Retention.*`) must be filtered in the logger provider so they never route into user workspaces.
 - **Workspace IDs** match `^[a-z0-9][a-z0-9-]{1,39}$`. `$`-prefix reserved for system workspaces. No renaming in v1.
 - **Properties field is unindexed by default.** Per-workspace allowlist via `ILogStore.DeclareIndexAsync` is the only way to index a path. Non-indexed filters are allowed but must surface a "full scan" warning in the UI.
-- **Localization from day one.** All user-facing strings go through `IStringLocalizer`. No hardcoded strings in Razor/code.
+- **Localization from day one.** All user-facing strings go through `IStringLocalizer`. No hardcoded strings in Razor/code. While the i18n scaffold isn't built, **all user-facing strings are literal English ASCII** — the CI has a non-ASCII check over `ts/` and `Pages/` that fails the build on Cyrillic or other non-ASCII chars in those files. Comments in `.cs` under `src/YobaLog.Core` and `tests/` are exempt.
+- **No HTML / UI templates in `.cs` files.** Razor (`.cshtml` partials + `IRazorPartialRenderer`) owns all markup. Building HTML in a `StringBuilder` from a `.cs` service makes classes invisible to Tailwind's JIT scan (purge drops them silently — we hit this twice on `shadow-lg`/`z-20` in the old KQL completions renderer). If an endpoint needs to return HTML, route it through a Razor partial.
+- **Frontend build is Release-only.** Debug doesn't invoke `bun` from MSBuild — use `run_dev.ps1` (or a manual `bun run dev`) for the watcher loop. This keeps `dotnet watch` and `bun --watch` from racing on `wwwroot/` output and avoids Rider's lingering Web process blocking the bun-build output-copy step.
 
 ## Coding style
 
@@ -47,5 +49,10 @@ When editing: spec changes go to `spec.md`, progress updates to `plan.md`, and a
 ## Working style for this repo
 
 - When the user asks about "next step" or "what to do," check `doc/plan.md` — phases are the source of truth for ordering.
-- Russian is fine in conversation and in decision-log entries; user-facing code strings are English (see spec §9).
+- Russian is fine in conversation and in decision-log entries; user-facing code strings are English ASCII (see spec §9).
 - This is a greenfield project — don't add backwards-compatibility shims, feature flags, or `// TODO: remove` comments. The spec and decision log are how we remember why things exist.
+- **Plan update goes in the same commit as the feature.** When you complete or meaningfully shift a phase / bullet from `doc/plan.md`, update the file in the same commit. A `.githooks/pre-commit` hook warns when `src/**` changes without a corresponding `doc/plan.md` diff — enable hooks once per clone:
+
+  ```
+  git config core.hooksPath .githooks
+  ```

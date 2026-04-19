@@ -24,6 +24,20 @@ jobs:
         working-directory: src/YobaLog.Web
         run: bun install --frozen-lockfile
 
+      - name: English-only (user-facing files, spec §9)
+        run: |
+          set -e
+          if grep -RPn '[^\x00-\x7F]' \
+              src/YobaLog.Web/ts \
+              src/YobaLog.Web/Pages \
+              src/YobaLog.Web/EventRowViewModel.cs \
+              src/YobaLog.Web/EqNeChipsModel.cs \
+              src/YobaLog.Web/PropertyKeyContext.cs \
+              2>/dev/null; then
+            echo "::error::Non-ASCII characters in user-facing files. English-only until i18n scaffold lands (spec §9)."
+            exit 1
+          fi
+
       - name: Biome check
         working-directory: src/YobaLog.Web
         run: bun run lint

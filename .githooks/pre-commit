@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Warn (but don't block) when src/ or tests/ changes without a plan.md touch.
+# Enable once per clone: `git config core.hooksPath .githooks`
+
+set -euo pipefail
+
+staged=$(git diff --cached --name-only)
+if ! echo "$staged" | grep -qE '^(src|tests)/'; then
+	exit 0
+fi
+if echo "$staged" | grep -q '^doc/plan.md$'; then
+	exit 0
+fi
+
+cat >&2 <<'EOF'
+⚠ src/ or tests/ changed but doc/plan.md was not.
+  If this commit closes / moves a plan bullet, update doc/plan.md in the same commit.
+  If it's a refactor or pure bugfix unrelated to phase progress, this warning is fine to ignore.
+EOF
+exit 0
