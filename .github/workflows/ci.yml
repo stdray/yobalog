@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Bun install (frontend)
+        working-directory: src/YobaLog.Web
+        run: bun install --frozen-lockfile
+
+      - name: Biome check
+        working-directory: src/YobaLog.Web
+        run: bun run lint
+
+      - name: TypeScript typecheck
+        working-directory: src/YobaLog.Web
+        run: bun run typecheck
+
+      - name: Dotnet restore
+        run: dotnet restore YobaLog.slnx
+
+      - name: Dotnet format verify
+        run: dotnet format YobaLog.slnx --verify-no-changes --no-restore
+
+      - name: Dotnet build
+        run: dotnet build YobaLog.slnx -c Release --no-restore
+
+      - name: Dotnet test
+        run: dotnet test YobaLog.slnx -c Release --no-build
