@@ -45,7 +45,7 @@
 - [~] **Фаза C — swap на KQL.** Viewer прозрачно переехал на KQL: форма та же, page-model билдит KQL-строку и гоняет через `SqliteLogStore.QueryKqlAsync`. Pagination через `where Timestamp < cursor or (Timestamp == cursor and Id < id)`. Протестировано через Playwright end-to-end (55 событий, 2 страницы, фильтры сходятся).
     - [x] Form → KQL builder в `WorkspaceModel.BuildKql()` — from/to/minLevel/trace/message/cursor.
     - [x] `ILogStore.QueryKqlAsync` — часть контракта; `SqliteLogStore` реализует.
-    - [ ] `<textarea>` с сырым KQL — пользователь пишет KQL напрямую. Отложено до следующей итерации (форма всё ещё полезна для быстрых filter'ов, KQL-editor будет как альтернатива).
+    - [x] `<textarea>` с сырым KQL — collapsible под формой. Когда непусто → форма дизейблится, `RawKql` летит в page-model. Pager (order by, take, cursor) всегда добавляется на сервере. Parse-ошибки и `UnsupportedKqlException` рендерятся красным alert'ом с сохранением пользовательского ввода.
     - [ ] Server-side автокомплит через htmx (`KustoCode.GetCompletions`).
     - [ ] Saved queries (CRUD) — `.meta.db` per workspace.
     - [ ] Retention-политики с фильтрами-ссылками на saved queries.
