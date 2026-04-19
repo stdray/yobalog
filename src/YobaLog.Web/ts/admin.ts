@@ -34,9 +34,9 @@ document.addEventListener("htmx:afterSwap", (event) => {
 });
 
 // ---------- Button press flash (yellow) ----------
-// Replaces daisyUI's default :active scale-down on [data-flash] buttons with a clear
-// yellow flash. Works for both mouse clicks and Ctrl+Enter (the latter calls flashButton
-// directly so the flash shows during the submit navigation).
+// Replaces daisyUI's default :active scale-down with a clear yellow flash on every .btn
+// in the app (dialogs included). Ctrl+Enter calls flashButton directly so the flash is
+// visible during the submit navigation.
 
 function flashButton(el: HTMLElement): void {
 	el.classList.remove("btn-flash");
@@ -48,7 +48,7 @@ function flashButton(el: HTMLElement): void {
 
 document.addEventListener("click", (event) => {
 	const target = event.target as HTMLElement | null;
-	const btn = target?.closest<HTMLElement>("[data-flash]");
+	const btn = target?.closest<HTMLElement>(".btn");
 	if (btn) flashButton(btn);
 });
 

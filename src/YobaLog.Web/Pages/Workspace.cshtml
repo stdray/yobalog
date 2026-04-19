@@ -19,7 +19,7 @@
 				pattern="[A-Za-z0-9 _\-]+"
 				class="input input-xs input-bordered w-36" />
 			<input type="hidden" name="kql" value="@Model.UserKql" />
-			<button type="submit" class="btn btn-xs btn-ghost" data-flash title="Save current query">Save</button>
+			<button type="submit" class="btn btn-xs btn-ghost" title="Save current query">Save</button>
 		</form>
 		@if (!Model.IsShapeChanged)
 		{
@@ -70,8 +70,8 @@
 	<p class="text-xs opacity-60 -mt-2">Paging (<code>order by</code>, <code>take</code>, cursor) appended automatically.</p>
 
 	<div class="flex gap-2 flex-wrap items-center">
-		<button type="submit" class="btn btn-sm btn-primary" data-flash>Apply</button>
-		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost" data-flash>Reset</a>
+		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
+		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
 		@if (!Model.IsShapeChanged)
 		{
 			<label class="label cursor-pointer gap-2 ml-auto">
