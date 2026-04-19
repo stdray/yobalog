@@ -32,12 +32,12 @@ builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection("ApiK
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 builder.Services.Configure<SystemLoggerOptions>(builder.Configuration.GetSection("SystemLogger"));
 builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("Admin"));
-builder.Services.Configure<ShareSigningOptions>(builder.Configuration.GetSection("ShareSigning"));
+builder.Services.Configure<ShareOptions>(builder.Configuration.GetSection("Share"));
 
 builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
 builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
 builder.Services.AddSingleton<IFieldMaskingPolicyStore, SqliteFieldMaskingPolicyStore>();
-builder.Services.AddSingleton<ShareTokenCodec>();
+builder.Services.AddSingleton<IShareLinkStore, SqliteShareLinkStore>();
 builder.Services.AddSingleton<IApiKeyStore, ConfigApiKeyStore>();
 builder.Services.AddSingleton<ICleFParser, CleFParser>();
 builder.Services.AddSingleton<KqlCompletionService>();
@@ -151,8 +151,8 @@ app.MapPost("/api/ws/{id}/share", async (
 	ShareRequest req,
 	HttpContext ctx,
 	IFieldMaskingPolicyStore policyStore,
-	ShareTokenCodec codec,
-	IOptions<ShareSigningOptions> shareOptions,
+	IShareLinkStore shareLinks,
+	IOptions<ShareOptions> shareOptions,
 	CancellationToken ct) =>
 {
 	if (!WorkspaceId.TryParse(id, out var ws))
@@ -169,43 +169,43 @@ app.MapPost("/api/ws/{id}/share", async (
 			kv => Enum.Parse<MaskMode>(kv.Value, ignoreCase: true),
 			StringComparer.Ordinal);
 
-	var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
 	var columns = (req.Columns ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).ToImmutableArray();
 
-	var tokenStr = codec.Encode(new ShareToken(
-		ws,
-		req.Kql ?? "LogEvents",
-		expiresAt,
-		[.. salt],
-		columns,
-		modes));
+	var link = await shareLinks.CreateAsync(ws, req.Kql ?? "LogEvents", expiresAt, columns, modes, ct);
 
 	if (req.SavePolicy == true && modes.Count > 0)
 		await policyStore.UpsertAsync(ws, modes, ct);
 
-	var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/share/{tokenStr}.tsv";
+	var url = $"{ctx.Request.Scheme}://{ctx.Request.Host}/share/{ws.Value}/{link.Id}.tsv";
 	return Results.Ok(new ShareResponse(url, expiresAt));
 });
 
-app.MapGet("/share/{token}.tsv", async (
-	string token,
+app.MapGet("/share/{ws}/{id}.tsv", async (
+	string ws,
+	string id,
 	HttpContext ctx,
-	ShareTokenCodec codec,
+	IShareLinkStore shareLinks,
 	ILogStore store,
+	IOptions<ShareOptions> shareOptions,
 	CancellationToken ct) =>
 {
-	var decoded = codec.Decode(token);
-	if (decoded is null)
+	if (!WorkspaceId.TryParse(ws, out var workspace))
 		return Results.NotFound();
 
-	if (decoded.ExpiresAt < DateTimeOffset.UtcNow)
-		return Results.StatusCode(StatusCodes.Status410Gone);
+	var link = await shareLinks.GetAsync(workspace, id, ct);
+	if (link is null)
+		return Results.NotFound();
 
-	var opts = ctx.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<ShareSigningOptions>>().Value;
-	var userKql = string.IsNullOrWhiteSpace(decoded.Kql) ? "LogEvents" : decoded.Kql.Trim();
+	if (link.ExpiresAt < DateTimeOffset.UtcNow)
+	{
+		await shareLinks.DeleteAsync(workspace, id, ct);
+		return Results.StatusCode(StatusCodes.Status410Gone);
+	}
+
+	var userKql = string.IsNullOrWhiteSpace(link.Kql) ? "LogEvents" : link.Kql.Trim();
 	var effectiveKql = userKql
 		+ "\n| order by Timestamp desc, Id desc"
-		+ $"\n| take {opts.MaxRows}";
+		+ $"\n| take {shareOptions.Value.MaxRows}";
 
 	Kusto.Language.KustoCode code;
 	try
@@ -222,13 +222,13 @@ app.MapGet("/share/{token}.tsv", async (
 
 	ctx.Response.ContentType = "text/tab-separated-values; charset=utf-8";
 	ctx.Response.Headers.CacheControl = "no-store";
-	var masker = new ValueMasker(decoded.Salt.AsSpan());
-	var policy = new FieldMaskingPolicy(decoded.Modes);
+	var masker = new ValueMasker(link.Salt.AsSpan());
+	var policy = new FieldMaskingPolicy(link.Modes);
 
 	await using var bodyWriter = new StreamWriter(ctx.Response.Body, System.Text.Encoding.UTF8, leaveOpen: true);
 	try
 	{
-		await TsvExporter.WriteAsync(store.QueryKqlAsync(decoded.Workspace, code, ct), decoded.Columns, policy, masker, bodyWriter, ct);
+		await TsvExporter.WriteAsync(store.QueryKqlAsync(workspace, code, ct), link.Columns, policy, masker, bodyWriter, ct);
 	}
 	catch (YobaLog.Core.Kql.UnsupportedKqlException ex)
 	{

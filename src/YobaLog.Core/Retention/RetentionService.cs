@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.Auth;
 using YobaLog.Core.SavedQueries;
+using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
 
 namespace YobaLog.Core.Retention;
@@ -13,6 +14,7 @@ public sealed class RetentionService : BackgroundService
 {
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
+	readonly IShareLinkStore _shareLinks;
 	readonly IApiKeyStore _apiKeys;
 	readonly RetentionOptions _options;
 	readonly ILogger<RetentionService> _logger;
@@ -21,6 +23,7 @@ public sealed class RetentionService : BackgroundService
 	public RetentionService(
 		ILogStore store,
 		ISavedQueryStore savedQueries,
+		IShareLinkStore shareLinks,
 		IApiKeyStore apiKeys,
 		IOptions<RetentionOptions> options,
 		ILogger<RetentionService> logger,
@@ -28,6 +31,7 @@ public sealed class RetentionService : BackgroundService
 	{
 		_store = store;
 		_savedQueries = savedQueries;
+		_shareLinks = shareLinks;
 		_apiKeys = apiKeys;
 		_options = options.Value;
 		_logger = logger;
@@ -56,9 +60,27 @@ public sealed class RetentionService : BackgroundService
 	public async Task RunPassAsync(DateTimeOffset now, CancellationToken ct)
 	{
 		foreach (var ws in _apiKeys.ConfiguredWorkspaces)
+		{
 			await SweepWorkspaceAsync(ws, now, ct).ConfigureAwait(false);
+			await SweepShareLinksAsync(ws, now, ct).ConfigureAwait(false);
+		}
 
 		await SweepSystemAsync(now, ct).ConfigureAwait(false);
+		await SweepShareLinksAsync(WorkspaceId.System, now, ct).ConfigureAwait(false);
+	}
+
+	async Task SweepShareLinksAsync(WorkspaceId ws, DateTimeOffset now, CancellationToken ct)
+	{
+		try
+		{
+			var deleted = await _shareLinks.DeleteExpiredAsync(ws, now, ct).ConfigureAwait(false);
+			if (deleted > 0)
+				RetentionLog.SweptShareLinks(_logger, ws, deleted);
+		}
+		catch (Exception ex) when (ex is not OperationCanceledException)
+		{
+			RetentionLog.ShareLinksFailed(_logger, ex, ws);
+		}
 	}
 
 	async Task SweepWorkspaceAsync(WorkspaceId ws, DateTimeOffset now, CancellationToken ct)
@@ -148,4 +170,12 @@ static partial class RetentionLog
 	[LoggerMessage(EventId = 25, Level = Microsoft.Extensions.Logging.LogLevel.Error,
 		Message = "Retention policy {Policy} on {Workspace} failed")]
 	public static partial void PolicyFailed(ILogger logger, Exception ex, WorkspaceId workspace, string policy);
+
+	[LoggerMessage(EventId = 26, Level = Microsoft.Extensions.Logging.LogLevel.Information,
+		Message = "Share-link sweep on {Workspace}: deleted {Count} expired")]
+	public static partial void SweptShareLinks(ILogger logger, WorkspaceId workspace, long count);
+
+	[LoggerMessage(EventId = 27, Level = Microsoft.Extensions.Logging.LogLevel.Error,
+		Message = "Share-link sweep on {Workspace} failed")]
+	public static partial void ShareLinksFailed(ILogger logger, Exception ex, WorkspaceId workspace);
 }

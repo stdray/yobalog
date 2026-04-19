@@ -11,6 +11,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
+	readonly IShareLinkStore _shareLinks;
 	readonly IApiKeyStore _apiKeys;
 	readonly ILogger<WorkspaceBootstrapper> _logger;
 
@@ -18,12 +19,14 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		ILogStore store,
 		ISavedQueryStore savedQueries,
 		IFieldMaskingPolicyStore maskingPolicies,
+		IShareLinkStore shareLinks,
 		IApiKeyStore apiKeys,
 		ILogger<WorkspaceBootstrapper> logger)
 	{
 		_store = store;
 		_savedQueries = savedQueries;
 		_maskingPolicies = maskingPolicies;
+		_shareLinks = shareLinks;
 		_apiKeys = apiKeys;
 		_logger = logger;
 	}
@@ -45,6 +48,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		await _store.CreateWorkspaceAsync(ws, new WorkspaceSchema(), ct).ConfigureAwait(false);
 		await _savedQueries.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
 		await _maskingPolicies.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
+		await _shareLinks.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
 	}
 
 	public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

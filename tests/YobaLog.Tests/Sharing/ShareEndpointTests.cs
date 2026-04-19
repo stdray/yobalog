@@ -38,9 +38,8 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 						["ApiKeys:Keys:0:Workspace"] = "sharedev",
 						["Admin:Username"] = "admin",
 						["Admin:Password"] = "pw",
-						["ShareSigning:Key"] = Convert.ToBase64String(Enumerable.Repeat((byte)7, 32).ToArray()),
-						["ShareSigning:DefaultTtlHours"] = "1",
-						["ShareSigning:MaxRows"] = "100",
+						["Share:DefaultTtlHours"] = "1",
+						["Share:MaxRows"] = "100",
 					});
 				});
 			});
@@ -195,10 +194,10 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task InvalidToken_404()
+	public async Task UnknownId_404()
 	{
 		using var anon = _factory.CreateClient();
-		using var resp = await anon.GetAsync("/share/garbage.tsv");
+		using var resp = await anon.GetAsync("/share/sharedev/ABCDEFGHIJKLMNOPQRSTUV.tsv");
 		resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
 	}
 

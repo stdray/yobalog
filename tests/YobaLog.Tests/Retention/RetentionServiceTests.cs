@@ -6,6 +6,7 @@ using YobaLog.Core.Auth;
 using YobaLog.Core.Retention;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.SavedQueries.Sqlite;
+using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 
@@ -16,6 +17,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 	readonly string _tempDir;
 	readonly SqliteLogStore _store;
 	readonly SqliteSavedQueryStore _savedQueries;
+	readonly SqliteShareLinkStore _shareLinks;
 	readonly ConfigApiKeyStore _apiKeys;
 	static readonly WorkspaceId UserWs = WorkspaceId.Parse("retention-test");
 
@@ -26,6 +28,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		var storeOpts = Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir });
 		_store = new SqliteLogStore(storeOpts);
 		_savedQueries = new SqliteSavedQueryStore(storeOpts);
+		_shareLinks = new SqliteShareLinkStore(storeOpts);
 		_apiKeys = new ConfigApiKeyStore(Options.Create(new ApiKeyOptions
 		{
 			Keys = [new ApiKeyConfig { Token = "k", Workspace = UserWs.Value }],
@@ -58,6 +61,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		new(
 			_store,
 			_savedQueries,
+			_shareLinks,
 			apiKeys ?? _apiKeys,
 			Options.Create(new RetentionOptions
 			{
