@@ -36,10 +36,54 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-	if (event.key !== "Escape") return;
+	const target = event.target as HTMLElement | null;
+	if (!(target instanceof HTMLTextAreaElement) || target.id !== "kql-textarea") {
+		if (event.key === "Escape") closeKqlPanel();
+		return;
+	}
+
+	const items = Array.from(document.querySelectorAll<HTMLButtonElement>("#kql-completions .kql-suggestion"));
+
+	if (event.key === "Escape") {
+		closeKqlPanel();
+		return;
+	}
+
+	if (items.length === 0) return;
+
+	const current = items.findIndex((b) => b.dataset["kqlActive"] === "1");
+
+	if (event.key === "ArrowDown") {
+		event.preventDefault();
+		highlightKqlItem(items, current < 0 ? 0 : (current + 1) % items.length);
+	} else if (event.key === "ArrowUp") {
+		event.preventDefault();
+		highlightKqlItem(items, current <= 0 ? items.length - 1 : current - 1);
+	} else if (event.key === "Enter" && current >= 0) {
+		event.preventDefault();
+		items[current]?.click();
+	}
+});
+
+function closeKqlPanel(): void {
 	const panel = document.getElementById("kql-completions");
 	if (panel) panel.innerHTML = "";
-});
+}
+
+function highlightKqlItem(items: readonly HTMLButtonElement[], i: number): void {
+	for (let idx = 0; idx < items.length; idx++) {
+		const btn = items[idx];
+		if (!btn) continue;
+		if (idx === i) {
+			btn.dataset["kqlActive"] = "1";
+			btn.classList.add("bg-primary", "text-primary-content");
+			btn.scrollIntoView({ block: "nearest" });
+		} else {
+			btn.removeAttribute("data-kql-active");
+			btn.classList.remove("bg-primary", "text-primary-content");
+		}
+	}
+}
 
 // ---------- Copy-to-clipboard ----------
 
