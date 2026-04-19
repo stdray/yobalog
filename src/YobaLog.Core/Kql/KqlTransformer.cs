@@ -70,6 +70,8 @@ sealed class KqlTransformer
 			current = op switch
 			{
 				ProjectOperator p => ApplyProject(current, p),
+				CountOperator => ApplyCount(current),
+				SummarizeOperator s => ApplySummarize(current, s),
 				_ => throw new UnsupportedKqlException($"operator '{op.Kind}' not supported (yet) in shape-changing pipeline"),
 			};
 		}
@@ -101,6 +103,123 @@ sealed class KqlTransformer
 		}
 
 		return new KqlResult(newColumns, StreamProjected(input.Rows, [.. specs.Select(s => s.SourceIndex)]));
+	}
+
+	static KqlResult ApplyCount(KqlResult input)
+	{
+		var columns = new[] { new KqlColumn("Count", typeof(long)) };
+		return new KqlResult(columns, StreamCount(input.Rows));
+	}
+
+	static KqlResult ApplySummarize(KqlResult input, SummarizeOperator op)
+	{
+		var aggSpecs = new List<(string OutputName, KqlAggregate Kind)>();
+		foreach (var element in op.Aggregates)
+		{
+			var (name, call) = element.Element switch
+			{
+				FunctionCallExpression f => ($"{f.Name.SimpleName}_", f),
+				SimpleNamedExpression { Name: NameDeclaration alias, Expression: FunctionCallExpression f }
+					=> (alias.Name.SimpleName, f),
+				_ => throw new UnsupportedKqlException($"summarize aggregate '{element.Element.Kind}' not supported"),
+			};
+
+			var kind = call.Name.SimpleName switch
+			{
+				"count" when call.ArgumentList.Expressions.Count == 0 => KqlAggregate.Count,
+				_ => throw new UnsupportedKqlException(
+					$"aggregate '{call.Name.SimpleName}' not supported (only count() for now)"),
+			};
+			aggSpecs.Add((name, kind));
+		}
+
+		var groupCols = new List<string>();
+		if (op.ByClause is not null)
+		{
+			foreach (var element in op.ByClause.Expressions)
+			{
+				if (element.Element is not NameReference n)
+					throw new UnsupportedKqlException($"summarize by '{element.Element.Kind}' not supported (column refs only)");
+				groupCols.Add(n.SimpleName);
+			}
+		}
+
+		var groupIndices = new int[groupCols.Count];
+		var outputColumns = new List<KqlColumn>();
+		for (var i = 0; i < groupCols.Count; i++)
+		{
+			var idx = FindColumnIndex(input.Columns, groupCols[i]);
+			if (idx < 0)
+				throw new UnsupportedKqlException($"summarize by: unknown column '{groupCols[i]}'");
+			groupIndices[i] = idx;
+			outputColumns.Add(new KqlColumn(groupCols[i], input.Columns[idx].ClrType));
+		}
+		foreach (var (name, _) in aggSpecs)
+			outputColumns.Add(new KqlColumn(name, typeof(long)));
+
+		return new KqlResult(outputColumns, StreamSummarize(input.Rows, groupIndices, aggSpecs.Count));
+	}
+
+	enum KqlAggregate { Count }
+
+	static async IAsyncEnumerable<object?[]> StreamSummarize(
+		IAsyncEnumerable<object?[]> source,
+		int[] groupIndices,
+		int aggCount,
+		[EnumeratorCancellation] CancellationToken ct = default)
+	{
+		var groups = new Dictionary<GroupKey, long>();
+
+		await foreach (var row in source.WithCancellation(ct).ConfigureAwait(false))
+		{
+			var keyValues = new object?[groupIndices.Length];
+			for (var i = 0; i < groupIndices.Length; i++)
+				keyValues[i] = row[groupIndices[i]];
+			var key = new GroupKey(keyValues);
+			groups.TryGetValue(key, out var count);
+			groups[key] = count + 1;
+		}
+
+		foreach (var (key, count) in groups)
+		{
+			var result = new object?[key.Values.Length + aggCount];
+			for (var i = 0; i < key.Values.Length; i++)
+				result[i] = key.Values[i];
+			for (var i = 0; i < aggCount; i++)
+				result[key.Values.Length + i] = count;
+			yield return result;
+		}
+	}
+
+	sealed record GroupKey(object?[] Values)
+	{
+		public bool Equals(GroupKey? other)
+		{
+			if (other is null || Values.Length != other.Values.Length)
+				return false;
+			for (var i = 0; i < Values.Length; i++)
+				if (!Equals(Values[i], other.Values[i]))
+					return false;
+			return true;
+		}
+
+		public override int GetHashCode()
+		{
+			var h = new HashCode();
+			foreach (var v in Values)
+				h.Add(v);
+			return h.ToHashCode();
+		}
+	}
+
+	static async IAsyncEnumerable<object?[]> StreamCount(
+		IAsyncEnumerable<object?[]> source,
+		[EnumeratorCancellation] CancellationToken ct = default)
+	{
+		long n = 0;
+		await foreach (var _ in source.WithCancellation(ct).ConfigureAwait(false))
+			n++;
+		yield return [n];
 	}
 
 	static async IAsyncEnumerable<object?[]> StreamProjected(

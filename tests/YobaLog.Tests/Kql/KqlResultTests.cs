@@ -55,9 +55,9 @@ public sealed class KqlResultTests
 	[Fact]
 	public void Execute_Unsupported_ThrowsEagerly()
 	{
-		var ast = KustoCode.Parse("LogEvents | summarize count()");
+		var ast = KustoCode.Parse("LogEvents | distinct Level");
 		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*SummarizeOperator*");
+		act.Should().Throw<UnsupportedKqlException>();
 	}
 
 	[Fact]
@@ -121,5 +121,111 @@ public sealed class KqlResultTests
 		var ast = KustoCode.Parse("LogEvents | project Doubled = Id + Id");
 		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>();
+	}
+
+	[Fact]
+	public async Task Count_ReturnsScalar()
+	{
+		var ast = KustoCode.Parse("LogEvents | count");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		result.Columns.Should().HaveCount(1);
+		result.Columns[0].Name.Should().Be("Count");
+		result.Columns[0].ClrType.Should().Be<long>();
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows.Should().HaveCount(1);
+		rows[0][0].Should().Be(2L);
+	}
+
+	[Fact]
+	public async Task Where_Then_Count_FiltersFirst()
+	{
+		var ast = KustoCode.Parse("LogEvents | where Level == 4 | count");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows[0][0].Should().Be(1L);
+	}
+
+	static readonly EventRecord[] SummarizeRows =
+	[
+		new() { Id = 1, Level = (int)LogLevel.Error, Message = "a", TraceId = "t1" },
+		new() { Id = 2, Level = (int)LogLevel.Error, Message = "b", TraceId = "t1" },
+		new() { Id = 3, Level = (int)LogLevel.Warning, Message = "c", TraceId = "t2" },
+		new() { Id = 4, Level = (int)LogLevel.Information, Message = "d", TraceId = "t1" },
+		new() { Id = 5, Level = (int)LogLevel.Error, Message = "e", TraceId = "t2" },
+	];
+
+	[Fact]
+	public async Task Summarize_CountByColumn_GroupsCorrectly()
+	{
+		var ast = KustoCode.Parse("LogEvents | summarize count() by Level");
+		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Level", "count_");
+
+		var rows = new List<(int Level, long Count)>();
+		await foreach (var r in result.Rows)
+			rows.Add(((int)r[0]!, (long)r[1]!));
+
+		rows.Should().BeEquivalentTo(new (int, long)[]
+		{
+			((int)LogLevel.Error, 3),
+			((int)LogLevel.Warning, 1),
+			((int)LogLevel.Information, 1),
+		});
+	}
+
+	[Fact]
+	public async Task Summarize_CountWithAlias_UsesGivenName()
+	{
+		var ast = KustoCode.Parse("LogEvents | summarize n = count() by Level");
+		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Level", "n");
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows.Sum(r => (long)r[1]!).Should().Be(5);
+	}
+
+	[Fact]
+	public async Task Summarize_CountByMultipleColumns()
+	{
+		var ast = KustoCode.Parse("LogEvents | summarize count() by Level, TraceId");
+		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Level", "TraceId", "count_");
+
+		var rows = new List<(int Level, string? TraceId, long Count)>();
+		await foreach (var r in result.Rows)
+			rows.Add(((int)r[0]!, (string?)r[1], (long)r[2]!));
+
+		rows.Should().Contain(((int)LogLevel.Error, "t1", 2L));
+		rows.Should().Contain(((int)LogLevel.Error, "t2", 1L));
+		rows.Should().Contain(((int)LogLevel.Warning, "t2", 1L));
+		rows.Should().Contain(((int)LogLevel.Information, "t1", 1L));
+	}
+
+	[Fact]
+	public async Task Summarize_CountWithoutBy_SingleRow()
+	{
+		var ast = KustoCode.Parse("LogEvents | summarize count()");
+		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("count_");
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows.Should().HaveCount(1);
+		rows[0][0].Should().Be(5L);
+	}
+
+	[Fact]
+	public void Summarize_UnsupportedAggregate_Throws()
+	{
+		var ast = KustoCode.Parse("LogEvents | summarize avg(Level)");
+		var act = () => _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		act.Should().Throw<UnsupportedKqlException>().WithMessage("*avg*");
 	}
 }
