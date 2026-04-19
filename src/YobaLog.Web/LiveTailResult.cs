@@ -21,7 +21,7 @@ sealed class LiveTailResult(
 	ITailBroadcaster broadcaster,
 	IRazorPartialRenderer renderer) : IResult
 {
-	const string PartialName = "_EventLiveRow";
+	const string PartialName = "_EventRow";
 
 	public async Task ExecuteAsync(HttpContext httpContext)
 	{
@@ -33,7 +33,8 @@ sealed class LiveTailResult(
 		var ct = httpContext.RequestAborted;
 		await foreach (var candidate in broadcaster.Subscribe(ws, query, ct).ConfigureAwait(false))
 		{
-			var html = await renderer.RenderAsync(PartialName, candidate, httpContext).ConfigureAwait(false);
+			var vm = EventRowViewModel.FromLive(candidate);
+			var html = await renderer.RenderAsync(PartialName, vm, httpContext).ConfigureAwait(false);
 			await WriteSseFrameAsync(httpContext.Response, "event", Flatten(html), ct).ConfigureAwait(false);
 		}
 	}

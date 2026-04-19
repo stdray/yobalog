@@ -1,0 +1,69 @@
+@using YobaLog.Web
+@model EventRowViewModel
+@{
+	var rowClasses = "align-top hover" + (Model.IsLive ? " event-live" : " cursor-pointer");
+}
+<tr class="@rowClasses"@(Model.IsLive || Model.Id is null ? "" : $" data-event-id=\"{Model.Id}\"")>
+	<td class="font-mono text-xs opacity-70 whitespace-nowrap">@Model.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
+	<td><span class="badge badge-sm @EventRowViewModel.LevelBadge(Model.Level)">@Model.Level</span></td>
+	<td class="break-words">
+		<div class="flex items-start gap-2">
+			<span class="flex-1">@Model.Message</span>
+			@if (!Model.IsLive)
+			{
+				<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+					data-copy="@Model.Message"
+					title="Copy message">⧉</button>
+			}
+		</div>
+		@if (!string.IsNullOrEmpty(Model.Exception))
+		{
+			<pre class="mt-1 text-xs text-error whitespace-pre-wrap">@Model.Exception</pre>
+		}
+	</td>
+	<td class="font-mono text-xs opacity-70 truncate">@Model.TraceId</td>
+</tr>
+@if (!Model.IsLive && Model.Id is not null)
+{
+	<tr class="event-details hidden bg-base-300/50">
+		<td colspan="4" class="text-xs">
+			<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono">
+				<dt class="opacity-60">Id</dt><dd>@Model.Id</dd>
+				<dt class="opacity-60">Timestamp</dt><dd>@Model.Timestamp.ToString("O")</dd>
+				<dt class="opacity-60">Level</dt><dd>@Model.Level (@((int)Model.Level))</dd>
+				@if (!string.IsNullOrEmpty(Model.MessageTemplate) && Model.MessageTemplate != Model.Message)
+				{
+					<dt class="opacity-60">Template</dt><dd class="break-all">@Model.MessageTemplate</dd>
+				}
+				@if (!string.IsNullOrEmpty(Model.TraceId))
+				{
+					<dt class="opacity-60">TraceId</dt>
+					<dd class="flex items-center gap-2">
+						<span>@Model.TraceId</span>
+						<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+							data-copy="@Model.TraceId" title="Copy trace id">⧉</button>
+					</dd>
+				}
+				@if (!string.IsNullOrEmpty(Model.SpanId))
+				{
+					<dt class="opacity-60">SpanId</dt><dd>@Model.SpanId</dd>
+				}
+				@if (Model.EventId is not null)
+				{
+					<dt class="opacity-60">EventId</dt><dd>@Model.EventId</dd>
+				}
+			</dl>
+			@if (!string.IsNullOrEmpty(Model.PropertiesJson))
+			{
+				<div class="mt-3">
+					<div class="flex items-center gap-2 mb-1">
+						<span class="opacity-60">Properties</span>
+						<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+							data-copy="@Model.PropertiesJson" title="Copy properties JSON">⧉ json</button>
+					</div>
+					<pre class="whitespace-pre-wrap break-all bg-base-200 p-2 rounded">@Model.PropertiesJson</pre>
+				</div>
+			}
+		</td>
+	</tr>
+}
