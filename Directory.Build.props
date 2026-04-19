@@ -9,6 +9,7 @@
 		<AnalysisLevel>latest-recommended</AnalysisLevel>
 		<AnalysisMode>All</AnalysisMode>
 		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+		<NoWarn>$(NoWarn);NETSDK1206</NoWarn>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 		<InvariantGlobalization>true</InvariantGlobalization>
 	</PropertyGroup>
