@@ -59,18 +59,38 @@ document.addEventListener("keydown", (event) => {
 	if (items.length === 0) return;
 
 	const current = items.findIndex((b) => b.dataset["kqlActive"] === "1");
+	const cols = countKqlCols(items);
+	const n = items.length;
+	const start = current < 0 ? 0 : current;
 
-	if (event.key === "ArrowDown") {
+	if (event.key === "ArrowRight") {
 		event.preventDefault();
-		highlightKqlItem(items, current < 0 ? 0 : (current + 1) % items.length);
+		highlightKqlItem(items, (start + 1) % n);
+	} else if (event.key === "ArrowLeft") {
+		event.preventDefault();
+		highlightKqlItem(items, (start - 1 + n) % n);
+	} else if (event.key === "ArrowDown") {
+		event.preventDefault();
+		highlightKqlItem(items, current < 0 ? 0 : (current + cols) % n);
 	} else if (event.key === "ArrowUp") {
 		event.preventDefault();
-		highlightKqlItem(items, current <= 0 ? items.length - 1 : current - 1);
+		highlightKqlItem(items, current < 0 ? n - 1 : (current - cols + n) % n);
 	} else if (event.key === "Enter" && current >= 0) {
 		event.preventDefault();
 		items[current]?.click();
 	}
 });
+
+function countKqlCols(items: readonly HTMLButtonElement[]): number {
+	if (items.length < 2) return 1;
+	const topRow = items[0]?.offsetTop ?? 0;
+	let cols = 0;
+	for (const item of items) {
+		if (item.offsetTop === topRow) cols++;
+		else break;
+	}
+	return cols || 1;
+}
 
 function closeKqlPanel(): void {
 	const panel = document.getElementById("kql-completions");

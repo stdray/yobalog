@@ -29,10 +29,10 @@ sealed class KqlCompletionsHtmlResult(KqlCompletionsResponse response) : IResult
 
 		var sb = new StringBuilder();
 		sb.Append(System.Globalization.CultureInfo.InvariantCulture,
-			$"""<ul data-kql-completions data-edit-start="{r.EditStart}" data-edit-length="{r.EditLength}" class="menu bg-base-300 border border-primary/40 rounded-box mt-1 max-h-72 overflow-y-auto absolute z-30 w-full shadow-2xl">""");
+			$"""<ul data-kql-completions data-edit-start="{r.EditStart}" data-edit-length="{r.EditLength}" class="grid grid-cols-1 sm:grid-cols-2 gap-0.5 p-1 bg-base-300 border border-primary/40 rounded-box mt-1 max-h-72 overflow-y-auto absolute z-30 w-full shadow-2xl list-none">""");
 		foreach (var item in r.Items)
 		{
-			sb.Append("<li><button type=\"button\" class=\"kql-suggestion flex justify-between items-center gap-2 text-xs font-mono\" ");
+			sb.Append("<li><button type=\"button\" class=\"kql-suggestion flex justify-between items-center gap-2 text-xs font-mono w-full px-2 py-1 rounded hover:bg-base-100 text-left\" ");
 			sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"""data-before="{WebUtility.HtmlEncode(item.BeforeText)}" data-after="{WebUtility.HtmlEncode(item.AfterText)}">""");
 			sb.Append(WebUtility.HtmlEncode(item.DisplayText));
 			sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"""<span class="opacity-50">{WebUtility.HtmlEncode(item.Kind)}</span>""");
