@@ -11,7 +11,9 @@
 		<Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 
-	<Target Name="BuildFrontend" BeforeTargets="Build">
+	<!-- Set RunBunBuild=false (env var or MSBuild prop) to skip — dev script uses this so
+	     `dotnet watch` doesn't fight the `bun run dev` watcher for wwwroot/ output. -->
+	<Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(RunBunBuild)' != 'false'">
 		<Exec Command="bun run build" WorkingDirectory="$(MSBuildProjectDirectory)" />
 	</Target>
 
