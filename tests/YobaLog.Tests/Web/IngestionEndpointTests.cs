@@ -84,7 +84,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 		using var client = _factory.CreateClient();
 		using var resp = await client.PostAsync(
 			"/api/events/raw",
-			new StringContent("""{"@t":"2026-04-19T10:00:00Z"}""", Encoding.UTF8, "application/json"));
+			new StringContent("""{"@t":"2026-04-19T10:00:00Z"}""", Encoding.UTF8, "application/vnd.serilog.clef"));
 
 		resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 	}
@@ -95,7 +95,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 		using var client = _factory.CreateClient();
 		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/events/raw")
 		{
-			Content = new StringContent("""{"@t":"2026-04-19T10:00:00Z"}""", Encoding.UTF8, "application/json"),
+			Content = new StringContent("""{"@t":"2026-04-19T10:00:00Z"}""", Encoding.UTF8, "application/vnd.serilog.clef"),
 		};
 		req.Headers.Add("X-Seq-ApiKey", "bogus");
 
@@ -111,7 +111,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 
 		using var resp = await client.PostAsync(
 			"/api/events/raw?apiKey=test-key",
-			new StringContent(body, Encoding.UTF8, "application/json"));
+			new StringContent(body, Encoding.UTF8, "application/vnd.serilog.clef"));
 
 		resp.StatusCode.Should().Be(HttpStatusCode.Created);
 	}
@@ -127,7 +127,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 
 		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/events/raw")
 		{
-			Content = new StringContent(body, Encoding.UTF8, "application/json"),
+			Content = new StringContent(body, Encoding.UTF8, "application/vnd.serilog.clef"),
 		};
 		req.Headers.Add("X-Seq-ApiKey", "test-key");
 

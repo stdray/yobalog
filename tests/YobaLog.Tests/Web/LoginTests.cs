@@ -172,7 +172,7 @@ public sealed class LoginTests : IAsyncLifetime
 			Content = new StringContent(
 				"""{"@t":"2026-04-19T10:00:00Z","@m":"x"}""",
 				System.Text.Encoding.UTF8,
-				"application/json"),
+				"application/vnd.serilog.clef"),
 		};
 		req.Headers.Add("X-Seq-ApiKey", "key");
 
