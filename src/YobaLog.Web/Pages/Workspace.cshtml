@@ -15,10 +15,36 @@
 	};
 }
 
-<div class="mb-4 flex items-baseline gap-3">
+<div class="mb-4 flex items-baseline gap-3 flex-wrap">
 	<a asp-page="/Index" class="text-sm opacity-60 hover:opacity-100">← workspaces</a>
 	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-secondary" : "")">@Model.Workspace.Value</h1>
+	@if (Model.ActiveSavedName is not null)
+	{
+		<span class="badge badge-primary font-mono">saved: @Model.ActiveSavedName</span>
+	}
 </div>
+
+@if (Model.SavedQueries.Count > 0)
+{
+	<div class="mb-4 flex flex-wrap items-center gap-2 text-xs">
+		<span class="opacity-60">Saved:</span>
+		@foreach (var sq in Model.SavedQueries)
+		{
+			<span class="join">
+				<a asp-page="/Workspace"
+					asp-route-id="@Model.Workspace.Value"
+					asp-route-saved="@sq.Name"
+					class="btn btn-xs join-item font-mono @(Model.ActiveSavedName == sq.Name ? "btn-primary" : "btn-ghost")">@sq.Name</a>
+				<form method="post" asp-page-handler="delete" asp-route-id="@Model.Workspace.Value" class="join-item">
+					<input type="hidden" name="savedId" value="@sq.Id" />
+					<button type="submit" class="btn btn-xs btn-ghost"
+						onclick="return confirm('Delete saved query @sq.Name?');"
+						title="Delete">×</button>
+				</form>
+			</span>
+		}
+	</div>
+}
 
 <form method="get" class="mb-4 bg-base-200 border border-base-300 rounded-box p-4 flex flex-col gap-3">
 	<div class="grid grid-cols-1 md:grid-cols-6 gap-3 @(Model.RawKqlMode ? "opacity-40 pointer-events-none" : "")">
@@ -70,10 +96,23 @@
 		</p>
 	</details>
 
-	<div class="flex gap-2">
+	<div class="flex gap-2 flex-wrap items-center">
 		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
 		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
 	</div>
+</form>
+
+<form method="post" asp-page-handler="save" asp-route-id="@Model.Workspace.Value"
+	class="mb-4 flex gap-2 items-end flex-wrap">
+	<label class="form-control flex-1 min-w-48">
+		<span class="label-text text-xs opacity-70">Save current query as</span>
+		<input type="text" name="name" value="@Model.ActiveSavedName" required
+			placeholder="errors-last-hour"
+			pattern="[A-Za-z0-9 _\-]+"
+			class="input input-sm input-bordered" />
+	</label>
+	<input type="hidden" name="kql" value="@Model.UserKql" />
+	<button type="submit" class="btn btn-sm btn-secondary">Save as…</button>
 </form>
 
 @if (Model.KqlError is not null)

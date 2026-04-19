@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
 using YobaLog.Core.Kql;
+using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 using LogLevel = YobaLog.Core.LogLevel;
@@ -14,10 +15,12 @@ namespace YobaLog.Web.Pages;
 public sealed class WorkspaceModel : PageModel
 {
 	readonly ILogStore _store;
+	readonly ISavedQueryStore _savedQueries;
 
-	public WorkspaceModel(ILogStore store)
+	public WorkspaceModel(ILogStore store, ISavedQueryStore savedQueries)
 	{
 		_store = store;
+		_savedQueries = savedQueries;
 	}
 
 	public WorkspaceId Workspace { get; private set; }
@@ -43,6 +46,9 @@ public sealed class WorkspaceModel : PageModel
 	[BindProperty(SupportsGet = true, Name = "kql")]
 	public string? RawKql { get; set; }
 
+	[BindProperty(SupportsGet = true, Name = "saved")]
+	public string? SavedName { get; set; }
+
 	public const int PageSize = 50;
 
 	public List<LogEvent> Events { get; } = [];
@@ -59,12 +65,29 @@ public sealed class WorkspaceModel : PageModel
 
 	public string? KqlError { get; private set; }
 
+	public IReadOnlyList<SavedQuery> SavedQueries { get; private set; } = [];
+
+	public string? ActiveSavedName { get; private set; }
+
+	public string? FlashError { get; private set; }
+
 	public async Task<IActionResult> OnGetAsync(string id, CancellationToken ct)
 	{
 		if (!WorkspaceId.TryParse(id, out var ws))
 			return NotFound();
 
 		Workspace = ws;
+		SavedQueries = await _savedQueries.ListAsync(ws, ct);
+
+		if (!string.IsNullOrWhiteSpace(SavedName))
+		{
+			var saved = await _savedQueries.GetByNameAsync(ws, SavedName, ct);
+			if (saved is not null)
+			{
+				RawKql = saved.Kql;
+				ActiveSavedName = saved.Name;
+			}
+		}
 
 		RawKqlMode = !string.IsNullOrWhiteSpace(RawKql);
 		UserKql = RawKqlMode ? RawKql!.Trim() : BuildUserKql();
@@ -111,6 +134,34 @@ public sealed class WorkspaceModel : PageModel
 		}
 
 		return Page();
+	}
+
+	public async Task<IActionResult> OnPostSaveAsync(
+		string id,
+		[FromForm(Name = "name")] string? name,
+		[FromForm(Name = "kql")] string? kql,
+		CancellationToken ct)
+	{
+		if (!WorkspaceId.TryParse(id, out var ws))
+			return NotFound();
+
+		if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(kql))
+			return RedirectToPage(new { id });
+
+		await _savedQueries.UpsertAsync(ws, name.Trim(), kql, ct);
+		return RedirectToPage(new { id, saved = name.Trim() });
+	}
+
+	public async Task<IActionResult> OnPostDeleteAsync(
+		string id,
+		[FromForm(Name = "savedId")] long savedId,
+		CancellationToken ct)
+	{
+		if (!WorkspaceId.TryParse(id, out var ws))
+			return NotFound();
+
+		await _savedQueries.DeleteAsync(ws, savedId, ct);
+		return RedirectToPage(new { id });
 	}
 
 	string AppendPageLimits(string userKql)
