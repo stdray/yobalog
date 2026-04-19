@@ -4,6 +4,40 @@
 
 ---
 
+## 2026-04-19 — FTS5 MATCH в IN-subquery медленнее LIKE на частых словах: известная особенность SQLite
+**Решение:** текущую реализацию `has` через `{rowid} IN (SELECT rowid FROM EventsFts WHERE Message MATCH ?)` оставляем в MVP. В `perf-baseline.md` задокументировано: на частом слове + `take 50` она в 100x медленнее `contains` через LIKE. Это — **не баг нашей интеграции**, а стандартный failure-mode SQLite FTS5 query-planner'а при LIMIT поверх IN-подзапроса. Оптимизация отложена до Phase D/E (когда появятся реальные use-case'ы).
+**Причина:** SQLite community подтверждает (см. ссылки ниже):
+- IN-подзапрос с FTS MATCH материализует **полный rowid-set** до применения внешнего LIMIT. На селективных запросах (редкое слово — 10 rowids) это быстро, на частых (90k rowids) — медленно.
+- JOIN-форма (`SELECT * FROM EventsFts JOIN Events ON Events.Id = EventsFts.rowid WHERE MATCH ? LIMIT N`) в теории позволяет LIMIT протолкнуться через FTS-итератор, но query-planner часто выбирает `torrents → fts` вместо `fts → torrents` и сам становится в 380x медленнее (см. sqlite.org/forum). Поведение нестабильно, зависит от `ANALYZE` и версии SQLite.
+- Первая рекомендация community — запустить `ANALYZE` на таблице; иногда единственный нужный фикс.
+- Для "правильной" early-termination через FTS нужен rewrite на raw SQL (не через linq2db `[Sql.Expression]`): FTS-table как driving, явный LIMIT. Это ломает compose с другими `where` предикатами (нужен полный SQL-builder или отдельная `QueryFtsAsync` ветка на `SqliteLogStore`).
+
+Пока — задокументировано в `perf-baseline.md` как surprise, и UI-hint пользователю "used `has` → fast on rare terms, slow on frequent" можно дать при появлении editor-warnings. Fix-варианты:
+1. `ANALYZE` на boot / после крупного ingest — дешёвый эксперимент.
+2. Raw-SQL ветка `SqliteLogStore.QueryFtsMatchAsync(message, take)` для специфического `has + take` паттерна.
+3. Принять разницу и рекомендовать `contains` для частых слов.
+
+**Источники:**
+- [SQLite User Forum: Bad query plans from FTS5](https://sqlite.org/forum/info/e0e30e9eb1998e3c9305aea26957bec804615283969d11c1f9326a6b787526eb)
+- [SQLite User Forum: JOINs with FTS5 virtual tables are very slow](https://sqlite.org/forum/info/509bdbe534f58f20)
+- [phiresky/sql.js-httpvfs#10 — ORDER BY rank FTS5 performance](https://github.com/phiresky/sql.js-httpvfs/issues/10)
+
+**Откатили:** предположение "FTS5 всегда быстрее LIKE, потому что индекс". Реальность: FTS5 выигрывает только на селективных запросах или когда LIMIT виден самой FTS-итерации. Для `| has 'common-word' | take N` при частом слове table-scan с early-exit через `contains` быстрее.
+
+## 2026-04-19 — Benchmark-проект: подавление CA1001, CA1034, CA1050, CA1515, CA1707, CA1812, CA1822, CA1848, CA2007
+**Решение:** `<NoWarn>$(NoWarn);CA1707;CA1848;CA1822;CA1034;CA1050;CA1515;CA2007;CA1812;CA1001</NoWarn>` в `benchmarks/YobaLog.Benchmarks/YobaLog.Benchmarks.csproj`. Production-код (src/**) и тесты (tests/**) по-прежнему escalate all analyzers to error — суппрессия только внутри bench-проекта.
+**Причина:**
+- **CA1001** — "type owns disposable field but isn't IDisposable". В BDN disposable-поля (`SqliteLogStore`, `ChannelIngestionPipeline`) чистятся в `[GlobalCleanup]`/`[IterationCleanup]`, не через `IDisposable`; BDN lifecycle-hook'ы — явная альтернатива и это стандартный паттерн для benchmark-классов.
+- **CA1034** — запрет nested public types. BDN inline-generated helpers (e.g. `[Params]`-enums) иногда удобнее как nested.
+- **CA1050** — все типы в namespace. `Program.cs` у BDN — top-level statements без namespace, это стандартная форма BDN-runner'а.
+- **CA1515** — sealed-by-default. BDN открывает benchmark-классы через reflection (inherit для runner'а), sealed ломает runtime discovery.
+- **CA1707** — underscore naming. BDN benchmarks часто используют `Method_Variant` для читаемости колонки "Method" в таблице.
+- **CA1812** — "never instantiated class". Bench-классы создаются BDN-runner'ом через reflection, анализатор их не видит.
+- **CA1822** — "can be static". BDN требует instance-метод для `[Benchmark]`.
+- **CA1848** — LoggerMessage.Define. Bench-код не логирует; если логирует — выражается через benchmarks, которые не нужны source-gen.
+- **CA2007** — `ConfigureAwait(false)`. BDN-код не использует `SynchronizationContext`, warning шумовой (как в тестах).
+**Откатили:** идею подчинять bench-проект тем же правилам, что и production. Bench-код специфичен BDN и чаще спорит с "универсальными" правилами чистоты, чем с production-кодом.
+
 ## 2026-04-19 — KqlResult как loose-typed shape-container; shape-changing ops in-memory после SQL-prefix
 **Решение:** для shape-changing KQL-операторов (`project`, `extend`, `count`, `summarize count() by …`) ввёден `KqlResult { IReadOnlyList<KqlColumn> Columns, IAsyncEnumerable<object?[]> Rows }` — loose-typed таблица с явными метаданными колонок. `KqlTransformer.Execute` разбивает pipeline на два куска: shape-preserving prefix (`where` / `take` / `order by` — push down в SQL через `Apply` + linq2db) и shape-changing suffix (поверх материализованного потока, в C#). Старый контракт `Apply(...) → IQueryable<EventRecord>` оставлен нетронутым для event-shape путей (viewer, retention).
 **Причина:** сильно-типизированный `IQueryable<EventRecord>` не выражает результат `| project Id, Message` (анонимная 2-колонка) или `| summarize count() by Level` (int + long), а generic `Apply<T>` требовал бы runtime codegen класса под каждый запрос. Альтернатива — держать шейп статически типизированным через per-query anonymous types через linq2db — вытягивает в LINQ-to-Objects сложные выражения и ломает SQL-pushdown; вынудила бы ручной SqlBuilder с нуля. `KqlResult` — стандартный подход в DB-мире (drivers, ODBC, ADO.NET): явная schema + row-of-objects, с конкретным Type per column для сравнения значений. Потеря compile-time типов компенсирована eager validation (unknown column / unsupported expression / unknown aggregate → `UnsupportedKqlException` с actionable message на стадии `Execute`). Shape-suffix в C# (Dictionary-grouping, массивы) — приемлемо для PageSize=50 viewer'а и saved-query результатов; оптимизация в SQL GROUP BY / anonymous type projections — будущая работа, не меняет контракт.
