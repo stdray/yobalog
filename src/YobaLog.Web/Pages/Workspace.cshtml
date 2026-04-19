@@ -20,40 +20,61 @@
 	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-secondary" : "")">@Model.Workspace.Value</h1>
 </div>
 
-<form method="get" class="mb-4 bg-base-200 border border-base-300 rounded-box p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
-	<label class="form-control md:col-span-2">
-		<span class="label-text text-xs opacity-70">Message contains</span>
-		<input type="text" name="message" value="@Model.Message" class="input input-sm input-bordered" />
-	</label>
-	<label class="form-control">
-		<span class="label-text text-xs opacity-70">Min level</span>
-		<select name="minLevel" class="select select-sm select-bordered">
-			<option value="">(any)</option>
-			@foreach (var lvl in Enum.GetValues<YobaLog.Core.LogLevel>())
-			{
-				<option value="@lvl" selected="@(Model.MinLevel == lvl)">@lvl</option>
-			}
-		</select>
-	</label>
-	<label class="form-control">
-		<span class="label-text text-xs opacity-70">Trace ID</span>
-		<input type="text" name="traceId" value="@Model.TraceId" class="input input-sm input-bordered font-mono" />
-	</label>
-	<label class="form-control">
-		<span class="label-text text-xs opacity-70">From (UTC)</span>
-		<input type="datetime-local" name="from" value="@Model.From" class="input input-sm input-bordered" />
-	</label>
-	<label class="form-control">
-		<span class="label-text text-xs opacity-70">To (UTC)</span>
-		<input type="datetime-local" name="to" value="@Model.To" class="input input-sm input-bordered" />
-	</label>
-	<div class="md:col-span-6 flex gap-2">
+<form method="get" class="mb-4 bg-base-200 border border-base-300 rounded-box p-4 flex flex-col gap-3">
+	<div class="grid grid-cols-1 md:grid-cols-6 gap-3 @(Model.RawKqlMode ? "opacity-40 pointer-events-none" : "")">
+		<label class="form-control md:col-span-2">
+			<span class="label-text text-xs opacity-70">Message contains</span>
+			<input type="text" name="message" value="@Model.Message" class="input input-sm input-bordered" />
+		</label>
+		<label class="form-control">
+			<span class="label-text text-xs opacity-70">Min level</span>
+			<select name="minLevel" class="select select-sm select-bordered">
+				<option value="">(any)</option>
+				@foreach (var lvl in Enum.GetValues<YobaLog.Core.LogLevel>())
+				{
+					<option value="@lvl" selected="@(Model.MinLevel == lvl)">@lvl</option>
+				}
+			</select>
+		</label>
+		<label class="form-control">
+			<span class="label-text text-xs opacity-70">Trace ID</span>
+			<input type="text" name="traceId" value="@Model.TraceId" class="input input-sm input-bordered font-mono" />
+		</label>
+		<label class="form-control">
+			<span class="label-text text-xs opacity-70">From (UTC)</span>
+			<input type="datetime-local" name="from" value="@Model.From" class="input input-sm input-bordered" />
+		</label>
+		<label class="form-control">
+			<span class="label-text text-xs opacity-70">To (UTC)</span>
+			<input type="datetime-local" name="to" value="@Model.To" class="input input-sm input-bordered" />
+		</label>
+	</div>
+
+	<details class="bg-base-300 rounded-box p-3" @(Model.RawKqlMode ? "open" : "")>
+		<summary class="cursor-pointer text-xs opacity-70 select-none">
+			KQL @(Model.RawKqlMode ? "(raw mode — form disabled)" : "(derived from form above)")
+		</summary>
+		<textarea name="kql" rows="6"
+			placeholder="LogEvents | where Level >= 3 | where Message contains 'boom'"
+			class="textarea textarea-sm textarea-bordered w-full mt-2 font-mono text-xs">@(Model.RawKqlMode ? Model.RawKql : Model.UserKql)</textarea>
+		<p class="text-xs opacity-60 mt-1">
+			Typing here overrides the form above. Clear to re-enable form mode. Paging (order by, take, cursor) appended automatically.
+		</p>
+	</details>
+
+	<div class="flex gap-2">
 		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
 		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
 	</div>
 </form>
 
-@if (Model.SchemaMissing)
+@if (Model.KqlError is not null)
+{
+	<div class="alert alert-error mb-4">
+		<pre class="whitespace-pre-wrap text-xs">@Model.KqlError</pre>
+	</div>
+}
+else if (Model.SchemaMissing)
 {
 	<div class="alert">Workspace has no events yet.</div>
 }
@@ -103,6 +124,7 @@ else
 				asp-route-minLevel="@Model.MinLevel"
 				asp-route-traceId="@Model.TraceId"
 				asp-route-message="@Model.Message"
+				asp-route-kql="@Model.RawKql"
 				asp-route-cursor="@Model.NextCursor"
 				class="btn btn-sm btn-ghost">
 				Load older →

@@ -4,6 +4,7 @@ using Kusto.Language;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
+using YobaLog.Core.Kql;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 using LogLevel = YobaLog.Core.LogLevel;
@@ -39,6 +40,9 @@ public sealed class WorkspaceModel : PageModel
 	[BindProperty(SupportsGet = true)]
 	public string? Cursor { get; set; }
 
+	[BindProperty(SupportsGet = true, Name = "kql")]
+	public string? RawKql { get; set; }
+
 	public const int PageSize = 50;
 
 	public List<LogEvent> Events { get; } = [];
@@ -47,7 +51,13 @@ public sealed class WorkspaceModel : PageModel
 
 	public bool SchemaMissing { get; private set; }
 
-	public string Kql { get; private set; } = "";
+	public bool RawKqlMode { get; private set; }
+
+	public string UserKql { get; private set; } = "";
+
+	public string EffectiveKql { get; private set; } = "";
+
+	public string? KqlError { get; private set; }
 
 	public async Task<IActionResult> OnGetAsync(string id, CancellationToken ct)
 	{
@@ -55,9 +65,27 @@ public sealed class WorkspaceModel : PageModel
 			return NotFound();
 
 		Workspace = ws;
-		Kql = BuildKql();
 
-		var code = KustoCode.Parse(Kql);
+		RawKqlMode = !string.IsNullOrWhiteSpace(RawKql);
+		UserKql = RawKqlMode ? RawKql!.Trim() : BuildUserKql();
+		EffectiveKql = AppendPageLimits(UserKql);
+
+		KustoCode code;
+		try
+		{
+			code = KustoCode.Parse(EffectiveKql);
+			var errors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
+			if (errors.Count > 0)
+			{
+				KqlError = "KQL parse error: " + string.Join("; ", errors.Select(d => d.Message));
+				return Page();
+			}
+		}
+		catch (Exception ex)
+		{
+			KqlError = ex.Message;
+			return Page();
+		}
 
 		try
 		{
@@ -67,6 +95,11 @@ public sealed class WorkspaceModel : PageModel
 		catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
 		{
 			SchemaMissing = true;
+			return Page();
+		}
+		catch (UnsupportedKqlException ex)
+		{
+			KqlError = ex.Message;
 			return Page();
 		}
 
@@ -80,7 +113,22 @@ public sealed class WorkspaceModel : PageModel
 		return Page();
 	}
 
-	string BuildKql()
+	string AppendPageLimits(string userKql)
+	{
+		var sb = new StringBuilder(userKql.TrimEnd());
+		if (DecodeCursor(Cursor) is { } cursorBytes)
+		{
+			var (ts, cid) = CursorCodec.Decode(cursorBytes.Span);
+			var dt = DateTimeOffset.FromUnixTimeMilliseconds(ts);
+			var tsLit = FormatDatetime(dt);
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp < {tsLit} or (Timestamp == {tsLit} and Id < {cid})");
+		}
+		sb.Append("\n| order by Timestamp desc, Id desc");
+		sb.Append(CultureInfo.InvariantCulture, $"\n| take {PageSize + 1}");
+		return sb.ToString();
+	}
+
+	string BuildUserKql()
 	{
 		var sb = new StringBuilder("LogEvents");
 
@@ -95,16 +143,6 @@ public sealed class WorkspaceModel : PageModel
 		if (NullIfEmpty(Message) is { } msg)
 			sb.Append(CultureInfo.InvariantCulture, $"\n| where Message contains '{EscapeKqlString(msg)}'");
 
-		if (DecodeCursor(Cursor) is { } cursorBytes)
-		{
-			var (ts, cid) = CursorCodec.Decode(cursorBytes.Span);
-			var dt = DateTimeOffset.FromUnixTimeMilliseconds(ts);
-			var tsLit = FormatDatetime(dt);
-			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp < {tsLit} or (Timestamp == {tsLit} and Id < {cid})");
-		}
-
-		sb.Append("\n| order by Timestamp desc, Id desc");
-		sb.Append(CultureInfo.InvariantCulture, $"\n| take {PageSize + 1}");
 		return sb.ToString();
 	}
 
