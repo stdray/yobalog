@@ -2,10 +2,40 @@
 @model EventRowViewModel
 @{
 	var rowClasses = "align-top hover" + (Model.IsLive ? " event-live" : " cursor-pointer");
+	var showChips = !Model.IsLive;
+	var tsKql = EventRowViewModel.KqlDatetime(Model.Timestamp);
+	var levelInt = ((int)Model.Level).ToString(System.Globalization.CultureInfo.InvariantCulture);
+	var traceKql = EventRowViewModel.KqlString(Model.TraceId);
 }
 <tr class="@rowClasses"@(Model.IsLive || Model.Id is null ? "" : $" data-event-id=\"{Model.Id}\"")>
-	<td class="font-mono text-xs opacity-70 whitespace-nowrap">@Model.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
-	<td><span class="badge badge-sm @EventRowViewModel.LevelBadge(Model.Level)">@Model.Level</span></td>
+	<td class="font-mono text-xs opacity-70 whitespace-nowrap relative group">
+		@Model.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff")
+		@if (showChips)
+		{
+			<span class="absolute inset-y-0 right-1 hidden group-hover:inline-flex items-center gap-1 bg-base-300 rounded px-1 shadow">
+				<button type="button" class="filter-chip text-success text-sm leading-none"
+					data-filter-field="Timestamp" data-filter-op="ge" data-filter-value="@tsKql"
+					title="искать от (включительно)">✓</button>
+				<button type="button" class="filter-chip text-error text-sm leading-none"
+					data-filter-field="Timestamp" data-filter-op="le" data-filter-value="@tsKql"
+					title="искать до (включительно)">✗</button>
+			</span>
+		}
+	</td>
+	<td class="relative group">
+		<span class="badge badge-sm @EventRowViewModel.LevelBadge(Model.Level)">@Model.Level</span>
+		@if (showChips)
+		{
+			<span class="absolute inset-y-0 right-0 hidden group-hover:inline-flex items-center gap-1 bg-base-300 rounded px-1 shadow">
+				<button type="button" class="filter-chip text-success text-sm leading-none"
+					data-filter-field="Level" data-filter-op="eq" data-filter-value="@levelInt"
+					title="только этот уровень">✓</button>
+				<button type="button" class="filter-chip text-error text-sm leading-none"
+					data-filter-field="Level" data-filter-op="ne" data-filter-value="@levelInt"
+					title="исключить этот уровень">✗</button>
+			</span>
+		}
+	</td>
 	<td class="break-words">
 		<div class="flex items-start gap-2">
 			<span class="flex-1">@Model.Message</span>
@@ -21,7 +51,20 @@
 			<pre class="mt-1 text-xs text-error whitespace-pre-wrap">@Model.Exception</pre>
 		}
 	</td>
-	<td class="font-mono text-xs opacity-70 truncate">@Model.TraceId</td>
+	<td class="font-mono text-xs opacity-70 truncate relative group">
+		@Model.TraceId
+		@if (showChips && !string.IsNullOrEmpty(Model.TraceId))
+		{
+			<span class="absolute inset-y-0 right-0 hidden group-hover:inline-flex items-center gap-1 bg-base-300 rounded px-1 shadow">
+				<button type="button" class="filter-chip text-success text-sm leading-none"
+					data-filter-field="TraceId" data-filter-op="eq" data-filter-value="@traceKql"
+					title="только этот trace">✓</button>
+				<button type="button" class="filter-chip text-error text-sm leading-none"
+					data-filter-field="TraceId" data-filter-op="ne" data-filter-value="@traceKql"
+					title="исключить этот trace">✗</button>
+			</span>
+		}
+	</td>
 </tr>
 @if (!Model.IsLive && Model.Id is not null)
 {

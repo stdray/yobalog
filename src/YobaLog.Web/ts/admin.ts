@@ -42,6 +42,13 @@ document.addEventListener("keydown", (event) => {
 		return;
 	}
 
+	if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+		event.preventDefault();
+		closeKqlPanel();
+		target.form?.requestSubmit();
+		return;
+	}
+
 	const items = Array.from(document.querySelectorAll<HTMLButtonElement>("#kql-completions .kql-suggestion"));
 
 	if (event.key === "Escape") {
@@ -84,6 +91,30 @@ function highlightKqlItem(items: readonly HTMLButtonElement[], i: number): void 
 		}
 	}
 }
+
+// ---------- Hover filter chips (✓/✗ over event cells) ----------
+
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	const btn = target?.closest("[data-filter-field]") as HTMLButtonElement | null;
+	if (!btn) return;
+	event.stopPropagation();
+	event.preventDefault();
+
+	const field = btn.dataset["filterField"] ?? "";
+	const op = btn.dataset["filterOp"] ?? "eq";
+	const value = btn.dataset["filterValue"] ?? "";
+	if (!field || !value) return;
+
+	const sym = op === "eq" ? "==" : op === "ne" ? "!=" : op === "ge" ? ">=" : op === "le" ? "<=" : "==";
+
+	const textarea = document.getElementById("kql-textarea") as HTMLTextAreaElement | null;
+	if (!textarea) return;
+
+	const base = textarea.value.trim().length > 0 ? textarea.value.trimEnd() : "events";
+	textarea.value = `${base}\n| where ${field} ${sym} ${value}`;
+	textarea.form?.requestSubmit();
+});
 
 // ---------- Copy-to-clipboard ----------
 

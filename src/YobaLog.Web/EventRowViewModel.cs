@@ -1,3 +1,4 @@
+using System.Globalization;
 using YobaLog.Core;
 using LogLevel = YobaLog.Core.LogLevel;
 
@@ -52,4 +53,12 @@ public sealed record EventRowViewModel(
 		LogLevel.Fatal => "badge-error",
 		_ => "badge-ghost",
 	};
+
+	public static string KqlString(string? s) =>
+		"'" + (s ?? "")
+			.Replace("\\", "\\\\", StringComparison.Ordinal)
+			.Replace("'", "\\'", StringComparison.Ordinal) + "'";
+
+	public static string KqlDatetime(DateTimeOffset dt) =>
+		"datetime(" + dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) + ")";
 }
