@@ -59,4 +59,67 @@ public sealed class KqlResultTests
 		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*SummarizeOperator*");
 	}
+
+	[Fact]
+	public async Task Project_NarrowsColumns()
+	{
+		var ast = KustoCode.Parse("LogEvents | project Id, Message");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Id", "Message");
+		result.Columns.Should().HaveCount(2);
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+
+		rows.Should().HaveCount(2);
+		rows[0].Should().HaveCount(2);
+		rows[0][0].Should().Be(1L);
+		rows[0][1].Should().Be("hello");
+		rows[1][0].Should().Be(2L);
+		rows[1][1].Should().Be("boom");
+	}
+
+	[Fact]
+	public async Task Project_AliasRenamesColumn()
+	{
+		var ast = KustoCode.Parse("LogEvents | project EventId = Id, Text = Message");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("EventId", "Text");
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows[0][0].Should().Be(1L);
+		rows[0][1].Should().Be("hello");
+	}
+
+	[Fact]
+	public async Task Where_Then_Project_FilterFirstInSql()
+	{
+		var ast = KustoCode.Parse("LogEvents | where Level == 4 | project Id, Message");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Id", "Message");
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows.Should().HaveCount(1);
+		rows[0][1].Should().Be("boom");
+	}
+
+	[Fact]
+	public void Project_UnknownColumn_Throws()
+	{
+		var ast = KustoCode.Parse("LogEvents | project Bogus");
+		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Bogus*");
+	}
+
+	[Fact]
+	public void Project_ComputedExpression_ThrowsUnsupported()
+	{
+		var ast = KustoCode.Parse("LogEvents | project Doubled = Id + Id");
+		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		act.Should().Throw<UnsupportedKqlException>();
+	}
 }

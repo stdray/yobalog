@@ -31,8 +31,114 @@ sealed class KqlTransformer
 
 	public KqlResult Execute(IQueryable<EventRecord> source, KustoCode code)
 	{
-		var filtered = Apply(source, code);
-		return new KqlResult(EventRecordColumns, StreamEventRecordRows(filtered));
+		var parseErrors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
+		if (parseErrors.Count > 0)
+			throw new UnsupportedKqlException("KQL parse error: " + string.Join("; ", parseErrors.Select(d => d.Message)));
+
+		var operators = FlattenPipeline(code.Syntax).ToList();
+		if (operators.Count == 0)
+			throw new UnsupportedKqlException("empty query");
+
+		if (operators[0] is not NameReference tableName)
+			throw new UnsupportedKqlException($"expected table reference, got {operators[0].GetType().Name}");
+		if (!string.Equals(tableName.SimpleName, EventsTable, StringComparison.Ordinal))
+			throw new UnsupportedKqlException($"unknown table '{tableName.SimpleName}'; only '{EventsTable}' is supported");
+
+		var pipeline = operators.Skip(1).ToList();
+		var splitAt = pipeline.FindIndex(IsShapeChangingOp);
+
+		var (preOps, postOps) = splitAt < 0
+			? (pipeline, new List<SyntaxNode>())
+			: (pipeline.Take(splitAt).ToList(), pipeline.Skip(splitAt).ToList());
+
+		var preResult = ApplyPipeline(source, preOps);
+		var eventShape = new KqlResult(EventRecordColumns, StreamEventRecordRows(preResult));
+
+		return postOps.Count == 0
+			? eventShape
+			: ApplyShapeChanges(eventShape, postOps);
+	}
+
+	static bool IsShapeChangingOp(SyntaxNode op) =>
+		op is ProjectOperator or CountOperator or SummarizeOperator or ExtendOperator;
+
+	static KqlResult ApplyShapeChanges(KqlResult input, IReadOnlyList<SyntaxNode> ops)
+	{
+		var current = input;
+		foreach (var op in ops)
+		{
+			current = op switch
+			{
+				ProjectOperator p => ApplyProject(current, p),
+				_ => throw new UnsupportedKqlException($"operator '{op.Kind}' not supported (yet) in shape-changing pipeline"),
+			};
+		}
+		return current;
+	}
+
+	static KqlResult ApplyProject(KqlResult input, ProjectOperator project)
+	{
+		var specs = new List<(string OutputName, int SourceIndex)>();
+		var newColumns = new List<KqlColumn>();
+
+		foreach (var element in project.Expressions)
+		{
+			var (outputName, sourceName) = element.Element switch
+			{
+				NameReference n => (n.SimpleName, n.SimpleName),
+				SimpleNamedExpression { Name: NameDeclaration alias, Expression: NameReference src }
+					=> (alias.Name.SimpleName, src.SimpleName),
+				_ => throw new UnsupportedKqlException(
+					$"project expression '{element.Element.Kind}' not supported (only column refs and 'alias = column')"),
+			};
+
+			var sourceIndex = FindColumnIndex(input.Columns, sourceName);
+			if (sourceIndex < 0)
+				throw new UnsupportedKqlException($"project: unknown column '{sourceName}'");
+
+			specs.Add((outputName, sourceIndex));
+			newColumns.Add(new KqlColumn(outputName, input.Columns[sourceIndex].ClrType));
+		}
+
+		return new KqlResult(newColumns, StreamProjected(input.Rows, [.. specs.Select(s => s.SourceIndex)]));
+	}
+
+	static async IAsyncEnumerable<object?[]> StreamProjected(
+		IAsyncEnumerable<object?[]> source,
+		int[] indices,
+		[EnumeratorCancellation] CancellationToken ct = default)
+	{
+		await foreach (var row in source.WithCancellation(ct).ConfigureAwait(false))
+		{
+			var result = new object?[indices.Length];
+			for (var i = 0; i < indices.Length; i++)
+				result[i] = row[indices[i]];
+			yield return result;
+		}
+	}
+
+	static int FindColumnIndex(IReadOnlyList<KqlColumn> columns, string name)
+	{
+		for (var i = 0; i < columns.Count; i++)
+			if (string.Equals(columns[i].Name, name, StringComparison.Ordinal))
+				return i;
+		return -1;
+	}
+
+	static IQueryable<EventRecord> ApplyPipeline(IQueryable<EventRecord> source, IReadOnlyList<SyntaxNode> operators)
+	{
+		var q = source;
+		foreach (var op in operators)
+		{
+			q = op switch
+			{
+				FilterOperator f => ApplyWhere(q, f),
+				TakeOperator t => ApplyTake(q, t),
+				SortOperator s => ApplySort(q, s),
+				_ => throw new UnsupportedKqlException($"operator '{op.Kind}' not supported in yobalog"),
+			};
+		}
+		return q;
 	}
 
 	static async IAsyncEnumerable<object?[]> StreamEventRecordRows(
