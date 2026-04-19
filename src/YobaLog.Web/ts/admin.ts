@@ -55,7 +55,7 @@ document.addEventListener("keydown", (event) => {
 	event.preventDefault();
 	textarea.focus();
 	textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-	showHotkeyToast("/", "фокус на запрос");
+	showHotkeyToast("/", "focus query");
 });
 
 // ---------- KQL completion ----------
@@ -99,7 +99,7 @@ document.addEventListener("keydown", (event) => {
 		closeKqlPanel();
 		const submit = target.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
 		submit?.classList.add("btn-active");
-		showHotkeyToast(event.metaKey ? "⌘+Enter" : "Ctrl+Enter", "применить");
+		showHotkeyToast(event.metaKey ? "⌘+Enter" : "Ctrl+Enter", "apply");
 		target.form?.requestSubmit();
 		return;
 	}

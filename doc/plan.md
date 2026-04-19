@@ -73,6 +73,10 @@
 - [ ] Stopwatch/GC.GetTotalMemory никогда — только BDN (см. антипаттерны в `performance-testing.md`).
 - [ ] Tier 3 (NBomber load), memory footprint через `dotnet-counters` — когда появится hot-path; сейчас преждевременно.
 
+## Локализация (spec §9)
+
+- [ ] **i18n scaffold.** `IStringLocalizer` + `.resx`, dot-notation keys (`page.logs.header`), `window.__i18n` inject в `<head>` с текущей локалью для TS-кода. Хардкод user-facing строк в разметке/коде запрещён. Сейчас все строки литералом на английском, миграция в resx — когда появится второй язык либо когда накопится критическая масса (~30+ ключей).
+
 ## Отложено / tech debt после Фазы A
 Накопленный долг, намеренно пропущенный ради dog-food ready.
 - [x] **Hashed admin password.** `AdminPasswordHasher` (PBKDF2/HMACSHA256, 600k iter, 32-byte key, 16-byte salt), формат `v1:{iter}:{b64salt}:{b64hash}`. `AdminAuthOptions.PasswordHash` — приоритет над plaintext `Password`. CLI: `dotnet run --project YobaLog.Web -- --hash-password <plain>` печатает hash и выходит. 7 unit + 2 integration-теста.
