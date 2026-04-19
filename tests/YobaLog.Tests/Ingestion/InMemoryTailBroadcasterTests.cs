@@ -25,7 +25,7 @@ public sealed class InMemoryTailBroadcasterTests
 	public async Task Subscribe_ReceivesPublishedEvents_Unfiltered()
 	{
 		var broadcaster = new InMemoryTailBroadcaster();
-		var allQuery = KustoCode.Parse("LogEvents");
+		var allQuery = KustoCode.Parse("events");
 		using var cts = new CancellationTokenSource();
 
 		var received = new List<LogEventCandidate>();
@@ -50,7 +50,7 @@ public sealed class InMemoryTailBroadcasterTests
 	public async Task Subscribe_FiltersByQuery()
 	{
 		var broadcaster = new InMemoryTailBroadcaster();
-		var errorsOnly = KustoCode.Parse("LogEvents | where Level >= 4");
+		var errorsOnly = KustoCode.Parse("events | where Level >= 4");
 		using var cts = new CancellationTokenSource();
 
 		var received = new List<LogEventCandidate>();
@@ -79,7 +79,7 @@ public sealed class InMemoryTailBroadcasterTests
 	public async Task MultipleSubscribers_EachReceiveEvents()
 	{
 		var broadcaster = new InMemoryTailBroadcaster();
-		var allQuery = KustoCode.Parse("LogEvents");
+		var allQuery = KustoCode.Parse("events");
 		using var cts = new CancellationTokenSource();
 
 		var subA = new List<LogEventCandidate>();
@@ -122,7 +122,7 @@ public sealed class InMemoryTailBroadcasterTests
 	public void Subscribe_InvalidQuery_ThrowsAtSubscription()
 	{
 		var broadcaster = new InMemoryTailBroadcaster();
-		var bad = KustoCode.Parse("LogEvents | summarize count()");
+		var bad = KustoCode.Parse("events | summarize count()");
 
 		var act = () =>
 		{

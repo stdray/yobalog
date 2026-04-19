@@ -8,7 +8,7 @@ public sealed class KqlExplorationTests
 	[Fact]
 	public void KustoLanguage_Parse_NoDiagnostics_ForValidKql()
 	{
-		var code = KustoCode.Parse("LogEvents | where Level == 'Error' | take 10");
+		var code = KustoCode.Parse("events | where Level == 'Error' | take 10");
 		var diagnostics = code.GetDiagnostics();
 
 		diagnostics.Should().BeEmpty(
@@ -19,7 +19,7 @@ public sealed class KqlExplorationTests
 	[Fact]
 	public void KustoLanguage_Parse_ReturnsDiagnostics_ForInvalid()
 	{
-		var code = KustoCode.Parse("LogEvents | completelymadeupoperator");
+		var code = KustoCode.Parse("events | completelymadeupoperator");
 		var diagnostics = code.GetDiagnostics();
 
 		diagnostics.Should().NotBeEmpty();
@@ -39,9 +39,9 @@ public sealed class KqlExplorationTests
 		};
 
 		var context = new KustoQueryContext();
-		context.CopyDataIntoTable("LogEvents", rows);
+		context.CopyDataIntoTable("events", rows);
 
-		var result = await context.RunQuery("LogEvents | where Level == 'Error' | project Id, Message");
+		var result = await context.RunQuery("events | where Level == 'Error' | project Id, Message");
 
 		result.Error.Should().BeNullOrEmpty();
 		result.RowCount.Should().Be(2);

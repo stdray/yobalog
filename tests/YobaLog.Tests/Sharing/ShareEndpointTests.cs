@@ -101,7 +101,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var client = await AuthedClientAsync();
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
-			kql = "LogEvents",
+			kql = "events",
 			ttlHours = 1,
 			columns = DefaultColumns,
 		});
@@ -131,7 +131,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var client = await AuthedClientAsync();
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
-			kql = "LogEvents",
+			kql = "events",
 			columns = DefaultColumns,
 			modes = new Dictionary<string, string> { ["TraceId"] = "hide" },
 		});
@@ -151,7 +151,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var client = await AuthedClientAsync();
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
-			kql = "LogEvents",
+			kql = "events",
 			columns = DefaultColumns,
 			modes = new Dictionary<string, string> { ["TraceId"] = "mask" },
 		});
@@ -177,7 +177,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var client = await AuthedClientAsync();
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
-			kql = "LogEvents",
+			kql = "events",
 			columns,
 			modes = new Dictionary<string, string> { ["email"] = "mask" },
 		});
@@ -207,7 +207,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var client = await AuthedClientAsync();
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
-			kql = "LogEvents",
+			kql = "events",
 			columns = DefaultColumns,
 			modes = new Dictionary<string, string> { ["TraceId"] = "mask" },
 			savePolicy = true,

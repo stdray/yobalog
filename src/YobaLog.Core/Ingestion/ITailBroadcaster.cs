@@ -6,7 +6,7 @@ public interface ITailBroadcaster
 {
 	/// <summary>
 	/// Subscribe to live events in a workspace, filtered by a KQL query.
-	/// Pass <c>KustoCode.Parse("LogEvents")</c> for an unfiltered stream.
+	/// Pass <c>KustoCode.Parse("events")</c> for an unfiltered stream.
 	/// Shape-changing operators (project/summarize/count/extend) are rejected —
 	/// they make no sense on a streaming event feed.
 	/// </summary>

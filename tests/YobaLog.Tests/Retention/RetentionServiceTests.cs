@@ -118,7 +118,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 			],
 			CancellationToken.None);
 
-		await _savedQueries.UpsertAsync(UserWs, "errors", "LogEvents | where Level >= 4", CancellationToken.None);
+		await _savedQueries.UpsertAsync(UserWs, "errors", "events | where Level >= 4", CancellationToken.None);
 
 		var svc = CreateService(policies:
 		[
@@ -144,7 +144,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 			],
 			CancellationToken.None);
 
-		await _savedQueries.UpsertAsync(UserWs, "errors", "LogEvents | where Level >= 4", CancellationToken.None);
+		await _savedQueries.UpsertAsync(UserWs, "errors", "events | where Level >= 4", CancellationToken.None);
 
 		var svc = CreateService(policies:
 		[
@@ -170,8 +170,8 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 			],
 			CancellationToken.None);
 
-		await _savedQueries.UpsertAsync(UserWs, "errors", "LogEvents | where Level >= 4", CancellationToken.None);
-		await _savedQueries.UpsertAsync(UserWs, "warnings", "LogEvents | where Level == 3", CancellationToken.None);
+		await _savedQueries.UpsertAsync(UserWs, "errors", "events | where Level >= 4", CancellationToken.None);
+		await _savedQueries.UpsertAsync(UserWs, "warnings", "events | where Level == 3", CancellationToken.None);
 
 		var svc = CreateService(policies:
 		[

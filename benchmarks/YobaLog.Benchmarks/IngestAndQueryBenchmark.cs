@@ -40,7 +40,7 @@ public class IngestAndQueryBenchmark
 		_writeBatch = GenerateEvents(WriteBatchSize, SeedSize);
 		_store.AppendBatchAsync(Ws, _seed, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
-		_queryByIndex = KustoCode.Parse("LogEvents | where Level >= 4 | take 50");
+		_queryByIndex = KustoCode.Parse("events | where Level >= 4 | take 50");
 
 		_pipeline = new ChannelIngestionPipeline(
 			_store,

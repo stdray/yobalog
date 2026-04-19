@@ -13,55 +13,55 @@ public sealed class DualExecutorTests
 	];
 
 	[Theory]
-	[InlineData("LogEvents | where Level == 4")]
-	[InlineData("LogEvents | where Level != 4")]
-	[InlineData("LogEvents | where Level >= 3")]
-	[InlineData("LogEvents | where Level > 3")]
-	[InlineData("LogEvents | where Level <= 2")]
-	[InlineData("LogEvents | where Level < 2")]
-	[InlineData("LogEvents | where LevelName == 'Error'")]
-	[InlineData("LogEvents | where LevelName != 'Information'")]
-	[InlineData("LogEvents | where TraceId == 't1'")]
-	[InlineData("LogEvents | where TraceId != 't2'")]
-	[InlineData("LogEvents | where Message == 'boom'")]
-	[InlineData("LogEvents | where Message != 'boom'")]
-	[InlineData("LogEvents | where Id == 3")]
-	[InlineData("LogEvents | where Id != 3")]
-	[InlineData("LogEvents | where Id > 3")]
-	[InlineData("LogEvents | where Id >= 3")]
-	[InlineData("LogEvents | where Id < 3")]
-	[InlineData("LogEvents | where Id <= 3")]
+	[InlineData("events | where Level == 4")]
+	[InlineData("events | where Level != 4")]
+	[InlineData("events | where Level >= 3")]
+	[InlineData("events | where Level > 3")]
+	[InlineData("events | where Level <= 2")]
+	[InlineData("events | where Level < 2")]
+	[InlineData("events | where LevelName == 'Error'")]
+	[InlineData("events | where LevelName != 'Information'")]
+	[InlineData("events | where TraceId == 't1'")]
+	[InlineData("events | where TraceId != 't2'")]
+	[InlineData("events | where Message == 'boom'")]
+	[InlineData("events | where Message != 'boom'")]
+	[InlineData("events | where Id == 3")]
+	[InlineData("events | where Id != 3")]
+	[InlineData("events | where Id > 3")]
+	[InlineData("events | where Id >= 3")]
+	[InlineData("events | where Id < 3")]
+	[InlineData("events | where Id <= 3")]
 	public async Task ScalarComparisons_MatchReference(string kql)
 	{
 		await DualExecutor.AssertSameAsync(kql, Dataset);
 	}
 
 	[Theory]
-	[InlineData("LogEvents | where Message has 'boom'")]
-	[InlineData("LogEvents | where Message has 'hello'")]
-	[InlineData("LogEvents | where Message has 'Earth'")]
-	[InlineData("LogEvents | where Message has 'unknown-word'")]
+	[InlineData("events | where Message has 'boom'")]
+	[InlineData("events | where Message has 'hello'")]
+	[InlineData("events | where Message has 'Earth'")]
+	[InlineData("events | where Message has 'unknown-word'")]
 	public async Task Has_WordBoundary_MatchesReference(string kql)
 	{
 		await DualExecutor.AssertSameAsync(kql, Dataset);
 	}
 
 	[Theory]
-	[InlineData("LogEvents | where Message contains 'boom'")]
-	[InlineData("LogEvents | where Message contains 'BOOM'")]
-	[InlineData("LogEvents | where Message contains 'earth'")]
-	[InlineData("LogEvents | where Message contains 'no-such-thing'")]
+	[InlineData("events | where Message contains 'boom'")]
+	[InlineData("events | where Message contains 'BOOM'")]
+	[InlineData("events | where Message contains 'earth'")]
+	[InlineData("events | where Message contains 'no-such-thing'")]
 	public async Task Contains_CaseInsensitive_MatchesReference(string kql)
 	{
 		await DualExecutor.AssertSameAsync(kql, Dataset);
 	}
 
 	[Theory]
-	[InlineData("LogEvents | where Level >= 4 and TraceId == 't2'")]
-	[InlineData("LogEvents | where Level == 4 or Level == 3")]
-	[InlineData("LogEvents | where Id > 1 and Id <= 4")]
-	[InlineData("LogEvents | where not(Level == 4)")]
-	[InlineData("LogEvents | where LevelName == 'Information' and Message contains 'hello'")]
+	[InlineData("events | where Level >= 4 and TraceId == 't2'")]
+	[InlineData("events | where Level == 4 or Level == 3")]
+	[InlineData("events | where Id > 1 and Id <= 4")]
+	[InlineData("events | where not(Level == 4)")]
+	[InlineData("events | where LevelName == 'Information' and Message contains 'hello'")]
 	public async Task LogicalCombinators_MatchReference(string kql)
 	{
 		await DualExecutor.AssertSameAsync(kql, Dataset);
@@ -70,16 +70,16 @@ public sealed class DualExecutorTests
 	[Fact]
 	public async Task EmptyResult_BothSidesEmpty()
 	{
-		await DualExecutor.AssertSameAsync("LogEvents | where Level == 5", Dataset);
+		await DualExecutor.AssertSameAsync("events | where Level == 5", Dataset);
 	}
 
 	[Theory]
-	[InlineData("LogEvents | order by Id")]
-	[InlineData("LogEvents | order by Id asc")]
-	[InlineData("LogEvents | order by Id desc")]
-	[InlineData("LogEvents | order by Level asc, Id desc")]
-	[InlineData("LogEvents | order by Level desc, Id asc")]
-	[InlineData("LogEvents | where Level >= 3 | order by Id")]
+	[InlineData("events | order by Id")]
+	[InlineData("events | order by Id asc")]
+	[InlineData("events | order by Id desc")]
+	[InlineData("events | order by Level asc, Id desc")]
+	[InlineData("events | order by Level desc, Id asc")]
+	[InlineData("events | where Level >= 3 | order by Id")]
 	public async Task OrderBy_PreservesOrdering(string kql)
 	{
 		await DualExecutor.AssertSameAsync(kql, Dataset, ordered: true);

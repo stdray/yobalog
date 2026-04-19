@@ -65,70 +65,70 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 	[Fact]
 	public async Task WhereLevel_TranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | where Level == 4");
+		var messages = await RunAsync("events | where Level == 4");
 		messages.Should().BeEquivalentTo(["boom", "crash on Earth"]);
 	}
 
 	[Fact]
 	public async Task WhereLevel_OrderingTranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | where Level >= 3");
+		var messages = await RunAsync("events | where Level >= 3");
 		messages.Should().BeEquivalentTo(["boom", "meh", "crash on Earth"]);
 	}
 
 	[Fact]
 	public async Task WhereTraceId_Equality()
 	{
-		var messages = await RunAsync("LogEvents | where TraceId == 't1'");
+		var messages = await RunAsync("events | where TraceId == 't1'");
 		messages.Should().BeEquivalentTo(["hello world", "meh"]);
 	}
 
 	[Fact]
 	public async Task Take_LimitsRowsAgainstSqlite()
 	{
-		var messages = await RunAsync("LogEvents | take 2");
+		var messages = await RunAsync("events | take 2");
 		messages.Should().HaveCount(2);
 	}
 
 	[Fact]
 	public async Task OrderBy_TranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | order by Id asc");
+		var messages = await RunAsync("events | order by Id asc");
 		messages.Should().ContainInOrder("hello world", "boom", "meh", "crash on Earth", "starting");
 	}
 
 	[Fact]
 	public async Task AndCombinator_TranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | where Level == 4 and TraceId == 't2'");
+		var messages = await RunAsync("events | where Level == 4 and TraceId == 't2'");
 		messages.Should().BeEquivalentTo(["boom"]);
 	}
 
 	[Fact]
 	public async Task MessageContains_TranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | where Message contains 'boom'");
+		var messages = await RunAsync("events | where Message contains 'boom'");
 		messages.Should().Contain("boom");
 	}
 
 	[Fact]
 	public async Task TimestampGte_TranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | where Timestamp >= datetime(2026-04-19T10:03:00Z)");
+		var messages = await RunAsync("events | where Timestamp >= datetime(2026-04-19T10:03:00Z)");
 		messages.Should().BeEquivalentTo(["meh", "crash on Earth", "starting"]);
 	}
 
 	[Fact]
 	public async Task TimestampLt_TranslatesToSql()
 	{
-		var messages = await RunAsync("LogEvents | where Timestamp < datetime(2026-04-19T10:03:00Z)");
+		var messages = await RunAsync("events | where Timestamp < datetime(2026-04-19T10:03:00Z)");
 		messages.Should().BeEquivalentTo(["hello world", "boom"]);
 	}
 
 	[Fact]
 	public async Task MessageHas_UsesFts5()
 	{
-		var messages = await RunAsync("LogEvents | where Message has 'boom'");
+		var messages = await RunAsync("events | where Message has 'boom'");
 		messages.Should().BeEquivalentTo(["boom"]);
 	}
 
@@ -140,7 +140,7 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 			[Mk(20, LogLevel.Information, "booming business")],
 			CancellationToken.None);
 
-		var messages = await RunAsync("LogEvents | where Message has 'boom'");
+		var messages = await RunAsync("events | where Message has 'boom'");
 		messages.Should().NotContain("booming business");
 		messages.Should().Contain("boom");
 	}
@@ -152,7 +152,7 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 			[Mk(25, LogLevel.Information, "THUNDER strike")],
 			CancellationToken.None);
 
-		var messages = await RunAsync("LogEvents | where Message has 'thunder'");
+		var messages = await RunAsync("events | where Message has 'thunder'");
 		messages.Should().Contain("THUNDER strike");
 	}
 
@@ -160,7 +160,7 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 	public async Task TimestampRange_TranslatesToSql()
 	{
 		var messages = await RunAsync(
-			"LogEvents | where Timestamp >= datetime(2026-04-19T10:02:00Z) and Timestamp < datetime(2026-04-19T10:05:00Z)");
+			"events | where Timestamp >= datetime(2026-04-19T10:02:00Z) and Timestamp < datetime(2026-04-19T10:05:00Z)");
 		messages.Should().BeEquivalentTo(["boom", "meh", "crash on Earth"]);
 	}
 }

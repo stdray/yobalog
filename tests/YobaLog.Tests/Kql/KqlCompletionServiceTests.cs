@@ -9,7 +9,7 @@ public sealed class KqlCompletionServiceTests
 	[Fact]
 	public void ColumnPrefix_ReturnsMatchingColumns()
 	{
-		const string q = "LogEvents | where Le";
+		const string q = "events | where Le";
 		var result = _svc.Complete(q, q.Length);
 
 		result.Items.Should().Contain(i => i.DisplayText == "Level");
@@ -18,18 +18,18 @@ public sealed class KqlCompletionServiceTests
 	}
 
 	[Fact]
-	public void TableName_ReturnsLogEvents()
+	public void TableName_ReturnsEvents()
 	{
-		const string q = "Log";
+		const string q = "ev";
 		var result = _svc.Complete(q, q.Length);
 
-		result.Items.Should().Contain(i => i.DisplayText == "LogEvents");
+		result.Items.Should().Contain(i => i.DisplayText == "events");
 	}
 
 	[Fact]
 	public void EditRange_CoversPrefix()
 	{
-		const string q = "LogEvents | where Lev";
+		const string q = "events | where Lev";
 		var result = _svc.Complete(q, q.Length);
 
 		var prefix = q.Substring(result.EditStart, result.EditLength);
@@ -39,7 +39,7 @@ public sealed class KqlCompletionServiceTests
 	[Fact]
 	public void NoItems_ReturnsEmpty()
 	{
-		const string q = "LogEvents | where ZzzzzNothingMatches";
+		const string q = "events | where ZzzzzNothingMatches";
 		var result = _svc.Complete(q, q.Length);
 		result.Items.Should().BeEmpty();
 	}
@@ -47,7 +47,7 @@ public sealed class KqlCompletionServiceTests
 	[Fact]
 	public void PositionOutOfRange_Clamped()
 	{
-		const string q = "LogEvents";
+		const string q = "events";
 		var result = _svc.Complete(q, q.Length * 10);
 		result.Should().NotBeNull();
 	}

@@ -33,11 +33,11 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Upsert_Inserts_NewQuery()
 	{
-		var q = await _store.UpsertAsync(Ws, "errors", "LogEvents | where Level >= 4", CancellationToken.None);
+		var q = await _store.UpsertAsync(Ws, "errors", "events | where Level >= 4", CancellationToken.None);
 
 		q.Id.Should().BeGreaterThan(0);
 		q.Name.Should().Be("errors");
-		q.Kql.Should().Be("LogEvents | where Level >= 4");
+		q.Kql.Should().Be("events | where Level >= 4");
 		q.CreatedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
 		q.UpdatedAt.Should().Be(q.CreatedAt);
 	}
@@ -45,12 +45,12 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Upsert_SameName_UpdatesKql_PreservesCreatedAt()
 	{
-		var first = await _store.UpsertAsync(Ws, "errors", "LogEvents | where Level == 4", CancellationToken.None);
+		var first = await _store.UpsertAsync(Ws, "errors", "events | where Level == 4", CancellationToken.None);
 		await Task.Delay(10); // ensure timestamp advances at millisecond resolution
-		var second = await _store.UpsertAsync(Ws, "errors", "LogEvents | where Level >= 4", CancellationToken.None);
+		var second = await _store.UpsertAsync(Ws, "errors", "events | where Level >= 4", CancellationToken.None);
 
 		second.Id.Should().Be(first.Id);
-		second.Kql.Should().Be("LogEvents | where Level >= 4");
+		second.Kql.Should().Be("events | where Level >= 4");
 		second.CreatedAt.Should().Be(first.CreatedAt);
 		second.UpdatedAt.Should().BeAfter(first.CreatedAt);
 	}
@@ -58,11 +58,11 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Get_ById_RoundTrips()
 	{
-		var saved = await _store.UpsertAsync(Ws, "q1", "LogEvents | take 10", CancellationToken.None);
+		var saved = await _store.UpsertAsync(Ws, "q1", "events | take 10", CancellationToken.None);
 		var loaded = await _store.GetAsync(Ws, saved.Id, CancellationToken.None);
 
 		loaded.Should().NotBeNull();
-		loaded!.Kql.Should().Be("LogEvents | take 10");
+		loaded!.Kql.Should().Be("events | take 10");
 	}
 
 	[Fact]
@@ -75,18 +75,18 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task GetByName_RoundTrips()
 	{
-		await _store.UpsertAsync(Ws, "by-name", "LogEvents | take 1", CancellationToken.None);
+		await _store.UpsertAsync(Ws, "by-name", "events | take 1", CancellationToken.None);
 		var loaded = await _store.GetByNameAsync(Ws, "by-name", CancellationToken.None);
 		loaded.Should().NotBeNull();
-		loaded!.Kql.Should().Be("LogEvents | take 1");
+		loaded!.Kql.Should().Be("events | take 1");
 	}
 
 	[Fact]
 	public async Task List_OrderedByName()
 	{
-		await _store.UpsertAsync(Ws, "beta", "LogEvents | take 1", CancellationToken.None);
-		await _store.UpsertAsync(Ws, "alpha", "LogEvents | take 2", CancellationToken.None);
-		await _store.UpsertAsync(Ws, "gamma", "LogEvents | take 3", CancellationToken.None);
+		await _store.UpsertAsync(Ws, "beta", "events | take 1", CancellationToken.None);
+		await _store.UpsertAsync(Ws, "alpha", "events | take 2", CancellationToken.None);
+		await _store.UpsertAsync(Ws, "gamma", "events | take 3", CancellationToken.None);
 
 		var list = await _store.ListAsync(Ws, CancellationToken.None);
 		list.Select(q => q.Name).Should().ContainInOrder("alpha", "beta", "gamma");
@@ -95,7 +95,7 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Delete_RemovesById()
 	{
-		var saved = await _store.UpsertAsync(Ws, "to-delete", "LogEvents", CancellationToken.None);
+		var saved = await _store.UpsertAsync(Ws, "to-delete", "events", CancellationToken.None);
 		var deleted = await _store.DeleteAsync(Ws, saved.Id, CancellationToken.None);
 		deleted.Should().BeTrue();
 
@@ -115,8 +115,8 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 		var otherWs = WorkspaceId.Parse("other-sq");
 		await _store.InitializeWorkspaceAsync(otherWs, CancellationToken.None);
 
-		await _store.UpsertAsync(Ws, "in-main", "LogEvents", CancellationToken.None);
-		await _store.UpsertAsync(otherWs, "in-other", "LogEvents", CancellationToken.None);
+		await _store.UpsertAsync(Ws, "in-main", "events", CancellationToken.None);
+		await _store.UpsertAsync(otherWs, "in-other", "events", CancellationToken.None);
 
 		var mainList = await _store.ListAsync(Ws, CancellationToken.None);
 		var otherList = await _store.ListAsync(otherWs, CancellationToken.None);
@@ -130,7 +130,7 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 	{
 		var tempWs = WorkspaceId.Parse("temp-sq-drop");
 		await _store.InitializeWorkspaceAsync(tempWs, CancellationToken.None);
-		await _store.UpsertAsync(tempWs, "x", "LogEvents", CancellationToken.None);
+		await _store.UpsertAsync(tempWs, "x", "events", CancellationToken.None);
 
 		await _store.DropWorkspaceAsync(tempWs, CancellationToken.None);
 

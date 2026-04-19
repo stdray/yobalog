@@ -13,7 +13,7 @@ namespace YobaLog.Core.Kql;
 
 sealed class KqlTransformer
 {
-	public const string EventsTable = "LogEvents";
+	public const string EventsTable = "events";
 
 	public static readonly IReadOnlyList<KqlColumn> EventRecordColumns =
 	[

@@ -38,11 +38,11 @@ public class KqlTransformerBenchmark
 			};
 		}
 
-		_where = KustoCode.Parse("LogEvents | where Level >= 4");
-		_whereTakeOrder = KustoCode.Parse("LogEvents | where Level >= 3 | order by Id desc | take 50");
-		_project = KustoCode.Parse("LogEvents | where Level >= 4 | project Id, Message");
-		_summarize = KustoCode.Parse("LogEvents | summarize count() by Level");
-		_count = KustoCode.Parse("LogEvents | where Level >= 3 | count");
+		_where = KustoCode.Parse("events | where Level >= 4");
+		_whereTakeOrder = KustoCode.Parse("events | where Level >= 3 | order by Id desc | take 50");
+		_project = KustoCode.Parse("events | where Level >= 4 | project Id, Message");
+		_summarize = KustoCode.Parse("events | summarize count() by Level");
+		_count = KustoCode.Parse("events | where Level >= 3 | count");
 	}
 
 	[Benchmark]

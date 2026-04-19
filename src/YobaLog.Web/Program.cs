@@ -138,7 +138,7 @@ app.MapGet("/api/ws/{id}/tail", (
 	if (!WorkspaceId.TryParse(id, out var ws))
 		return Results.NotFound();
 
-	var code = Kusto.Language.KustoCode.Parse(string.IsNullOrWhiteSpace(kql) ? "LogEvents" : kql);
+	var code = Kusto.Language.KustoCode.Parse(string.IsNullOrWhiteSpace(kql) ? "events" : kql);
 	var errors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
 	if (errors.Count > 0)
 		return Results.BadRequest("KQL parse error: " + string.Join("; ", errors.Select(d => d.Message)));
@@ -171,7 +171,7 @@ app.MapPost("/api/ws/{id}/share", async (
 
 	var columns = (req.Columns ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).ToImmutableArray();
 
-	var link = await shareLinks.CreateAsync(ws, req.Kql ?? "LogEvents", expiresAt, columns, modes, ct);
+	var link = await shareLinks.CreateAsync(ws, req.Kql ?? "events", expiresAt, columns, modes, ct);
 
 	if (req.SavePolicy == true && modes.Count > 0)
 		await policyStore.UpsertAsync(ws, modes, ct);
@@ -202,7 +202,7 @@ app.MapGet("/share/{ws}/{id}.tsv", async (
 		return Results.StatusCode(StatusCodes.Status410Gone);
 	}
 
-	var userKql = string.IsNullOrWhiteSpace(link.Kql) ? "LogEvents" : link.Kql.Trim();
+	var userKql = string.IsNullOrWhiteSpace(link.Kql) ? "events" : link.Kql.Trim();
 	var effectiveKql = userKql
 		+ "\n| order by Timestamp desc, Id desc"
 		+ $"\n| take {shareOptions.Value.MaxRows}";

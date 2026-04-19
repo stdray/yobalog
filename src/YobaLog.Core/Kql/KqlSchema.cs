@@ -7,7 +7,7 @@ public static class KqlSchema
 {
 	public const string DatabaseName = "yoba";
 
-	public static readonly TableSymbol LogEvents = new(
+	public static readonly TableSymbol Events = new(
 		KqlTransformer.EventsTable,
 		new ColumnSymbol("Id", ScalarTypes.Long),
 		new ColumnSymbol("Timestamp", ScalarTypes.DateTime),
@@ -19,5 +19,5 @@ public static class KqlSchema
 		new ColumnSymbol("Exception", ScalarTypes.String));
 
 	public static readonly GlobalState Globals = GlobalState.Default
-		.WithDatabase(new DatabaseSymbol(DatabaseName, LogEvents));
+		.WithDatabase(new DatabaseSymbol(DatabaseName, Events));
 }

@@ -40,13 +40,13 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
 			.Add("TraceId", MaskMode.Mask)
 			.Add("email", MaskMode.Hide);
 
-		var created = await _store.CreateAsync(Ws, "LogEvents | where Level >= 3",
+		var created = await _store.CreateAsync(Ws, "events | where Level >= 3",
 			expires, ["Id", "Timestamp", "TraceId", "email"], modes, CancellationToken.None);
 
 		var fetched = await _store.GetAsync(Ws, created.Id, CancellationToken.None);
 		fetched.Should().NotBeNull();
 		fetched!.Id.Should().Be(created.Id);
-		fetched.Kql.Should().Be("LogEvents | where Level >= 3");
+		fetched.Kql.Should().Be("events | where Level >= 3");
 		fetched.ExpiresAt.ToUnixTimeMilliseconds().Should().Be(expires.ToUnixTimeMilliseconds());
 		fetched.Salt.Length.Should().Be(16);
 		fetched.Columns.Should().Equal("Id", "Timestamp", "TraceId", "email");
@@ -56,7 +56,7 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Id_Is_22Char_Base64Url()
 	{
-		var link = await _store.CreateAsync(Ws, "LogEvents",
+		var link = await _store.CreateAsync(Ws, "events",
 			DateTimeOffset.UtcNow.AddHours(1), [], ImmutableDictionary<string, MaskMode>.Empty, CancellationToken.None);
 
 		link.Id.Length.Should().Be(22);
@@ -67,9 +67,9 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Different_Links_Get_Different_Salts()
 	{
-		var a = await _store.CreateAsync(Ws, "LogEvents",
+		var a = await _store.CreateAsync(Ws, "events",
 			DateTimeOffset.UtcNow.AddHours(1), [], ImmutableDictionary<string, MaskMode>.Empty, CancellationToken.None);
-		var b = await _store.CreateAsync(Ws, "LogEvents",
+		var b = await _store.CreateAsync(Ws, "events",
 			DateTimeOffset.UtcNow.AddHours(1), [], ImmutableDictionary<string, MaskMode>.Empty, CancellationToken.None);
 
 		a.Salt.Should().NotEqual(b.Salt);
@@ -86,7 +86,7 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
 	[Fact]
 	public async Task Delete_Removes_Link()
 	{
-		var link = await _store.CreateAsync(Ws, "LogEvents",
+		var link = await _store.CreateAsync(Ws, "events",
 			DateTimeOffset.UtcNow.AddHours(1), [], ImmutableDictionary<string, MaskMode>.Empty, CancellationToken.None);
 
 		var deleted = await _store.DeleteAsync(Ws, link.Id, CancellationToken.None);
@@ -100,9 +100,9 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
 	public async Task DeleteExpired_Drops_OnlyPastLinks()
 	{
 		var now = DateTimeOffset.UtcNow;
-		var past = await _store.CreateAsync(Ws, "LogEvents",
+		var past = await _store.CreateAsync(Ws, "events",
 			now.AddHours(-1), [], ImmutableDictionary<string, MaskMode>.Empty, CancellationToken.None);
-		var future = await _store.CreateAsync(Ws, "LogEvents",
+		var future = await _store.CreateAsync(Ws, "events",
 			now.AddHours(1), [], ImmutableDictionary<string, MaskMode>.Empty, CancellationToken.None);
 
 		var count = await _store.DeleteExpiredAsync(Ws, now, CancellationToken.None);

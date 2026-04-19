@@ -130,7 +130,7 @@ document.addEventListener("click", (event) => {
 async function generateShare(): Promise<void> {
 	const trigger = document.querySelector("[data-share-modal-open]") as HTMLElement | null;
 	const wsId = trigger?.dataset["workspace"];
-	const kql = trigger?.dataset["kql"] ?? "LogEvents";
+	const kql = trigger?.dataset["kql"] ?? "events";
 	if (!wsId) return;
 
 	const ttlAttr = document.querySelector("[data-share-ttl-group] .btn-active") as HTMLElement | null;

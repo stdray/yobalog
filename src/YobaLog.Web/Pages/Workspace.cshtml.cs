@@ -81,7 +81,7 @@ public sealed class WorkspaceModel : PageModel
 			}
 		}
 
-		UserKql = string.IsNullOrWhiteSpace(RawKql) ? "LogEvents" : RawKql.Trim();
+		UserKql = string.IsNullOrWhiteSpace(RawKql) ? "events" : RawKql.Trim();
 		EffectiveKql = AppendPageLimits(UserKql);
 
 		KustoCode code;

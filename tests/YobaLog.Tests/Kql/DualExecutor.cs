@@ -55,7 +55,7 @@ static class DualExecutor
 	static async Task<IReadOnlyList<long>> RunReferenceAsync(string kql, IReadOnlyList<TestEvent> dataset)
 	{
 		var ctx = new KustoQueryContext();
-		ctx.CopyDataIntoTable("LogEvents", dataset);
+		ctx.CopyDataIntoTable("events", dataset);
 
 		var result = await ctx.RunQuery(kql);
 		result.Error.Should().BeNullOrEmpty("reference executor error: " + result.Error);

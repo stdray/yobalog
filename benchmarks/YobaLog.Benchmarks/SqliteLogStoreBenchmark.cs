@@ -50,9 +50,9 @@ public class SqliteLogStoreBenchmark
 
 		_store.AppendBatchAsync(Ws, _batch, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
-		_whereByIndex = KustoCode.Parse("LogEvents | where Level >= 4 | take 50");
-		_whereFts = KustoCode.Parse("LogEvents | where Message has 'event' | take 50");
-		_whereContains = KustoCode.Parse("LogEvents | where Message contains 'event' | take 50");
+		_whereByIndex = KustoCode.Parse("events | where Level >= 4 | take 50");
+		_whereFts = KustoCode.Parse("events | where Message has 'event' | take 50");
+		_whereContains = KustoCode.Parse("events | where Message contains 'event' | take 50");
 	}
 
 	[GlobalCleanup]
