@@ -162,6 +162,13 @@ document.addEventListener("click", (event) => {
 
 	const panel = document.getElementById("kql-completions");
 	if (panel) panel.innerHTML = "";
+
+	// When the insertion ends with `.` (e.g. picking "Properties" drops "Properties.")
+	// kick htmx so the next completion round fires without waiting for another keystroke —
+	// user sees property-key suggestions immediately.
+	if (prefix.endsWith(".")) {
+		textarea.dispatchEvent(new Event("keyup", { bubbles: true }));
+	}
 });
 
 document.addEventListener("keydown", (event) => {

@@ -28,13 +28,24 @@ public sealed class KqlCompletionService
 				|| i.MatchText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
 			.OrderBy(i => i.OrderText, StringComparer.Ordinal)
 			.Take(MaxItems)
-			.Select(i => new KqlCompletionItem(
-				Kind: i.Kind.ToString(),
-				DisplayText: i.DisplayText,
-				BeforeText: i.BeforeText ?? "",
-				AfterText: i.AfterText ?? ""))
+			.Select(ToCompletionItem)
 			.ToList();
 
 		return new KqlCompletionsResponse(editStart, editLength, filtered);
+	}
+
+	static KqlCompletionItem ToCompletionItem(Kusto.Language.Editor.CompletionItem i)
+	{
+		// "Properties" alone isn't queryable — users need Properties.<key>. Replace the
+		// insertion with "Properties." so the next completions round hits the property-key
+		// discovery path on the server.
+		if (i.DisplayText == "Properties")
+			return new KqlCompletionItem("Column", "Properties", "Properties.", "");
+
+		return new KqlCompletionItem(
+			Kind: i.Kind.ToString(),
+			DisplayText: i.DisplayText,
+			BeforeText: i.BeforeText ?? "",
+			AfterText: i.AfterText ?? "");
 	}
 }
