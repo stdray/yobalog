@@ -77,7 +77,7 @@ public sealed class WinstonSeqCompatTests : IAsyncLifetime
 
 		var env = new Dictionary<string, string>
 		{
-			["SEQ_URL"] = _baseUrl,
+			["SEQ_URL"] = _baseUrl.TrimEnd('/') + "/seq-compat",
 			["SEQ_API_KEY"] = "compat-winston-key",
 		};
 		await RunBunAsync(FixtureDir, "run emit.ts", env);

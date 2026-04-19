@@ -58,7 +58,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 			"""{"@t":"2026-04-19T10:00:00Z","@l":"Information","@m":"hello"}""" + "\n" +
 			"""{"@t":"2026-04-19T10:00:01Z","@l":"Error","@m":"boom"}""";
 
-		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/events/raw")
+		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/ingest/clef")
 		{
 			Content = new StringContent(body, Encoding.UTF8, "application/vnd.serilog.clef"),
 		};
@@ -83,7 +83,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 	{
 		using var client = _factory.CreateClient();
 		using var resp = await client.PostAsync(
-			"/api/events/raw",
+			"/api/v1/ingest/clef",
 			new StringContent("""{"@t":"2026-04-19T10:00:00Z"}""", Encoding.UTF8, "application/vnd.serilog.clef"));
 
 		resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -93,7 +93,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 	public async Task Post_WrongKey_Unauthorized()
 	{
 		using var client = _factory.CreateClient();
-		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/events/raw")
+		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/ingest/clef")
 		{
 			Content = new StringContent("""{"@t":"2026-04-19T10:00:00Z"}""", Encoding.UTF8, "application/vnd.serilog.clef"),
 		};
@@ -110,7 +110,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 		var body = """{"@t":"2026-04-19T10:00:00Z","@m":"via-query"}""";
 
 		using var resp = await client.PostAsync(
-			"/api/events/raw?apiKey=test-key",
+			"/api/v1/ingest/clef?apiKey=test-key",
 			new StringContent(body, Encoding.UTF8, "application/vnd.serilog.clef"));
 
 		resp.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -125,7 +125,7 @@ public sealed class IngestionEndpointTests : IAsyncLifetime
 			"not-json\n" +
 			"""{"@t":"2026-04-19T10:00:02Z","@m":"ok2"}""";
 
-		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/events/raw")
+		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/ingest/clef")
 		{
 			Content = new StringContent(body, Encoding.UTF8, "application/vnd.serilog.clef"),
 		};

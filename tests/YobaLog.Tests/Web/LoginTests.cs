@@ -167,7 +167,7 @@ public sealed class LoginTests : IAsyncLifetime
 	public async Task IngestionEndpoint_StaysAnonymous()
 	{
 		using var client = _factory.CreateClient();
-		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/events/raw")
+		using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/ingest/clef")
 		{
 			Content = new StringContent(
 				"""{"@t":"2026-04-19T10:00:00Z","@m":"x"}""",

@@ -7,7 +7,7 @@
 - **Протокол приема:** CLEF (Newline-Delimited JSON) + Seq legacy Events-envelope — полная совместимость с экосистемой Seq.
 - **Endpoints:**
     - `POST /api/v1/ingest/clef` — канонический версионированный путь. Принимает CLEF NDJSON (`application/vnd.serilog.clef`) и Seq Events-envelope (`application/json`, `{"Events":[…]}`; внутри либо CLEF, либо legacy Raw — нормализуется в CLEF).
-    - `POST /api/events/raw` — Seq-compat alias, захардкожен в Serilog.Sinks.Seq / seq-logging / seqlog клиентах. Нельзя переименовать без потери совместимости. Роутится на тот же handler.
+    - `POST /seq-compat/api/events/raw` — приёмник для Seq-клиентов (Serilog.Sinks.Seq, seq-logging, seqlog). Клиенты строят endpoint как `<base-url>/api/events/raw` (просто конкатенация строки), поэтому пользователь прописывает в своём Serilog/winston-конфиге base URL `https://yobalog.example.com/seq-compat` — клиент дописывает хвост сам. Тот же handler, что и canonical. UI workspace'а даст кнопку «Copy Seq URL» с готовым base URL для конкретного API-ключа.
     - Будущие форматы (`gelf`, и т.п.) — новый `MapPost("/api/v1/ingest/<fmt>", ...)` + формат-специфичный парсер. Auth и pipeline-dispatch шарятся через `IngestionHandlers.ResolveScopeAsync` + `IIngestionPipeline.IngestAsync`.
 - **Хранение:**
     - Стартовый backend — **SQLite + FTS5** через `linq2db`. Один файл `.db` на каждое хранилище (Workspace).
