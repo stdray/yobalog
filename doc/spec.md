@@ -17,15 +17,15 @@
 - **Схема документа (зафиксирована):**
     - Индексируемые поля (минимальный набор, расширение — только через миграцию): `Timestamp` (@t), `Level` (@l), `TemplateHash` (хеш от @mt), `TraceId` (@tr), `SpanId` (@sp).
     - Поле `Message` (@m) и `Exception` (@x) — без индекса; поиск по substring = full scan.
-    - `Properties` — JSON-колонка (динамический мешок). Индексация — только явный allowlist путей per-workspace через expression-index на `json_extract(properties, '$.path')` (SQLite / DuckDB / Postgres).
+    - `Properties` — JSON-колонка (динамический мешок). В KQL доступна через плоский namespace `Properties.<key>` (транслятор рендерит в `json_extract(PropertiesJson, '$.<key>')`). Индексация — явный allowlist путей per-workspace через expression-index (SQLite / DuckDB / Postgres).
     - **Политика на не-индексированные фильтры:** допустимы, UI показывает warning "full scan".
-- **Конфигурация сервиса:** `appsettings.json`. Прямая зависимость от YobaConf запрещена — иначе получим цикл (YobaConf будет писать логи сюда же). Инфраструктурные сервисы не зависят друг от друга.
+- **Конфигурация сервиса:** две полки, разделены по характеру. (1) Инфраструктура — `appsettings.json` (пути к данным, HTTPS, логирование, seed admin, ключ HMAC если когда-нибудь появится). (2) Операционный state (workspaces, API-ключи, retention policies, users, share links, field-masking policies) — в `$system.meta.db`, управляется через админку (Phase D). Config → DB миграция при первом старте, если DB пустая. Прямая зависимость от YobaConf запрещена — иначе получим цикл (YobaConf будет писать логи сюда же).
 
 ## 2. Интеграция (Стандартные таргеты)
-Используем существующие библиотеки, поддерживающие протокол Seq:
-- **.NET:** Serilog + Seq Sink.
-- **Python:** `logging` + `seqlog`.
-- **TS/JS:** Winston/Pino + `seq-logging`.
+Используем существующие библиотеки, поддерживающие протокол Seq. Клиент настраивается на base URL `https://<host>/seq-compat` — библиотека сама конкатенирует `/api/events/raw` (см. §1).
+- **.NET:** Serilog + Serilog.Sinks.Seq. Проверено integration-тестом `SerilogSeqSinkCompatTests`.
+- **TS/JS:** Winston + `@datalust/winston-seq` (и Pino через аналогичные sink'ы). Проверено `WinstonSeqCompatTests` под bun.
+- **Python:** `logging` + `seqlog`. Пока не покрыто тестом.
 
 ## 3. Функциональные возможности
 - **Query Engine:** KQL — официальный диалект, не собственный "KQL-подобный". Парсер = `Microsoft.Azure.Kusto.Language` (NuGet от MS, тот же, что в Azure Data Explorer / Log Analytics) через обёртку [`kusto-loco`](https://github.com/NeilMacMullen/kusto-loco) (MIT). AST = Kusto AST; свой AST не пишем. Unsupported-операторы режутся на стадии трансляции с понятной ошибкой ("operator X not supported in yobalog"). Трансляция Kusto AST → backend-query: `Expression Trees` через `linq2db` (SQLite+FTS5 на старте, позже DuckDB). Full-text поиск по `Message` транслируется в FTS5 MATCH на SQLite. Агрегации (`summarize`, `count`, `by`) — часть KQL из коробки.
@@ -34,17 +34,17 @@
     - Анонимная ссылка на view (Guid, TTL, read-only).
     - **TSV Export:** оптимизированная выдача для LLM (Gemini/Claude).
     - **Маскирование (UX):** при нажатии "Поделиться" пользователю показывается список полей, попадающих во view; чекбоксами отмечаются маскируемые. Авто-разметка (`client_ip`, `email`, `Authorization`, имена пользователей) предзаполняет allowlist.
-    - **Маскирование (механика):** детерминированная замена (HMAC + соль сессии) — связи между записями сохраняются, значения не раскрываются.
+    - **Маскирование (механика):** детерминированная замена (HMAC-SHA256 + per-link соль, 16 байт, хранится в `ShareLink.Salt`). Связи между записями одной ссылки сохраняются; одинаковые значения в двух разных ссылках хешируются в разное — per-link salt изолирует utility от cross-link корреляции.
 - **Admin:**
     - Управление пользователями, workspace'ами, API-ключами.
-    - **API-ключи (стиль Seq):** `X-Seq-ApiKey` header или `?apiKey=`. Скоуп — workspace. Rate-limit per key.
+    - **API-ключи (стиль Seq):** `X-Seq-ApiKey` header или `?apiKey=`. Скоуп — workspace. Rate-limit per key — планируется, не реализован в MVP.
     - **Retention-политики (стиль Seq):** набор правил; каждое правило = KQL-фильтр + отсечка по дате. Пример: `@l in [Error, Fatal] → 90 дней; @l == Warning → 30 дней; остальное → 7 дней`. Глобальный hard cap по размеру файла.
     - **Retention-фильтры = saved queries.** Retention-правило не имеет своего редактора запросов — ссылается на сохранённый запрос из workspace. Удаление saved query, на который ссылается retention, блокируется с предупреждением "используется в retention-политике {name}". Это единственное UI-отличие retention-фильтра от обычного сохранённого запроса.
 
 ## 4. UI и Фронтенд
 - **Движок:** ASP.NET Core Razor Pages (SSR).
-- **Интерактивность:** htmx (динамическая подгрузка контента без перезагрузки страницы).
-- **Скрипты:** jQuery (для сложных UI-манипуляций) + Alpine.js (опционально, для простого локального стейта, например, открытия модалок).
+- **Интерактивность:** htmx (динамическая подгрузка контента без перезагрузки страницы) + htmx-ext-sse для live tail.
+- **Скрипты:** собственный TS в `ts/admin.ts`, без jQuery / Alpine — сложный локальный state в одном месте (модалка share), остальное через htmx-атрибуты и event-delegation на `document`.
 - **Общие компоненты (Shared Library):**
     - Авторизация (Login/Logout).
     - Общий макет (Layout) на готовой component-библиотеке поверх Tailwind (DaisyUI / Flowbite) с тёмной темой из коробки (`dark`/`night`/`business`). Кастомизация запрещена — берём как есть. Конкретная библиотека выбирается в первом frontend-спринте.
@@ -60,18 +60,27 @@
 - Переход на client-side JSON-рендер — только при упоре в производительность рендера в браузере; это осознанный шаг в сторону SPA.
 
 ## 5. Сборка фронта
-- **Стек:** TypeScript + Tailwind через npm, сборка через bun (встроенный bundler, TS из коробки, нативный Windows-бинарник).
-- **Зависимости:** `package.json` рядом с `.csproj`, devDependencies: `tailwindcss`, `typescript`. Сам bun — бинарник, не в `package.json`.
-- **Dev:** два терминала — `dotnet watch run` и `bun run dev` (параллельно `bun build ts/admin.ts --outdir=wwwroot/js --watch` + `tailwindcss -i ts/app.css -o wwwroot/css/app.css --watch`). CSS/JS — статика из `wwwroot`, браузер подхватывает без рестарта приложения.
+- **Стек:** TypeScript + Tailwind + DaisyUI, бандлер — bun (встроенный bundler, TS из коробки, нативный Windows-бинарник).
+- **Зависимости:** `package.json` рядом с `.csproj`, devDependencies: `tailwindcss`, `daisyui`, `typescript`, `@biomejs/biome`, `concurrently`. Сам bun — бинарник, не в `package.json`.
+- **Dev:** `run_dev.ps1` в корне репо запускает два окна: `bun run dev` (через `concurrently` — bun shell не умеет `&`) + `dotnet watch --project src/YobaLog.Web`. CSS/JS — статика из `wwwroot`, браузер подхватывает без рестарта приложения. Debug-MSBuild бунду не зовёт (watcher'ы и dotnet-watch иначе бьются за `wwwroot/`).
 - **Release:** MSBuild target `BeforeTargets="Build"` с `Condition="'$(Configuration)' == 'Release'"` — `bun install --frozen-lockfile && bun run build` (`build` = `typecheck` + минифицированные js/css). CI через `dotnet publish -c Release` собирает всё разом.
 
-## 6. Хранилище: master DB + per-workspace
-- **Master DB** (один файл SQLite): пользователи, API-ключи (глобальный реестр), список workspace'ов, глобальные retention-дефолты, аудит.
-- **Per-workspace пара файлов:**
+## 6. Хранилище: $system как global DB + per-workspace
+
+Отдельного "master" файла нет — зарезервированный `$system` workspace обслуживает global state через свой же `.meta.db`. Структура:
+
+- **`$system.logs.db`** — self-observability события (retention-проходы, ingestion-ошибки, query-статистика, аудит). Пишутся через обычный `ILogStore.AppendBatchAsync`, читаются через обычный viewer (workspace видно админу).
+- **`$system.meta.db`** — global admin state:
+    - `Workspaces(Id, CreatedAtMs)` — каталог workspace'ов.
+    - `ApiKeys(...)` — API-ключи (sha256 хеши + UI hint из первых символов).
+    - `Users(...)` — multi-admin.
+    - `RetentionPolicies(...)` — retention rules со ссылкой на saved query.
+    - Плюс собственные saved queries / share links / masking policies `$system` (как у любого workspace'а).
+- **Per-user-workspace пара файлов:**
     - `{workspace}.logs.db` — сами события (горячие данные, высокий write throughput, агрессивный retention/shrink).
-    - `{workspace}.meta.db` — сохранённые запросы, shared links, per-workspace конфиг, allowlist'ы индексации и маскировки.
-- **Обоснование разделения:** retention чистит `logs.db`, не трогая meta; shrink логов не блокирует чтение сохранённых запросов; бэкап/экспорт разных частей с разной частотой.
-- **Workspace ID:** пользовательский slug, regex `^[a-z0-9][a-z0-9-]{1,39}$` (стиль Docker image names — `acme-prod`, `yobapub`). Зарезервированный префикс `$` только для системных (`$system`). Ренейминг на старте не поддерживается (ломает shared-links и URL-ы) — добавляется позже с редиректами.
+    - `{workspace}.meta.db` — сохранённые запросы, share links, field-masking policies для этого workspace'а.
+- **Обоснование разделения:** retention чистит `logs.db`, не трогая meta; shrink логов не блокирует чтение сохранённых запросов; бэкап/экспорт разных частей с разной частотой. `$system.meta.db` как global DB — один файл вместо двух (master + $system), без новой концепции "system vs regular workspace".
+- **Workspace ID:** пользовательский slug, regex `^[a-z0-9][a-z0-9-]{1,39}$` (стиль Docker image names — `acme-prod`, `yobapub`). Зарезервированный префикс `$` только для системных (`$system`). Ренейминг на старте не поддерживается (ломает share-links и URL-ы) — добавляется позже с редиректами.
 
 ## 7. Инварианты query-слоя
 - ✅ Пагинация только cursor-based (композитный ключ по `@t` + Id).
@@ -83,13 +92,14 @@
 - ⚠ Фильтр по неиндексированному Properties-пути допустим, но UI показывает предупреждение о full scan.
 
 ## 8. Self-observability
-- Сервис пишет свои события через собственный ingestion-путь в зарезервированный workspace `$system`.
-- **Защита от рекурсии:** фильтр по category в `LiteDbLoggerProvider` — внутренние категории (`YobaLog.Ingestion.*`, `YobaLog.Query.*`, `YobaLog.Retention.*`) никогда не роутятся в user workspace'ы.
+- Сервис пишет свои события через `SystemLoggerProvider` (`ILoggerProvider`, зарегистрирован в DI) в зарезервированный workspace `$system` — напрямую через `ILogStore.AppendBatchAsync`, минуя общий `IIngestionPipeline` (чтобы pipeline-ошибки не уходили в pipeline же и не создавали рекурсию). `SystemLogFlusher` (hosted service) бэкает батчи.
+- **Защита от рекурсии:** фильтр по префиксу категории — категории `YobaLog.*` (Ingestion/Query/Retention/Storage) пишутся только в `$system`, не роутятся в user workspace'ы.
+- **Queue-full политика:** `DropWrite` — при переполнении внутреннего буфера новые self-события молча отбрасываются, чтобы не блокировать user ingest под нагрузкой.
 - **Что туда пишется:** результаты retention-проходов, ingestion-ошибки (malformed CLEF, rate-limit rejects), query-статистика (медленные запросы, full scan'ы), аудит админских действий.
-- **Admin UI:** системный workspace скрыт для не-админов, но доступен через тот же query engine/KQL. Retention-политика отдельная, более консервативная.
+- **Admin UI:** системный workspace скрыт из admin-списка (`/admin/workspaces`) как non-deletable, но доступен через обычный viewer `/ws/$system` и KQL. Retention-политика отдельная, более консервативная (`SystemRetainDays`).
 
 ## 9. Локализация
-- **Стартовый язык:** английский. Русский — отложен, но каркас предусматривает.
+- **Стартовый язык:** английский ASCII. Русский — отложен, но каркас предусматривает. CI-проверка (`grep -P '[^\x00-\x7F]'`) валит билд на не-ASCII в `ts/`, `Pages/`, Web-root `.cs`, пока scaffold не появится — чтобы случайный русский литерал не проскочил (бывало).
 - **Механизм:** `IStringLocalizer` (ASP.NET Core Localization) + `.resx` ресурсы на culture. Ключи в коде — короткие английские идентификаторы (не фразы).
 - **Конвенция ключей:** dot-notation (`page.logs.header`, `errors.invalid_query`). Нативно ложится в `.resx` через namespaces и на JSON-словарь для фронта без трансформаций.
 - **Scope:** все user-facing строки (UI labels, validation messages, API error responses) идут через локализатор. Хардкод строк в разметке/коде запрещён.
@@ -106,28 +116,38 @@
 ```csharp
 public interface ILogStore
 {
-    // Ingestion
-    ValueTask AppendBatchAsync(string workspaceId, IReadOnlyList<LogEvent> batch, CancellationToken ct);
+    // Ingestion (LogEventCandidate = pre-assigned-Id shape; store materializes Id on insert).
+    ValueTask AppendBatchAsync(WorkspaceId workspaceId, IReadOnlyList<LogEventCandidate> batch, CancellationToken ct);
 
-    // Query через AST (не через backend-specific query)
-    IAsyncEnumerable<LogEvent> QueryAsync(string workspaceId, KustoCode ast, QueryOptions opts, CancellationToken ct);
-    ValueTask<long> CountAsync(string workspaceId, KustoCode ast, CancellationToken ct);
+    // Event-shape query (filter/take/order passthrough). Shape-changing ops are rejected here.
+    IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
+    IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
+
+    // Shape-agnostic query — columns computed from the pipeline (project/extend/summarize/count).
+    // Materialized result; capped at ~10k rows to protect the viewer from runaway `project *`.
+    Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
+
+    // Distinct top-level Properties.* keys observed in recent events — feeds `Properties.<key>`
+    // autocomplete; no live Kusto schema equivalent.
+    Task<IReadOnlyList<string>> GetPropertyKeysAsync(WorkspaceId workspaceId, CancellationToken ct);
+
+    ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 
     // Retention
-    ValueTask<long> DeleteAsync(string workspaceId, KustoCode predicate, CancellationToken ct);
-    ValueTask<long> DeleteOlderThanAsync(string workspaceId, DateTimeOffset cutoff, CancellationToken ct); // fast path для time-based
+    ValueTask<long> DeleteOlderThanAsync(WorkspaceId workspaceId, DateTimeOffset cutoff, CancellationToken ct);
+    ValueTask<long> DeleteKqlAsync(WorkspaceId workspaceId, KustoCode predicate, CancellationToken ct);
 
     // Schema
-    ValueTask DeclareIndexAsync(string workspaceId, string propertyPath, IndexKind kind, CancellationToken ct);
+    ValueTask DeclareIndexAsync(WorkspaceId workspaceId, string propertyPath, IndexKind kind, CancellationToken ct);
 
     // Management
-    ValueTask CreateWorkspaceAsync(string workspaceId, WorkspaceSchema schema, CancellationToken ct);
-    ValueTask DropWorkspaceAsync(string workspaceId, CancellationToken ct);
-    ValueTask CompactAsync(string workspaceId, CancellationToken ct); // может быть no-op
-    ValueTask<WorkspaceStats> GetStatsAsync(string workspaceId, CancellationToken ct);
+    ValueTask CreateWorkspaceAsync(WorkspaceId workspaceId, WorkspaceSchema schema, CancellationToken ct);
+    ValueTask DropWorkspaceAsync(WorkspaceId workspaceId, CancellationToken ct);
+    ValueTask CompactAsync(WorkspaceId workspaceId, CancellationToken ct); // может быть no-op
+    ValueTask<WorkspaceStats> GetStatsAsync(WorkspaceId workspaceId, CancellationToken ct);
 }
 
-public sealed record QueryOptions(int PageSize, ReadOnlyMemory<byte>? Cursor);
+public sealed record LogQuery(int PageSize, ReadOnlyMemory<byte>? Cursor = default, /* filter knobs */);
 public enum IndexKind { BTree, Hash, FullText, Bitmap }
 public sealed record WorkspaceStats(long EventCount, long SizeBytes, DateTimeOffset? OldestEvent);
 ```
