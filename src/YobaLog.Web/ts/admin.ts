@@ -6,6 +6,33 @@ declare global {
 	}
 }
 
+// ---------- Local-time rendering ----------
+// Server emits <time class="local-time" datetime="ISO-UTC">UTC-fallback</time>;
+// we rewrite textContent into the viewer's timezone so fresh DOMs from htmx
+// swaps / SSE get the same treatment. Format stays YYYY-MM-DD HH:mm:ss.SSS for
+// consistency across locales — culture-aware formatting waits for the i18n
+// scaffold (spec §9).
+
+function formatLocalTime(iso: string): string {
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return iso;
+	const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+function renderLocalTimes(root: ParentNode): void {
+	for (const el of root.querySelectorAll<HTMLElement>("time.local-time[datetime]")) {
+		const iso = el.getAttribute("datetime");
+		if (iso) el.textContent = formatLocalTime(iso);
+	}
+}
+
+renderLocalTimes(document);
+document.addEventListener("htmx:afterSwap", (event) => {
+	const detail = (event as CustomEvent).detail as { target?: Element } | undefined;
+	renderLocalTimes(detail?.target ?? document);
+});
+
 // ---------- Hotkey toast ----------
 
 function showHotkeyToast(combo: string, action: string): void {

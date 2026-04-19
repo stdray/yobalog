@@ -62,7 +62,10 @@ public sealed record EventRowViewModel(
 			.Replace("'", "\\'", StringComparison.Ordinal) + "'";
 
 	public static string KqlDatetime(DateTimeOffset dt) =>
-		"datetime(" + dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) + ")";
+		"datetime(" + IsoUtc(dt) + ")";
+
+	public static string IsoUtc(DateTimeOffset dt) =>
+		dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
 
 	/// <summary>Returns display text + KQL literal for a property value.
 	/// KQL literal is null if the value isn't filterable as a string (e.g. nested object/array).</summary>
