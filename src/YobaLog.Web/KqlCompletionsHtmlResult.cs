@@ -29,7 +29,7 @@ sealed class KqlCompletionsHtmlResult(KqlCompletionsResponse response) : IResult
 
 		var sb = new StringBuilder();
 		sb.Append(System.Globalization.CultureInfo.InvariantCulture,
-			$"""<ul data-kql-completions data-edit-start="{r.EditStart}" data-edit-length="{r.EditLength}" class="menu bg-base-200 border border-base-300 rounded-box mt-1 max-h-72 overflow-y-auto absolute z-20 w-full shadow-lg">""");
+			$"""<ul data-kql-completions data-edit-start="{r.EditStart}" data-edit-length="{r.EditLength}" class="menu bg-base-300 border border-primary/40 rounded-box mt-1 max-h-72 overflow-y-auto absolute z-30 w-full shadow-2xl">""");
 		foreach (var item in r.Items)
 		{
 			sb.Append("<li><button type=\"button\" class=\"kql-suggestion flex justify-between items-center gap-2 text-xs font-mono\" ");
