@@ -152,26 +152,36 @@ public sealed class WorkspaceModel : PageModel
 		return Page();
 	}
 
-	IReadOnlyList<string> BuildShareFieldPaths()
+	List<string> BuildShareFieldPaths()
 	{
-		var paths = new SortedSet<string>(StringComparer.Ordinal)
+		// Order mirrors the event row: Message → Template → Exception → trace/span/event → Properties.*.
+		var seen = new HashSet<string>(StringComparer.Ordinal);
+		var result = new List<string>();
+		void Add(string p)
 		{
-			nameof(LogEvent.MessageTemplate),
-			nameof(LogEvent.Message),
-			nameof(LogEvent.Exception),
-			nameof(LogEvent.TraceId),
-			nameof(LogEvent.SpanId),
-			nameof(LogEvent.EventId),
-			"Properties",
-		};
-		foreach (var e in Events)
-		{
-			foreach (var key in e.Properties.Keys)
-				paths.Add("Properties." + key);
+			if (seen.Add(p))
+				result.Add(p);
 		}
-		foreach (var key in MaskingPolicy.Modes.Keys)
-			paths.Add(key);
-		return [.. paths];
+
+		Add(nameof(LogEvent.Message));
+		Add(nameof(LogEvent.MessageTemplate));
+		Add(nameof(LogEvent.Exception));
+		Add(nameof(LogEvent.TraceId));
+		Add(nameof(LogEvent.SpanId));
+		Add(nameof(LogEvent.EventId));
+
+		var propKeys = new SortedSet<string>(StringComparer.Ordinal);
+		foreach (var e in Events)
+			foreach (var key in e.Properties.Keys)
+				propKeys.Add(key);
+		foreach (var key in propKeys)
+			Add("Properties." + key);
+
+		// Paths already in policy but missing from the current sample — keep visible so user can still toggle them.
+		foreach (var key in MaskingPolicy.Modes.Keys.OrderBy(k => k, StringComparer.Ordinal))
+			Add(key);
+
+		return result;
 	}
 
 	public async Task<IActionResult> OnPostSaveAsync(
