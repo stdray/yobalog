@@ -51,8 +51,8 @@
 	<p class="text-xs opacity-60 -mt-2">Paging (<code>order by</code>, <code>take</code>, cursor) appended automatically.</p>
 
 	<div class="flex gap-2 flex-wrap items-center">
-		<button type="submit" class="btn btn-sm btn-primary">Apply</button>
-		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost">Reset</a>
+		<button type="submit" class="btn btn-sm btn-primary" data-flash>Apply</button>
+		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="btn btn-sm btn-ghost" data-flash>Reset</a>
 		@if (!Model.IsShapeChanged)
 		{
 			<label class="label cursor-pointer gap-2 ml-auto">

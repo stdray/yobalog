@@ -33,6 +33,25 @@ document.addEventListener("htmx:afterSwap", (event) => {
 	renderLocalTimes(detail?.target ?? document);
 });
 
+// ---------- Button press flash (yellow) ----------
+// Replaces daisyUI's default :active scale-down on [data-flash] buttons with a clear
+// yellow flash. Works for both mouse clicks and Ctrl+Enter (the latter calls flashButton
+// directly so the flash shows during the submit navigation).
+
+function flashButton(el: HTMLElement): void {
+	el.classList.remove("btn-flash");
+	// Force reflow to restart the CSS animation if the same button is pressed again rapidly.
+	void el.offsetWidth;
+	el.classList.add("btn-flash");
+	setTimeout(() => el.classList.remove("btn-flash"), 500);
+}
+
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	const btn = target?.closest<HTMLElement>("[data-flash]");
+	if (btn) flashButton(btn);
+});
+
 // ---------- Hotkey toast ----------
 
 function showHotkeyToast(combo: string, action: string): void {
@@ -125,7 +144,7 @@ document.addEventListener("keydown", (event) => {
 		event.preventDefault();
 		closeKqlPanel();
 		const submit = target.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
-		submit?.classList.add("btn-active");
+		if (submit) flashButton(submit);
 		showHotkeyToast(event.metaKey ? "⌘+Enter" : "Ctrl+Enter", "apply");
 		target.form?.requestSubmit();
 		return;

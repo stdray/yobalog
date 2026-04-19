@@ -18,4 +18,25 @@
 			background-color: transparent;
 		}
 	}
+
+	/* Yellow flash on Apply / Reset click — confirms the press without the default
+	   scale-down jiggle. Uses daisyUI's warning (--wa / --wac) palette, decays over
+	   ~450ms back to the button's own colors. */
+	.btn.btn-flash {
+		animation: yobalog-btn-flash 450ms ease-out;
+	}
+
+	@keyframes yobalog-btn-flash {
+		0%,
+		25% {
+			background-color: oklch(var(--wa));
+			color: oklch(var(--wac));
+			border-color: oklch(var(--wa));
+		}
+		100% {
+			background-color: unset;
+			color: unset;
+			border-color: unset;
+		}
+	}
 }
