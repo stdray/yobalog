@@ -1,10 +1,26 @@
-﻿@page
-@model IndexModel
+@page
+@model YobaLog.Web.Pages.IndexModel
 @{
-    ViewData["Title"] = "Home page";
+	ViewData["Title"] = "Workspaces";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
-</div>
+<h1 class="text-2xl font-semibold mb-4">Workspaces</h1>
+
+@if (Model.Workspaces.Length == 0)
+{
+	<p class="text-gray-600">No workspaces configured. Add API keys in <code>appsettings.json</code>.</p>
+}
+else
+{
+	<ul class="divide-y divide-gray-200 rounded-md border border-gray-200 bg-white">
+		@foreach (var ws in Model.Workspaces)
+		{
+			<li class="p-4 hover:bg-gray-50">
+				<a asp-page="/Workspace" asp-route-id="@ws.Value" class="flex items-center justify-between">
+					<span class="font-mono @(ws.IsSystem ? "text-purple-700" : "text-gray-900")">@ws.Value</span>
+					<span class="text-sm text-gray-500">View events →</span>
+				</a>
+			</li>
+		}
+	</ul>
+}

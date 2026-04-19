@@ -1,0 +1,112 @@
+@page "/ws/{id}"
+@model YobaLog.Web.Pages.WorkspaceModel
+@{
+	ViewData["Title"] = Model.Workspace.Value;
+
+	string LevelClass(YobaLog.Core.LogLevel l) => l switch
+	{
+		YobaLog.Core.LogLevel.Verbose => "text-gray-400",
+		YobaLog.Core.LogLevel.Debug => "text-gray-500",
+		YobaLog.Core.LogLevel.Information => "text-blue-600",
+		YobaLog.Core.LogLevel.Warning => "text-amber-600",
+		YobaLog.Core.LogLevel.Error => "text-red-600 font-medium",
+		YobaLog.Core.LogLevel.Fatal => "text-red-700 font-bold",
+		_ => "",
+	};
+}
+
+<div class="mb-4 flex items-baseline gap-2">
+	<a asp-page="/Index" class="text-sm text-gray-500 hover:text-gray-700">← workspaces</a>
+	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-purple-700" : "")">@Model.Workspace.Value</h1>
+</div>
+
+<form method="get" class="mb-4 bg-white border border-gray-200 rounded-md p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+	<div class="md:col-span-2">
+		<label class="block text-xs text-gray-500 mb-1">Message contains</label>
+		<input type="text" name="message" value="@Model.Message" class="w-full rounded border-gray-300 text-sm px-2 py-1 border" />
+	</div>
+	<div>
+		<label class="block text-xs text-gray-500 mb-1">Min level</label>
+		<select name="minLevel" class="w-full rounded border-gray-300 text-sm px-2 py-1 border">
+			<option value="">(any)</option>
+			@foreach (var lvl in Enum.GetValues<YobaLog.Core.LogLevel>())
+			{
+				<option value="@lvl" selected="@(Model.MinLevel == lvl)">@lvl</option>
+			}
+		</select>
+	</div>
+	<div>
+		<label class="block text-xs text-gray-500 mb-1">Trace ID</label>
+		<input type="text" name="traceId" value="@Model.TraceId" class="w-full rounded border-gray-300 text-sm px-2 py-1 border font-mono" />
+	</div>
+	<div>
+		<label class="block text-xs text-gray-500 mb-1">From (UTC)</label>
+		<input type="datetime-local" name="from" value="@Model.From" class="w-full rounded border-gray-300 text-sm px-2 py-1 border" />
+	</div>
+	<div>
+		<label class="block text-xs text-gray-500 mb-1">To (UTC)</label>
+		<input type="datetime-local" name="to" value="@Model.To" class="w-full rounded border-gray-300 text-sm px-2 py-1 border" />
+	</div>
+	<div class="md:col-span-6 flex gap-2">
+		<button type="submit" class="rounded bg-gray-900 text-white text-sm px-3 py-1 hover:bg-gray-700">Apply</button>
+		<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="rounded border border-gray-300 text-sm px-3 py-1 hover:bg-gray-50">Reset</a>
+	</div>
+</form>
+
+@if (Model.SchemaMissing)
+{
+	<div class="text-gray-600">Workspace has no events yet.</div>
+}
+else if (Model.Events.Count == 0)
+{
+	<div class="text-gray-600">No events match the filter.</div>
+}
+else
+{
+	<div class="overflow-x-auto rounded-md border border-gray-200 bg-white">
+		<table class="min-w-full text-sm">
+			<thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+				<tr>
+					<th class="text-left px-3 py-2 font-medium w-44">Time (UTC)</th>
+					<th class="text-left px-3 py-2 font-medium w-24">Level</th>
+					<th class="text-left px-3 py-2 font-medium">Message</th>
+					<th class="text-left px-3 py-2 font-medium w-40">Trace</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-gray-100">
+				@foreach (var e in Model.Events)
+				{
+					<tr class="align-top hover:bg-gray-50">
+						<td class="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
+						<td class="px-3 py-2 @LevelClass(e.Level)">@e.Level</td>
+						<td class="px-3 py-2 break-words">
+							<div>@e.Message</div>
+							@if (!string.IsNullOrEmpty(e.Exception))
+							{
+								<pre class="mt-1 text-xs text-red-600 whitespace-pre-wrap">@e.Exception</pre>
+							}
+						</td>
+						<td class="px-3 py-2 font-mono text-xs text-gray-500 truncate">@e.TraceId</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+
+	@if (Model.NextCursor is not null)
+	{
+		<div class="mt-3">
+			<a asp-page="/Workspace"
+				asp-route-id="@Model.Workspace.Value"
+				asp-route-from="@Model.From"
+				asp-route-to="@Model.To"
+				asp-route-minLevel="@Model.MinLevel"
+				asp-route-traceId="@Model.TraceId"
+				asp-route-message="@Model.Message"
+				asp-route-cursor="@Model.NextCursor"
+				class="rounded border border-gray-300 text-sm px-3 py-1 hover:bg-gray-50">
+				Load older →
+			</a>
+		</div>
+	}
+}
