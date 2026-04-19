@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using YobaLog.Core.Auth;
 using YobaLog.Core.SavedQueries;
+using YobaLog.Core.Sharing;
 
 namespace YobaLog.Core.Storage;
 
@@ -9,17 +10,20 @@ public sealed class WorkspaceBootstrapper : IHostedService
 {
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
+	readonly IFieldMaskingPolicyStore _maskingPolicies;
 	readonly IApiKeyStore _apiKeys;
 	readonly ILogger<WorkspaceBootstrapper> _logger;
 
 	public WorkspaceBootstrapper(
 		ILogStore store,
 		ISavedQueryStore savedQueries,
+		IFieldMaskingPolicyStore maskingPolicies,
 		IApiKeyStore apiKeys,
 		ILogger<WorkspaceBootstrapper> logger)
 	{
 		_store = store;
 		_savedQueries = savedQueries;
+		_maskingPolicies = maskingPolicies;
 		_apiKeys = apiKeys;
 		_logger = logger;
 	}
@@ -40,6 +44,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 	{
 		await _store.CreateWorkspaceAsync(ws, new WorkspaceSchema(), ct).ConfigureAwait(false);
 		await _savedQueries.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
+		await _maskingPolicies.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
 	}
 
 	public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
