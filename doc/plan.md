@@ -49,7 +49,12 @@
     - [ ] Server-side автокомплит через htmx (`KustoCode.GetCompletions`).
     - [ ] Saved queries (CRUD) — `.meta.db` per workspace.
     - [ ] Retention-политики с фильтрами-ссылками на saved queries.
-- [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail (SSE + sliding window).
+- [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail.
+    - [ ] **Live tail / auto-refresh:** htmx SSE-extension, сервер пушит HTML-фрагменты через out-of-band swap. Sliding window ~100 событий per-subscriber, coalescing в N-ms окна, rate cap → "N событий пропущено"-маркер = точка cursor-пагинации (reuse existing `before`-cursor). Новые строки появляются с кратковременной подсветкой (CSS transition).
+    - [ ] **Viewport awareness:** пока пользователь не наверху — новые события не префендятся, накапливаются в индикаторе "N новых"; клик/скролл к верху применяет.
+    - [ ] **Infinite scroll (вместо "Load older"):** скролл к низу триггерит автозагрузку через тот же cursor-based endpoint. Верхняя граница — cursor-based "show newer" (прыжок вперёд, если мы на прошлом page). Номерной пагинации не будет — spec §7 прямо запрещает offset на больших таблицах.
+    - [ ] Share links + маскирование UI per spec §3.
+    - [ ] TSV export.
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
 ## Отложено / tech debt после Фазы A
