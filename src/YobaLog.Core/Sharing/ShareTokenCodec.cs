@@ -32,6 +32,7 @@ public sealed class ShareTokenCodec
 			token.Kql,
 			token.ExpiresAt.ToUnixTimeMilliseconds(),
 			Convert.ToBase64String(token.Salt.AsSpan()),
+			[.. token.Columns],
 			token.Modes.Where(kv => kv.Value != MaskMode.Keep).ToDictionary(kv => kv.Key, kv => (int)kv.Value));
 
 		var payloadJson = JsonSerializer.SerializeToUtf8Bytes(dto, DtoContext.Default.Dto);
@@ -90,10 +91,11 @@ public sealed class ShareTokenCodec
 			dto.Kql,
 			DateTimeOffset.FromUnixTimeMilliseconds(dto.ExpMs),
 			[.. Convert.FromBase64String(dto.Salt)],
+			[.. dto.Cols],
 			modesBuilder.ToImmutable());
 	}
 
-	internal sealed record Dto(string Ws, string Kql, long ExpMs, string Salt, Dictionary<string, int> Modes);
+	internal sealed record Dto(string Ws, string Kql, long ExpMs, string Salt, List<string> Cols, Dictionary<string, int> Modes);
 }
 
 [System.Text.Json.Serialization.JsonSerializable(typeof(ShareTokenCodec.Dto))]

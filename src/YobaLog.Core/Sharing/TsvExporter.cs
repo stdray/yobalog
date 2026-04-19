@@ -7,111 +7,64 @@ namespace YobaLog.Core.Sharing;
 
 public static class TsvExporter
 {
-	static readonly string[] TopLevelColumns =
-	[
-		nameof(LogEvent.Id),
-		nameof(LogEvent.Timestamp),
-		nameof(LogEvent.Level),
-		nameof(LogEvent.MessageTemplate),
-		nameof(LogEvent.Message),
-		nameof(LogEvent.Exception),
-		nameof(LogEvent.TraceId),
-		nameof(LogEvent.SpanId),
-		nameof(LogEvent.EventId),
-		"Properties",
-	];
-
 	public static async Task WriteAsync(
 		IAsyncEnumerable<LogEvent> events,
+		IReadOnlyList<string> columns,
 		FieldMaskingPolicy policy,
 		ValueMasker masker,
 		TextWriter writer,
 		CancellationToken ct)
 	{
-		var visibleColumns = TopLevelColumns
+		var visible = columns
 			.Where(c => policy.ModeFor(c) != MaskMode.Hide)
 			.ToArray();
 
-		await writer.WriteLineAsync(string.Join('\t', visibleColumns)).ConfigureAwait(false);
+		await writer.WriteLineAsync(string.Join('\t', visible)).ConfigureAwait(false);
 
 		await foreach (var e in events.WithCancellation(ct).ConfigureAwait(false))
 		{
 			var first = true;
-			foreach (var col in visibleColumns)
+			foreach (var col in visible)
 			{
 				if (!first) await writer.WriteAsync('\t').ConfigureAwait(false);
 				first = false;
-				var cell = RenderCell(col, e, policy, masker);
+				var mode = policy.ModeFor(col);
+				var cell = RenderCell(col, e, mode, masker);
 				await writer.WriteAsync(EscapeTsv(cell)).ConfigureAwait(false);
 			}
 			await writer.WriteAsync('\n').ConfigureAwait(false);
 		}
 	}
 
-	static string RenderCell(string column, LogEvent e, FieldMaskingPolicy policy, ValueMasker masker)
+	static string RenderCell(string column, LogEvent e, MaskMode mode, ValueMasker masker)
 	{
-		var mode = policy.ModeFor(column);
-		if (mode == MaskMode.Hide)
-			return "";
-
-		return column switch
-		{
-			nameof(LogEvent.Id) => e.Id.ToString(CultureInfo.InvariantCulture),
-			nameof(LogEvent.Timestamp) => e.Timestamp.ToString("O", CultureInfo.InvariantCulture),
-			nameof(LogEvent.Level) => e.Level.ToString(),
-			nameof(LogEvent.MessageTemplate) => MaybeMask(column, e.MessageTemplate, mode, masker),
-			nameof(LogEvent.Message) => MaybeMask(column, e.Message, mode, masker),
-			nameof(LogEvent.Exception) => MaybeMask(column, e.Exception ?? "", mode, masker),
-			nameof(LogEvent.TraceId) => MaybeMask(column, e.TraceId ?? "", mode, masker),
-			nameof(LogEvent.SpanId) => MaybeMask(column, e.SpanId ?? "", mode, masker),
-			nameof(LogEvent.EventId) => e.EventId?.ToString(CultureInfo.InvariantCulture) ?? "",
-			"Properties" => RenderProperties(e.Properties, policy, masker),
-			_ => "",
-		};
+		var raw = LookupScalar(column, e) ?? LookupProperty(e.Properties, column);
+		return mode == MaskMode.Mask ? masker.Mask(column, raw) : raw;
 	}
 
-	static string MaybeMask(string path, string value, MaskMode mode, ValueMasker masker) =>
-		mode switch
-		{
-			MaskMode.Mask => masker.Mask(path, value),
-			MaskMode.Keep => value,
-			_ => "",
-		};
-
-	static string RenderProperties(
-		ImmutableDictionary<string, JsonElement> props,
-		FieldMaskingPolicy policy,
-		ValueMasker masker)
+	// Flat column namespace: top-level scalars share the lookup path with Properties.*.
+	// On name collision, top-level wins — property keys shadowed by a scalar name are invisible in TSV.
+	static string? LookupScalar(string column, LogEvent e) => column switch
 	{
-		if (props.IsEmpty)
-			return "";
+		nameof(LogEvent.Id) => e.Id.ToString(CultureInfo.InvariantCulture),
+		nameof(LogEvent.Timestamp) => e.Timestamp.ToString("O", CultureInfo.InvariantCulture),
+		nameof(LogEvent.Level) => e.Level.ToString(),
+		nameof(LogEvent.MessageTemplate) => e.MessageTemplate,
+		nameof(LogEvent.Message) => e.Message,
+		nameof(LogEvent.Exception) => e.Exception ?? "",
+		nameof(LogEvent.TraceId) => e.TraceId ?? "",
+		nameof(LogEvent.SpanId) => e.SpanId ?? "",
+		nameof(LogEvent.EventId) => e.EventId?.ToString(CultureInfo.InvariantCulture) ?? "",
+		_ => null,
+	};
 
-		using var stream = new MemoryStream();
-		using (var w = new Utf8JsonWriter(stream))
-		{
-			w.WriteStartObject();
-			foreach (var (k, v) in props)
-			{
-				var path = "Properties." + k;
-				var mode = policy.ModeFor(path);
-				if (mode == MaskMode.Hide)
-					continue;
-				w.WritePropertyName(k);
-				if (mode == MaskMode.Mask)
-					w.WriteStringValue(masker.Mask(path, JsonValueToString(v)));
-				else
-					v.WriteTo(w);
-			}
-			w.WriteEndObject();
-		}
-		return Encoding.UTF8.GetString(stream.ToArray());
-	}
+	static string LookupProperty(ImmutableDictionary<string, JsonElement> props, string key) =>
+		props.TryGetValue(key, out var v) ? JsonValueToString(v) : "";
 
 	static string JsonValueToString(JsonElement e) => e.ValueKind switch
 	{
 		JsonValueKind.String => e.GetString() ?? "",
-		JsonValueKind.Null => "",
-		JsonValueKind.Undefined => "",
+		JsonValueKind.Null or JsonValueKind.Undefined => "",
 		_ => e.GetRawText(),
 	};
 
@@ -134,4 +87,5 @@ public static class TsvExporter
 		}
 		return sb.ToString();
 	}
+
 }

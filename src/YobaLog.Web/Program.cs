@@ -170,12 +170,14 @@ app.MapPost("/api/ws/{id}/share", async (
 			StringComparer.Ordinal);
 
 	var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+	var columns = (req.Columns ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).ToImmutableArray();
 
 	var tokenStr = codec.Encode(new ShareToken(
 		ws,
 		req.Kql ?? "LogEvents",
 		expiresAt,
 		[.. salt],
+		columns,
 		modes));
 
 	if (req.SavePolicy == true && modes.Count > 0)
@@ -226,7 +228,7 @@ app.MapGet("/share/{token}.tsv", async (
 	await using var bodyWriter = new StreamWriter(ctx.Response.Body, System.Text.Encoding.UTF8, leaveOpen: true);
 	try
 	{
-		await TsvExporter.WriteAsync(store.QueryKqlAsync(decoded.Workspace, code, ct), policy, masker, bodyWriter, ct);
+		await TsvExporter.WriteAsync(store.QueryKqlAsync(decoded.Workspace, code, ct), decoded.Columns, policy, masker, bodyWriter, ct);
 	}
 	catch (YobaLog.Core.Kql.UnsupportedKqlException ex)
 	{
@@ -242,7 +244,7 @@ app.Run();
 
 internal sealed record IngestResponse(int Received, int Errors);
 
-internal sealed record ShareRequest(string? Kql, int? TtlHours, Dictionary<string, string>? Modes, bool? SavePolicy);
+internal sealed record ShareRequest(string? Kql, int? TtlHours, string[]? Columns, Dictionary<string, string>? Modes, bool? SavePolicy);
 internal sealed record ShareResponse(string Url, DateTimeOffset ExpiresAt);
 
 public partial class Program;

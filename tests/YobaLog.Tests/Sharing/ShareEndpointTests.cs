@@ -13,6 +13,10 @@ namespace YobaLog.Tests.Sharing;
 
 public sealed class ShareEndpointTests : IAsyncLifetime
 {
+	static readonly string[] DefaultColumns = [
+		"Id", "Timestamp", "Level", "Message", "MessageTemplate", "Exception", "TraceId", "SpanId", "EventId",
+	];
+
 	readonly string _tempDir;
 	readonly WebApplicationFactory<Program> _factory;
 
@@ -80,9 +84,13 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		await store.AppendBatchAsync(WorkspaceId.Parse("sharedev"), events, CancellationToken.None);
 	}
 
-	static LogEventCandidate Event(DateTimeOffset ts, string msg, string? traceId = null) =>
+	static LogEventCandidate Event(
+		DateTimeOffset ts,
+		string msg,
+		string? traceId = null,
+		ImmutableDictionary<string, JsonElement>? props = null) =>
 		new(ts, LogLevel.Information, msg, msg, null, traceId, null, null,
-			ImmutableDictionary<string, JsonElement>.Empty);
+			props ?? ImmutableDictionary<string, JsonElement>.Empty);
 
 	[Fact]
 	public async Task CreateShare_Then_FetchTsv()
@@ -96,13 +104,13 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		{
 			kql = "LogEvents",
 			ttlHours = 1,
+			columns = DefaultColumns,
 		});
 		resp.StatusCode.Should().Be(HttpStatusCode.OK);
 		var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
 		var url = body.GetProperty("url").GetString()!;
 		url.Should().EndWith(".tsv");
 
-		// Share endpoint is anonymous.
 		using var anon = _factory.CreateClient();
 		using var tsvResp = await anon.GetAsync(new Uri(url).PathAndQuery);
 		tsvResp.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -110,7 +118,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 
 		var tsv = await tsvResp.Content.ReadAsStringAsync();
 		var lines = tsv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-		lines.Should().HaveCount(3); // header + 2 rows
+		lines.Should().HaveCount(3);
 		lines[0].Should().StartWith("Id\tTimestamp\tLevel");
 		tsv.Should().Contain("hello");
 		tsv.Should().Contain("world");
@@ -125,6 +133,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
 			kql = "LogEvents",
+			columns = DefaultColumns,
 			modes = new Dictionary<string, string> { ["TraceId"] = "hide" },
 		});
 		var url = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
@@ -144,6 +153,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
 			kql = "LogEvents",
+			columns = DefaultColumns,
 			modes = new Dictionary<string, string> { ["TraceId"] = "mask" },
 		});
 		var url = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
@@ -152,6 +162,36 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		var tsv = await anon.GetStringAsync(new Uri(url).PathAndQuery);
 		tsv.Should().NotContain("trace-abc");
 		tsv.Should().Contain("traceid:");
+	}
+
+	[Fact]
+	public async Task Property_Keys_AreFlatColumns()
+	{
+		using var doc = JsonDocument.Parse("""{"user":"alice","email":"a@b.com"}""");
+		var props = ImmutableDictionary<string, JsonElement>.Empty
+			.Add("user", doc.RootElement.GetProperty("user").Clone())
+			.Add("email", doc.RootElement.GetProperty("email").Clone());
+		await SeedAsync(Event(DateTimeOffset.UtcNow.AddMinutes(-1), "m", props: props));
+
+		var columns = DefaultColumns.Concat(new[] { "user", "email" }).ToArray();
+
+		using var client = await AuthedClientAsync();
+		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
+		{
+			kql = "LogEvents",
+			columns,
+			modes = new Dictionary<string, string> { ["email"] = "mask" },
+		});
+		var url = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
+
+		using var anon = _factory.CreateClient();
+		var tsv = await anon.GetStringAsync(new Uri(url).PathAndQuery);
+		var lines = tsv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+		lines[0].Should().Contain("user").And.Contain("email");
+		lines[0].Should().NotContain("Properties.");
+		tsv.Should().Contain("alice");           // "user" kept as-is
+		tsv.Should().NotContain("a@b.com");      // "email" masked
+		tsv.Should().Contain("email:");
 	}
 
 	[Fact]
@@ -169,6 +209,7 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 		using var resp = await client.PostAsJsonAsync("/api/ws/sharedev/share", new
 		{
 			kql = "LogEvents",
+			columns = DefaultColumns,
 			modes = new Dictionary<string, string> { ["TraceId"] = "mask" },
 			savePolicy = true,
 		});

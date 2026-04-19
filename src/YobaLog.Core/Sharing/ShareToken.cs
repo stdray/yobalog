@@ -7,4 +7,5 @@ public sealed record ShareToken(
 	string Kql,
 	DateTimeOffset ExpiresAt,
 	ImmutableArray<byte> Salt,
+	ImmutableArray<string> Columns,
 	ImmutableDictionary<string, MaskMode> Modes);

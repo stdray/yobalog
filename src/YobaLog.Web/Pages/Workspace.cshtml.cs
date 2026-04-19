@@ -154,7 +154,9 @@ public sealed class WorkspaceModel : PageModel
 
 	List<string> BuildShareFieldPaths()
 	{
-		// Order mirrors the event row: Message → Template → Exception → trace/span/event → Properties.*.
+		// Order mirrors the event row. Flat namespace: top-level scalars and property keys coexist —
+		// users don't distinguish them, and TsvExporter resolves collisions by shadowing property keys
+		// with top-level scalars.
 		var seen = new HashSet<string>(StringComparer.Ordinal);
 		var result = new List<string>();
 		void Add(string p)
@@ -175,9 +177,9 @@ public sealed class WorkspaceModel : PageModel
 			foreach (var key in e.Properties.Keys)
 				propKeys.Add(key);
 		foreach (var key in propKeys)
-			Add("Properties." + key);
+			Add(key);
 
-		// Paths already in policy but missing from the current sample — keep visible so user can still toggle them.
+		// Paths already in policy but missing from the current sample — keep visible.
 		foreach (var key in MaskingPolicy.Modes.Keys.OrderBy(k => k, StringComparer.Ordinal))
 			Add(key);
 

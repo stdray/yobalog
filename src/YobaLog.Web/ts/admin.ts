@@ -137,10 +137,17 @@ async function generateShare(): Promise<void> {
 	const ttlHours = Number(ttlAttr?.dataset["ttl"] ?? "24");
 
 	const modes: Record<string, string> = {};
+	const columns: string[] = ["Id", "Timestamp", "Level"];
+	const seen = new Set<string>(columns);
 	for (const r of document.querySelectorAll<HTMLInputElement>("[data-share-radio]:checked")) {
 		const path = r.dataset["path"];
 		const value = r.value;
-		if (path && value !== "keep") modes[path] = value;
+		if (!path) continue;
+		if (!seen.has(path)) {
+			columns.push(path);
+			seen.add(path);
+		}
+		if (value !== "keep") modes[path] = value;
 	}
 
 	const result = document.getElementById("share-result");
@@ -152,7 +159,7 @@ async function generateShare(): Promise<void> {
 		const resp = await fetch(`/api/ws/${encodeURIComponent(wsId)}/share`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ kql, ttlHours, modes, savePolicy: true }),
+			body: JSON.stringify({ kql, ttlHours, columns, modes, savePolicy: true }),
 		});
 		if (!resp.ok) {
 			const text = await resp.text();

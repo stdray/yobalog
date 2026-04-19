@@ -13,6 +13,15 @@ public sealed class ShareTokenCodecTests
 			Key = key ?? Convert.ToBase64String(new byte[32]),
 		}));
 
+	static ShareToken NewToken(ImmutableDictionary<string, MaskMode>? modes = null, ImmutableArray<string> columns = default) =>
+		new(
+			WorkspaceId.Parse("dev"),
+			"LogEvents",
+			DateTimeOffset.UtcNow.AddHours(1),
+			[.. new byte[16]],
+			columns.IsDefault ? [] : columns,
+			modes ?? ImmutableDictionary<string, MaskMode>.Empty);
+
 	[Fact]
 	public void Encode_Decode_Roundtrip()
 	{
@@ -22,9 +31,10 @@ public sealed class ShareTokenCodecTests
 			"LogEvents | where Level >= 3",
 			DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_000_000),
 			[.. new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }],
+			["Message", "TraceId", "email"],
 			ImmutableDictionary<string, MaskMode>.Empty
 				.Add("TraceId", MaskMode.Mask)
-				.Add("Properties.email", MaskMode.Hide));
+				.Add("email", MaskMode.Hide));
 
 		var str = codec.Encode(original);
 		var decoded = codec.Decode(str);
@@ -34,6 +44,7 @@ public sealed class ShareTokenCodecTests
 		decoded.Kql.Should().Be(original.Kql);
 		decoded.ExpiresAt.Should().Be(original.ExpiresAt);
 		decoded.Salt.Should().Equal(original.Salt);
+		decoded.Columns.Should().Equal(original.Columns);
 		decoded.Modes.Should().BeEquivalentTo(original.Modes);
 	}
 
@@ -41,9 +52,7 @@ public sealed class ShareTokenCodecTests
 	public void Decode_WithTamperedSignature_Fails()
 	{
 		var codec = MakeCodec();
-		var token = codec.Encode(new ShareToken(
-			WorkspaceId.Parse("dev"), "LogEvents", DateTimeOffset.UtcNow.AddHours(1),
-			[.. new byte[16]], ImmutableDictionary<string, MaskMode>.Empty));
+		var token = codec.Encode(NewToken());
 
 		var parts = token.Split('.');
 		var tampered = parts[0] + "." + new string('A', parts[1].Length);
@@ -56,9 +65,7 @@ public sealed class ShareTokenCodecTests
 	{
 		var codecA = MakeCodec(Convert.ToBase64String(Enumerable.Repeat((byte)1, 32).ToArray()));
 		var codecB = MakeCodec(Convert.ToBase64String(Enumerable.Repeat((byte)2, 32).ToArray()));
-		var token = codecA.Encode(new ShareToken(
-			WorkspaceId.Parse("dev"), "LogEvents", DateTimeOffset.UtcNow.AddHours(1),
-			[.. new byte[16]], ImmutableDictionary<string, MaskMode>.Empty));
+		var token = codecA.Encode(NewToken());
 
 		codecB.Decode(token).Should().BeNull();
 	}
@@ -81,9 +88,7 @@ public sealed class ShareTokenCodecTests
 			Key = Convert.ToBase64String(new byte[16]),
 		}));
 
-		var act = () => codec.Encode(new ShareToken(
-			WorkspaceId.Parse("dev"), "LogEvents", DateTimeOffset.UtcNow.AddHours(1),
-			[.. new byte[16]], ImmutableDictionary<string, MaskMode>.Empty));
+		var act = () => codec.Encode(NewToken());
 
 		act.Should().Throw<InvalidOperationException>().WithMessage("*32 bytes*");
 	}
@@ -93,9 +98,7 @@ public sealed class ShareTokenCodecTests
 	{
 		var codec = new ShareTokenCodec(Options.Create(new ShareSigningOptions { Key = "" }));
 
-		var act = () => codec.Encode(new ShareToken(
-			WorkspaceId.Parse("dev"), "LogEvents", DateTimeOffset.UtcNow.AddHours(1),
-			[.. new byte[16]], ImmutableDictionary<string, MaskMode>.Empty));
+		var act = () => codec.Encode(NewToken());
 
 		act.Should().Throw<InvalidOperationException>().WithMessage("*not configured*");
 	}

@@ -1,6 +1,3 @@
-using System.Collections.Immutable;
-using System.Text;
-using System.Text.Json;
 using LinqToDB.Mapping;
 
 namespace YobaLog.Core.Storage.Sqlite;
@@ -31,26 +28,8 @@ sealed class EventRecord
 		SpanId = c.SpanId,
 		EventId = c.EventId,
 		TemplateHash = StableHash(c.MessageTemplate),
-		PropertiesJson = SerializeProperties(c.Properties),
+		PropertiesJson = PropertiesJsonSerializer.Serialize(c.Properties),
 	};
-
-	static string SerializeProperties(ImmutableDictionary<string, JsonElement> props)
-	{
-		if (props.IsEmpty)
-			return "{}";
-		using var stream = new MemoryStream();
-		using (var writer = new Utf8JsonWriter(stream))
-		{
-			writer.WriteStartObject();
-			foreach (var (k, v) in props)
-			{
-				writer.WritePropertyName(k);
-				v.WriteTo(writer);
-			}
-			writer.WriteEndObject();
-		}
-		return Encoding.UTF8.GetString(stream.ToArray());
-	}
 
 	static long StableHash(string s)
 	{
