@@ -14,8 +14,6 @@ namespace YobaLog.Web.Pages;
 
 public sealed class WorkspaceModel : PageModel
 {
-	const int ShapeChangedRowCap = 10_000;
-
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
@@ -111,7 +109,10 @@ public sealed class WorkspaceModel : PageModel
 		}
 
 		IsShapeChanged = KqlTransformer.HasShapeChangingOps(userCode);
-		EffectiveKql = IsShapeChanged ? AppendRowCap(UserKql) : AppendPageLimits(UserKql);
+		// Shape-changed queries keep the user's KQL intact — our pager (order by Timestamp + take) doesn't
+		// compose cleanly after shape-changing ops, and take in post-shape position isn't supported yet.
+		// The store caps materialized rows to prevent runaway memory on unbounded 'project' / 'extend'.
+		EffectiveKql = IsShapeChanged ? UserKql : AppendPageLimits(UserKql);
 
 		KustoCode code;
 		try
@@ -247,9 +248,6 @@ public sealed class WorkspaceModel : PageModel
 		sb.Append(CultureInfo.InvariantCulture, $"\n| take {PageSize + 1}");
 		return sb.ToString();
 	}
-
-	static string AppendRowCap(string userKql) =>
-		string.Create(CultureInfo.InvariantCulture, $"{userKql.TrimEnd()}\n| take {ShapeChangedRowCap}");
 
 	static ReadOnlyMemory<byte>? DecodeCursor(string? s)
 	{

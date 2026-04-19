@@ -36,6 +36,10 @@ public sealed class SqliteLogStore : ILogStore
 			yield return ToLogEvent(r);
 	}
 
+	// Hard cap on materialized rows for KqlResult — guards against unbounded 'project' / 'extend' output
+	// in the viewer path. Aggregate ops (count / summarize) produce small results and never hit this.
+	const int MaxMaterializedRows = 10_000;
+
 	public async Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct)
 	{
 		await using var db = Open(workspaceId);
@@ -43,7 +47,11 @@ public sealed class SqliteLogStore : ILogStore
 		var result = _kql.Execute(source, kql);
 		var rows = new List<object?[]>();
 		await foreach (var row in result.Rows.WithCancellation(ct).ConfigureAwait(false))
+		{
+			if (rows.Count >= MaxMaterializedRows)
+				break;
 			rows.Add(row);
+		}
 		return new KqlResult(result.Columns, ToAsyncEnumerable(rows));
 	}
 
