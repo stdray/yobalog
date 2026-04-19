@@ -2,7 +2,7 @@ namespace YobaLog.Core.Storage;
 
 public interface ILogStore
 {
-	ValueTask AppendBatchAsync(WorkspaceId workspaceId, IReadOnlyList<LogEvent> batch, CancellationToken ct);
+	ValueTask AppendBatchAsync(WorkspaceId workspaceId, IReadOnlyList<LogEventCandidate> batch, CancellationToken ct);
 
 	IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 	ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
