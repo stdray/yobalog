@@ -13,12 +13,12 @@
 		@if (showChips)
 		{
 			<span class="absolute inset-y-0 right-1 hidden group-hover:inline-flex items-center gap-1 bg-base-300 rounded px-1 shadow">
-				<button type="button" class="filter-chip text-success text-sm leading-none"
+				<button type="button" class="filter-chip text-success text-xs font-semibold leading-none px-1"
 					data-filter-field="Timestamp" data-filter-op="ge" data-filter-value="@tsKql"
-					title="search from (inclusive)">✓</button>
-				<button type="button" class="filter-chip text-error text-sm leading-none"
+					title="search from this moment (inclusive)">from</button>
+				<button type="button" class="filter-chip text-error text-xs font-semibold leading-none px-1"
 					data-filter-field="Timestamp" data-filter-op="le" data-filter-value="@tsKql"
-					title="search up to (inclusive)">✗</button>
+					title="search up to this moment (inclusive)">to</button>
 			</span>
 		}
 	</td>
@@ -95,18 +95,29 @@
 				{
 					<dt class="opacity-60">EventId</dt><dd>@Model.EventId</dd>
 				}
-			</dl>
-			@if (!string.IsNullOrEmpty(Model.PropertiesJson))
-			{
-				<div class="mt-3">
-					<div class="flex items-center gap-2 mb-1">
-						<span class="opacity-60">Properties</span>
+				@foreach (var (key, value) in Model.Properties)
+				{
+					var (display, kqlLit) = EventRowViewModel.PropertyForDisplay(value);
+					var field = "Properties." + key;
+					<dt class="opacity-60">@key</dt>
+					<dd class="flex items-center gap-2 break-all group/prop">
+						<span>@display</span>
+						@if (kqlLit is not null)
+						{
+							<span class="hidden group-hover/prop:inline-flex items-center gap-1">
+								<button type="button" class="filter-chip text-success text-sm leading-none px-1"
+									data-filter-field="@field" data-filter-op="eq" data-filter-value="@kqlLit"
+									title="only this value">✓</button>
+								<button type="button" class="filter-chip text-error text-sm leading-none px-1"
+									data-filter-field="@field" data-filter-op="ne" data-filter-value="@kqlLit"
+									title="exclude this value">✗</button>
+							</span>
+						}
 						<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
-							data-copy="@Model.PropertiesJson" title="Copy properties JSON">⧉ json</button>
-					</div>
-					<pre class="whitespace-pre-wrap break-all bg-base-200 p-2 rounded">@Model.PropertiesJson</pre>
-				</div>
-			}
+							data-copy="@display" title="Copy value">⧉</button>
+					</dd>
+				}
+			</dl>
 		</td>
 	</tr>
 }

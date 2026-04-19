@@ -42,16 +42,23 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 		Mk(5, LogLevel.Debug, "starting", trace: "t3"),
 	];
 
-	static LogEventCandidate Mk(int secs, LogLevel level, string msg, string? trace = null) => new(
-		new DateTimeOffset(2026, 4, 19, 10, secs, 0, TimeSpan.Zero),
-		level,
-		msg,
-		msg,
-		null,
-		trace,
-		null,
-		null,
-		ImmutableDictionary<string, JsonElement>.Empty);
+	static LogEventCandidate Mk(int secs, LogLevel level, string msg, string? trace = null,
+		ImmutableDictionary<string, JsonElement>? props = null) => new(
+			new DateTimeOffset(2026, 4, 19, 10, secs, 0, TimeSpan.Zero),
+			level,
+			msg,
+			msg,
+			null,
+			trace,
+			null,
+			null,
+			props ?? ImmutableDictionary<string, JsonElement>.Empty);
+
+	static ImmutableDictionary<string, JsonElement> Props(string json) =>
+		JsonDocument.Parse(json).RootElement.EnumerateObject()
+			.Aggregate(
+				ImmutableDictionary<string, JsonElement>.Empty,
+				(acc, p) => acc.Add(p.Name, p.Value.Clone()));
 
 	async Task<IReadOnlyList<string>> RunAsync(string kql)
 	{
@@ -162,5 +169,47 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 		var messages = await RunAsync(
 			"events | where Timestamp >= datetime(2026-04-19T10:02:00Z) and Timestamp < datetime(2026-04-19T10:05:00Z)");
 		messages.Should().BeEquivalentTo(["boom", "meh", "crash on Earth"]);
+	}
+
+	[Fact]
+	public async Task PropertiesEq_TranslatesToJsonExtract()
+	{
+		await _store.AppendBatchAsync(Ws,
+			[
+				Mk(30, LogLevel.Information, "login", props: Props("""{"user":"alice","region":"eu"}""")),
+				Mk(31, LogLevel.Information, "login", props: Props("""{"user":"bob","region":"us"}""")),
+			],
+			CancellationToken.None);
+
+		var messages = await RunAsync("events | where Properties.user == 'alice'");
+		messages.Should().BeEquivalentTo(["login"]);
+	}
+
+	[Fact]
+	public async Task PropertiesNe_TranslatesToJsonExtract()
+	{
+		await _store.AppendBatchAsync(Ws,
+			[
+				Mk(40, LogLevel.Information, "x", props: Props("""{"user":"alice"}""")),
+				Mk(41, LogLevel.Information, "y", props: Props("""{"user":"bob"}""")),
+			],
+			CancellationToken.None);
+
+		var messages = await RunAsync("events | where Properties.user != 'alice'");
+		messages.Should().Contain("y").And.NotContain("x");
+	}
+
+	[Fact]
+	public async Task PropertiesContains_TranslatesToJsonExtract()
+	{
+		await _store.AppendBatchAsync(Ws,
+			[
+				Mk(50, LogLevel.Information, "e1", props: Props("""{"email":"alice@example.com"}""")),
+				Mk(51, LogLevel.Information, "e2", props: Props("""{"email":"bob@other.org"}""")),
+			],
+			CancellationToken.None);
+
+		var messages = await RunAsync("events | where Properties.email contains 'example'");
+		messages.Should().BeEquivalentTo(["e1"]);
 	}
 }

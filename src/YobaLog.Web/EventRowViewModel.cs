@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.Json;
 using YobaLog.Core;
 using LogLevel = YobaLog.Core.LogLevel;
 
@@ -14,7 +16,7 @@ public sealed record EventRowViewModel(
 	string? TraceId,
 	string? SpanId,
 	int? EventId,
-	string PropertiesJson,
+	ImmutableDictionary<string, JsonElement> Properties,
 	bool IsLive)
 {
 	public static EventRowViewModel FromStored(LogEvent e) => new(
@@ -27,7 +29,7 @@ public sealed record EventRowViewModel(
 		e.TraceId,
 		e.SpanId,
 		e.EventId,
-		PropertiesJsonSerializer.Serialize(e.Properties, indented: true, emptyValue: ""),
+		e.Properties,
 		IsLive: false);
 
 	public static EventRowViewModel FromLive(LogEventCandidate c) => new(
@@ -40,7 +42,7 @@ public sealed record EventRowViewModel(
 		c.TraceId,
 		c.SpanId,
 		c.EventId,
-		PropertiesJson: "",
+		c.Properties,
 		IsLive: true);
 
 	public static string LevelBadge(LogLevel l) => l switch
@@ -61,4 +63,16 @@ public sealed record EventRowViewModel(
 
 	public static string KqlDatetime(DateTimeOffset dt) =>
 		"datetime(" + dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) + ")";
+
+	/// <summary>Returns display text + KQL literal for a property value.
+	/// KQL literal is null if the value isn't filterable as a string (e.g. nested object/array).</summary>
+	public static (string Display, string? KqlLiteral) PropertyForDisplay(JsonElement v) => v.ValueKind switch
+	{
+		JsonValueKind.String => (v.GetString() ?? "", KqlString(v.GetString())),
+		JsonValueKind.Null or JsonValueKind.Undefined => ("(null)", null),
+		JsonValueKind.Number => (v.GetRawText(), v.GetRawText()),
+		JsonValueKind.True => ("true", "true"),
+		JsonValueKind.False => ("false", "false"),
+		_ => (v.GetRawText(), null),
+	};
 }

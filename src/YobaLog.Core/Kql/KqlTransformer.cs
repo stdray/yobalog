@@ -484,13 +484,10 @@ sealed class KqlTransformer
 		if (binary.Kind == SyntaxKind.OrExpression)
 			return Expr.OrElse(BuildExpression(binary.Left, row), BuildExpression(binary.Right, row));
 
-		if (binary.Left is not NameReference columnRef)
-			throw new UnsupportedKqlException($"left side of '{binary.Kind}' must be a column name, got {binary.Left.Kind}");
+		var (column, access) = BuildLhs(binary.Left, row, binary.Kind);
+
 		if (binary.Right is not LiteralExpression literal)
 			throw new UnsupportedKqlException($"right side of '{binary.Kind}' must be a literal, got {binary.Right.Kind}");
-
-		var column = columnRef.SimpleName;
-		var access = BuildColumnAccess(row, column);
 
 		if (binary.Kind is SyntaxKind.ContainsExpression or SyntaxKind.ContainsCsExpression)
 			return BuildContains(access, column, literal, binary.Kind == SyntaxKind.ContainsCsExpression);
@@ -519,6 +516,35 @@ sealed class KqlTransformer
 			SyntaxKind.GreaterThanOrEqualExpression => Expr.GreaterThanOrEqual(access, coerced),
 			_ => throw new UnsupportedKqlException($"binary '{binary.Kind}' not supported"),
 		};
+	}
+
+	static (string column, Expr access) BuildLhs(Expression left, ParamExpr row, SyntaxKind op) => left switch
+	{
+		NameReference n => (n.SimpleName, BuildColumnAccess(row, n.SimpleName)),
+		PathExpression p when IsPropertiesPath(p, out var key) =>
+			("Properties." + key, BuildPropertiesAccess(row, key)),
+		_ => throw new UnsupportedKqlException(
+			$"left side of '{op}' must be a column name or Properties.<key>, got {left.Kind}"),
+	};
+
+	static bool IsPropertiesPath(PathExpression path, out string key)
+	{
+		if (path.Expression is NameReference { SimpleName: "Properties" }
+			&& path.Selector is NameReference sel)
+		{
+			key = sel.SimpleName;
+			return true;
+		}
+		key = "";
+		return false;
+	}
+
+	static Expr BuildPropertiesAccess(ParamExpr row, string key)
+	{
+		var propertiesJson = Expr.Property(row, nameof(EventRecord.PropertiesJson));
+		var path = Expr.Constant("$." + key, typeof(string));
+		var method = typeof(KqlSqlExpressions).GetMethod(nameof(KqlSqlExpressions.JsonExtract))!;
+		return Expr.Call(method, propertiesJson, path);
 	}
 
 	static Expr BuildColumnAccess(ParamExpr row, string column) => column switch
