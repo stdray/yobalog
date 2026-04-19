@@ -6,6 +6,20 @@ declare global {
 	}
 }
 
+// ---------- Global focus shortcut: "/" jumps to KQL textarea ----------
+
+document.addEventListener("keydown", (event) => {
+	if (event.key !== "/") return;
+	if (event.ctrlKey || event.metaKey || event.altKey) return;
+	const active = document.activeElement;
+	if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+	const textarea = document.getElementById("kql-textarea") as HTMLTextAreaElement | null;
+	if (!textarea) return;
+	event.preventDefault();
+	textarea.focus();
+	textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+});
+
 // ---------- KQL completion ----------
 
 document.addEventListener("click", (event) => {
