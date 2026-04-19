@@ -148,9 +148,13 @@ document.addEventListener("click", (event) => {
 	const value = textarea.value;
 	const left = value.substring(0, editStart);
 	const right = value.substring(editStart + editLength);
-	textarea.value = left + before + after + right;
+	// Pure insertion (editLength === 0) adjacent to an identifier char means Kusto's
+	// BeforeText ran into the previous token without a separator — add one.
+	const needsLeadingSpace = editLength === 0 && /[A-Za-z0-9_]/.test(left.slice(-1));
+	const prefix = needsLeadingSpace ? ` ${before}` : before;
+	textarea.value = left + prefix + after + right;
 
-	const caret = left.length + before.length;
+	const caret = left.length + prefix.length;
 	textarea.setSelectionRange(caret, caret);
 	textarea.focus();
 
