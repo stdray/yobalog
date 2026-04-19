@@ -1,0 +1,67 @@
+@page "/admin/workspaces"
+@model YobaLog.Web.Pages.Admin.WorkspacesModel
+@{
+	ViewData["Title"] = "Admin — Workspaces";
+}
+
+<div class="mb-4 flex items-center gap-3 flex-wrap">
+	<a asp-page="/Index" class="text-sm opacity-60 hover:opacity-100">← workspaces</a>
+	<h1 class="text-2xl font-semibold">Admin — Workspaces</h1>
+</div>
+
+@if (Model.FlashMessage is not null)
+{
+	<div class="alert alert-success mb-4 text-sm">@Model.FlashMessage</div>
+}
+@if (Model.ErrorMessage is not null)
+{
+	<div class="alert alert-error mb-4 text-sm">@Model.ErrorMessage</div>
+}
+
+<form method="post" asp-page-handler="create" class="mb-4 flex gap-2 items-center flex-wrap">
+	<input type="text" name="id" required
+		placeholder="workspace-slug"
+		pattern="^[a-z0-9][a-z0-9-]{1,39}$"
+		class="input input-sm input-bordered font-mono w-64" />
+	<button type="submit" class="btn btn-sm btn-primary">Create workspace</button>
+	<span class="text-xs opacity-60">lowercase + digits + dashes, 2-40 chars, no leading dash</span>
+</form>
+
+@if (Model.Workspaces.Count == 0)
+{
+	<div class="alert text-sm">No user workspaces yet. Create one above.</div>
+}
+else
+{
+	<div class="overflow-x-auto rounded-box border border-base-300 bg-base-200">
+		<table class="table table-sm">
+			<thead>
+				<tr>
+					<th>Workspace</th>
+					<th class="w-48">Created (UTC)</th>
+					<th class="w-32"></th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var ws in Model.Workspaces)
+				{
+					<tr>
+						<td>
+							<a asp-page="/Workspace" asp-route-id="@ws.Id.Value" class="font-mono link link-hover">@ws.Id.Value</a>
+						</td>
+						<td class="font-mono text-xs opacity-70">
+							<time class="local-time" datetime="@EventRowViewModel.IsoUtc(ws.CreatedAt)" title="UTC: @EventRowViewModel.IsoUtc(ws.CreatedAt)">@EventRowViewModel.IsoUtc(ws.CreatedAt)</time>
+						</td>
+						<td>
+							<form method="post" asp-page-handler="delete">
+								<input type="hidden" name="id" value="@ws.Id.Value" />
+								<button type="submit" class="btn btn-xs btn-ghost text-error"
+									onclick="return confirm('Delete workspace @ws.Id.Value? Event data and metadata will be removed.');">Delete</button>
+							</form>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}

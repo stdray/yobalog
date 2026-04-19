@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using YobaLog.Core.Admin;
 using YobaLog.Core.Auth;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
@@ -12,6 +13,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
 	readonly IShareLinkStore _shareLinks;
+	readonly IWorkspaceStore _workspaceStore;
 	readonly IApiKeyStore _apiKeys;
 	readonly ILogger<WorkspaceBootstrapper> _logger;
 
@@ -20,6 +22,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		ISavedQueryStore savedQueries,
 		IFieldMaskingPolicyStore maskingPolicies,
 		IShareLinkStore shareLinks,
+		IWorkspaceStore workspaceStore,
 		IApiKeyStore apiKeys,
 		ILogger<WorkspaceBootstrapper> logger)
 	{
@@ -27,25 +30,39 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		_savedQueries = savedQueries;
 		_maskingPolicies = maskingPolicies;
 		_shareLinks = shareLinks;
+		_workspaceStore = workspaceStore;
 		_apiKeys = apiKeys;
 		_logger = logger;
 	}
 
 	public async Task StartAsync(CancellationToken cancellationToken)
 	{
-		await BootstrapAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);
+		await _workspaceStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
+
+		await InitMetaAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);
+		await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), cancellationToken).ConfigureAwait(false);
 		BootstrapLog.SystemCreated(_logger);
 
-		foreach (var ws in _apiKeys.ConfiguredWorkspaces)
+		// First-run migration: seed workspace store from config's API keys if the store is empty.
+		// Subsequent runs read exclusively from the store; config becomes a bootstrap seed only.
+		var known = await _workspaceStore.ListAsync(cancellationToken).ConfigureAwait(false);
+		if (known.Count == 0 && _apiKeys.ConfiguredWorkspaces.Count > 0)
 		{
-			await BootstrapAsync(ws, cancellationToken).ConfigureAwait(false);
-			BootstrapLog.WorkspaceCreated(_logger, ws);
+			foreach (var ws in _apiKeys.ConfiguredWorkspaces)
+				await _workspaceStore.CreateAsync(ws, cancellationToken).ConfigureAwait(false);
+			known = await _workspaceStore.ListAsync(cancellationToken).ConfigureAwait(false);
+		}
+
+		foreach (var info in known)
+		{
+			await _store.CreateWorkspaceAsync(info.Id, new WorkspaceSchema(), cancellationToken).ConfigureAwait(false);
+			await InitMetaAsync(info.Id, cancellationToken).ConfigureAwait(false);
+			BootstrapLog.WorkspaceCreated(_logger, info.Id);
 		}
 	}
 
-	async Task BootstrapAsync(WorkspaceId ws, CancellationToken ct)
+	async Task InitMetaAsync(WorkspaceId ws, CancellationToken ct)
 	{
-		await _store.CreateWorkspaceAsync(ws, new WorkspaceSchema(), ct).ConfigureAwait(false);
 		await _savedQueries.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
 		await _maskingPolicies.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
 		await _shareLinks.InitializeWorkspaceAsync(ws, ct).ConfigureAwait(false);
