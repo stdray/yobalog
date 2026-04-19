@@ -16,7 +16,9 @@ public static class KqlSchema
 		new ColumnSymbol("TraceId", ScalarTypes.String),
 		new ColumnSymbol("SpanId", ScalarTypes.String),
 		new ColumnSymbol("Message", ScalarTypes.String),
+		new ColumnSymbol("MessageTemplate", ScalarTypes.String),
 		new ColumnSymbol("Exception", ScalarTypes.String),
+		new ColumnSymbol("EventId", ScalarTypes.Int),
 		new ColumnSymbol("Properties", ScalarTypes.Dynamic));
 
 	public static readonly GlobalState Globals = GlobalState.Default

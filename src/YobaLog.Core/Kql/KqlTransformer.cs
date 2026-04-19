@@ -572,6 +572,9 @@ sealed class KqlTransformer
 		"TraceId" => Expr.Property(row, nameof(EventRecord.TraceId)),
 		"SpanId" => Expr.Property(row, nameof(EventRecord.SpanId)),
 		"Message" => Expr.Property(row, nameof(EventRecord.Message)),
+		"MessageTemplate" => Expr.Property(row, nameof(EventRecord.MessageTemplate)),
+		"Exception" => Expr.Property(row, nameof(EventRecord.Exception)),
+		"EventId" => Expr.Property(row, nameof(EventRecord.EventId)),
 		_ => throw new UnsupportedKqlException($"column '{column}' not supported (yet)"),
 	};
 

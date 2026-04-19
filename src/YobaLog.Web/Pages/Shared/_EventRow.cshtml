@@ -68,50 +68,87 @@
 </tr>
 @if (!Model.IsLive && Model.Id is not null)
 {
+	var idLit = Model.Id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+	var levelLit = ((int)Model.Level).ToString(System.Globalization.CultureInfo.InvariantCulture);
+	var tsKql = EventRowViewModel.KqlDatetime(Model.Timestamp);
+
 	<tr class="event-details hidden bg-base-300/50">
 		<td colspan="4" class="text-xs">
 			<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono">
-				<dt class="opacity-60">Id</dt><dd>@Model.Id</dd>
-				<dt class="opacity-60">Timestamp</dt><dd><time class="local-time" datetime="@EventRowViewModel.IsoUtc(Model.Timestamp)" title="UTC: @EventRowViewModel.IsoUtc(Model.Timestamp)">@EventRowViewModel.IsoUtc(Model.Timestamp)</time></dd>
-				<dt class="opacity-60">Level</dt><dd>@Model.Level (@((int)Model.Level))</dd>
+				<dt class="opacity-60">Id</dt>
+				<dd class="flex items-center gap-2 group/field">
+					<span>@Model.Id</span>
+					@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel("Id", idLit))
+				</dd>
+
+				<dt class="opacity-60">Timestamp</dt>
+				<dd class="flex items-center gap-2 group/field">
+					<time class="local-time" datetime="@EventRowViewModel.IsoUtc(Model.Timestamp)" title="UTC: @EventRowViewModel.IsoUtc(Model.Timestamp)">@EventRowViewModel.IsoUtc(Model.Timestamp)</time>
+					<span class="hidden group-hover/field:inline-flex items-center gap-1">
+						<button type="button" class="filter-chip text-success text-xs font-semibold leading-none px-1"
+							data-filter-field="Timestamp" data-filter-op="ge" data-filter-value="@tsKql"
+							title="search from this moment (inclusive)">from</button>
+						<button type="button" class="filter-chip text-error text-xs font-semibold leading-none px-1"
+							data-filter-field="Timestamp" data-filter-op="le" data-filter-value="@tsKql"
+							title="search up to this moment (inclusive)">to</button>
+					</span>
+				</dd>
+
+				<dt class="opacity-60">Level</dt>
+				<dd class="flex items-center gap-2 group/field">
+					<span>@Model.Level (@((int)Model.Level))</span>
+					@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel("Level", levelLit))
+				</dd>
+
 				@if (!string.IsNullOrEmpty(Model.MessageTemplate) && Model.MessageTemplate != Model.Message)
 				{
-					<dt class="opacity-60">Template</dt><dd class="break-all">@Model.MessageTemplate</dd>
+					<dt class="opacity-60">Template</dt>
+					<dd class="flex items-center gap-2 break-all group/field">
+						<span>@Model.MessageTemplate</span>
+						@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel("MessageTemplate", EventRowViewModel.KqlString(Model.MessageTemplate)))
+					</dd>
 				}
+
 				@if (!string.IsNullOrEmpty(Model.TraceId))
 				{
 					<dt class="opacity-60">TraceId</dt>
-					<dd class="flex items-center gap-2">
+					<dd class="flex items-center gap-2 group/field">
 						<span>@Model.TraceId</span>
+						@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel("TraceId", EventRowViewModel.KqlString(Model.TraceId)))
 						<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
 							data-copy="@Model.TraceId" title="Copy trace id">⧉</button>
 					</dd>
 				}
+
 				@if (!string.IsNullOrEmpty(Model.SpanId))
 				{
-					<dt class="opacity-60">SpanId</dt><dd>@Model.SpanId</dd>
+					<dt class="opacity-60">SpanId</dt>
+					<dd class="flex items-center gap-2 group/field">
+						<span>@Model.SpanId</span>
+						@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel("SpanId", EventRowViewModel.KqlString(Model.SpanId)))
+					</dd>
 				}
+
 				@if (Model.EventId is not null)
 				{
-					<dt class="opacity-60">EventId</dt><dd>@Model.EventId</dd>
+					var eventIdLit = Model.EventId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+					<dt class="opacity-60">EventId</dt>
+					<dd class="flex items-center gap-2 group/field">
+						<span>@Model.EventId</span>
+						@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel("EventId", eventIdLit))
+					</dd>
 				}
+
 				@foreach (var (key, value) in Model.Properties)
 				{
 					var (display, kqlLit) = EventRowViewModel.PropertyForDisplay(value);
 					var field = "Properties." + key;
 					<dt class="opacity-60">@key</dt>
-					<dd class="flex items-center gap-2 break-all group/prop">
+					<dd class="flex items-center gap-2 break-all group/field">
 						<span>@display</span>
 						@if (kqlLit is not null)
 						{
-							<span class="hidden group-hover/prop:inline-flex items-center gap-1">
-								<button type="button" class="filter-chip text-success text-sm leading-none px-1"
-									data-filter-field="@field" data-filter-op="eq" data-filter-value="@kqlLit"
-									title="only this value">✓</button>
-								<button type="button" class="filter-chip text-error text-sm leading-none px-1"
-									data-filter-field="@field" data-filter-op="ne" data-filter-value="@kqlLit"
-									title="exclude this value">✗</button>
-							</span>
+							@await Html.PartialAsync("_EqNeChips", new EqNeChipsModel(field, kqlLit))
 						}
 						<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
 							data-copy="@display" title="Copy value">⧉</button>
