@@ -11,7 +11,7 @@ namespace YobaLog.Tests.Compat;
 
 /// <summary>
 /// End-to-end check that Serilog + Serilog.Sinks.Seq (the canonical Seq client in the .NET world —
-/// Seq.Extensions.Logging is a thin wrapper on top) reaches /seq-compat/api/events/raw cleanly,
+/// Seq.Extensions.Logging is a thin wrapper on top) reaches /compat/seq/api/events/raw cleanly,
 /// the CLEF lines it emits parse, and the resulting events land in storage with the expected fields.
 /// </summary>
 public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
@@ -65,7 +65,7 @@ public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 		var logger = new LoggerConfiguration()
 			.MinimumLevel.Verbose()
 			.WriteTo.Seq(
-				serverUrl: _factory.Server.BaseAddress + "seq-compat",
+				serverUrl: _factory.Server.BaseAddress + "compat/seq",
 				apiKey: "compat-serilog-key",
 				messageHandler: handler,
 				restrictedToMinimumLevel: LogEventLevel.Verbose,
@@ -123,7 +123,7 @@ public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 		var handler = _factory.Server.CreateHandler();
 		var logger = new LoggerConfiguration()
 			.WriteTo.Seq(
-				serverUrl: _factory.Server.BaseAddress + "seq-compat",
+				serverUrl: _factory.Server.BaseAddress + "compat/seq",
 				apiKey: "wrong-key",
 				messageHandler: handler,
 				batchPostingLimit: 1,

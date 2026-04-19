@@ -101,12 +101,13 @@ public static class YobaLogApp
 		// Adding a new format = one more MapPost with a format-specific handler; nothing else moves.
 		app.MapPost("/api/v1/ingest/clef", IngestionHandlers.CleF).AllowAnonymous();
 
-		// Seq-compatible receiver under its own namespace. Seq clients (Serilog.Sinks.Seq,
-		// seq-logging, seqlog) hardcode the trailing "/api/events/raw" and just string-concat
-		// it to the base URL — so any path prefix works as long as the suffix stays. Users
-		// configure their Serilog/winston client with base URL `https://yobalog/seq-compat`
-		// and the client produces `https://yobalog/seq-compat/api/events/raw`.
-		app.MapPost("/seq-compat/api/events/raw", IngestionHandlers.CleF).AllowAnonymous();
+		// Compatibility surface for third-party clients. Each vendor gets its own slot under
+		// /compat/<tech>/ so a future HEC / statsd / GELF receiver doesn't share the seq
+		// prefix. Seq clients (Serilog.Sinks.Seq, seq-logging, seqlog) hardcode the trailing
+		// "/api/events/raw" and just string-concat it to the base URL, so any path prefix
+		// works as long as the suffix stays. Users configure their client base URL as
+		// `https://yobalog/compat/seq` — the client produces `…/compat/seq/api/events/raw`.
+		app.MapPost("/compat/seq/api/events/raw", IngestionHandlers.CleF).AllowAnonymous();
 
 		app.MapPost("/Logout", async (HttpContext ctx) =>
 		{
