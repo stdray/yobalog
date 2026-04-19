@@ -97,77 +97,14 @@ public static class YobaLogApp
 
 	static void MapEndpoints(WebApplication app)
 	{
-		app.MapPost("/api/events/raw", async (
-			HttpContext ctx,
-			IApiKeyStore apiKeys,
-			IIngestionPipeline pipeline,
-			ICleFParser parser,
-			CancellationToken ct) =>
-		{
-			var token = ctx.Request.Headers["X-Seq-ApiKey"].FirstOrDefault()
-				?? ctx.Request.Query["apiKey"].FirstOrDefault();
+		// Canonical versioned ingestion endpoints, one per wire format.
+		// Adding a new format = one more MapPost with a format-specific handler; nothing else moves.
+		app.MapPost("/api/v1/ingest/clef", IngestionHandlers.CleF).AllowAnonymous();
 
-			var validation = await apiKeys.ValidateAsync(token, ct);
-			if (!validation.IsValid || validation.Scope is not { } scope)
-				return Results.Unauthorized();
-
-			var candidates = new List<LogEventCandidate>();
-			var errorCount = 0;
-
-			// Seq's /api/events/raw accepts two wire formats:
-			//   1. application/vnd.serilog.clef (or unspecified): NDJSON — one CLEF event per line.
-			//   2. application/json: an envelope `{"Events":[{…},{…}]}`. Used by seq-logging 3.x
-			//      (and therefore @datalust/winston-seq 3.x and friends).
-			// The inner event shape is identical CLEF in both cases.
-			var contentType = ctx.Request.ContentType ?? "";
-			var isJsonEnvelope = contentType.Contains("application/json", StringComparison.OrdinalIgnoreCase)
-				&& !contentType.Contains("clef", StringComparison.OrdinalIgnoreCase);
-
-			if (isJsonEnvelope)
-			{
-				using var doc = await System.Text.Json.JsonDocument.ParseAsync(ctx.Request.Body, cancellationToken: ct);
-				if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
-					&& doc.RootElement.TryGetProperty("Events", out var events)
-					&& events.ValueKind == System.Text.Json.JsonValueKind.Array)
-				{
-					var idx = 0;
-					foreach (var evt in events.EnumerateArray())
-					{
-						idx++;
-						// Two inner shapes inside Events[]: CLEF (`@t`, `@l`, …) or seq-logging's
-						// Raw legacy (`Timestamp`, `Level`, `MessageTemplate`, `Properties`). Translate
-						// the latter before feeding to the CLEF parser.
-						var lineJson = evt.TryGetProperty("@t", out _)
-							? evt.GetRawText()
-							: RawEventEnvelope.ToClefLine(evt);
-						var line = parser.ParseLine(lineJson, idx);
-						if (line.IsSuccess && line.Event is not null)
-							candidates.Add(line.Event);
-						else
-							errorCount++;
-					}
-				}
-				else
-				{
-					return Results.BadRequest("expected {\"Events\": [...]} envelope for application/json");
-				}
-			}
-			else
-			{
-				await foreach (var line in parser.ParseAsync(ctx.Request.Body, ct))
-				{
-					if (line.IsSuccess && line.Event is not null)
-						candidates.Add(line.Event);
-					else
-						errorCount++;
-				}
-			}
-
-			if (candidates.Count > 0)
-				await pipeline.IngestAsync(scope, candidates, ct);
-
-			return Results.Created("/api/events/raw", new IngestResponse(candidates.Count, errorCount));
-		}).AllowAnonymous();
+		// Seq-compatibility alias. Hard-coded in Serilog.Sinks.Seq / seq-logging / seqlog clients,
+		// so this path can't be renamed — it routes to the same CLEF handler. Same contract, same
+		// response shape. Keep forever or until Seq-compat is dropped as a goal (spec §1-§2).
+		app.MapPost("/api/events/raw", IngestionHandlers.CleF).AllowAnonymous();
 
 		app.MapPost("/Logout", async (HttpContext ctx) =>
 		{

@@ -4,8 +4,11 @@
 - **Принцип:** совместимость с Seq. Везде, где есть выбор семантики (протокол, имена полей, поведение API-ключей, форма retention-политик), повторяем Seq. Цель — работать со стандартными Seq-таргетами (Serilog, seqlog, seq-logging, Winston) без модификаций.
 - **Исключение из Seq-совместимости — query-язык.** Seq использует собственный синтаксис (filter expressions + SQL-подобный "SQL queries", похожий на C# query comprehension). YobaLog берёт KQL — это сознательное расхождение ради готового парсера `Kusto.Language` и in-memory executor'а `kusto-loco` (см. §3). В .NET-экосистеме аналогичной библиотеки под Seq-диалект не существует.
 - **Архитектура:** монолит на .NET 10. Внутренние границы — через интерфейсы (ingestion, store, query engine, retention); вынос модулей в отдельные сервисы на старте не планируется, пока нет понимания, что и зачем пилить.
-- **Протокол приема:** CLEF (Newline-Delimited JSON) — полная совместимость с экосистемой Seq.
-- **Endpoint:** `POST /api/events/raw` (совместимость с Serilog, Winston, seqlog).
+- **Протокол приема:** CLEF (Newline-Delimited JSON) + Seq legacy Events-envelope — полная совместимость с экосистемой Seq.
+- **Endpoints:**
+    - `POST /api/v1/ingest/clef` — канонический версионированный путь. Принимает CLEF NDJSON (`application/vnd.serilog.clef`) и Seq Events-envelope (`application/json`, `{"Events":[…]}`; внутри либо CLEF, либо legacy Raw — нормализуется в CLEF).
+    - `POST /api/events/raw` — Seq-compat alias, захардкожен в Serilog.Sinks.Seq / seq-logging / seqlog клиентах. Нельзя переименовать без потери совместимости. Роутится на тот же handler.
+    - Будущие форматы (`gelf`, и т.п.) — новый `MapPost("/api/v1/ingest/<fmt>", ...)` + формат-специфичный парсер. Auth и pipeline-dispatch шарятся через `IngestionHandlers.ResolveScopeAsync` + `IIngestionPipeline.IngestAsync`.
 - **Хранение:**
     - Стартовый backend — **SQLite + FTS5** через `linq2db`. Один файл `.db` на каждое хранилище (Workspace).
     - Обоснование: inverted index на `Message` через FTS5 — из коробки, без собственной реализации (главный UX-gap против Seq закрыт бесплатно); `linq2db` даёт общий путь трансляции KQL→SQL, тот же, что пригодится для DuckDB.
