@@ -1,4 +1,4 @@
-# Launches the dev loop: bun watchers (TS + Tailwind) and dotnet watch (backend hot-reload).
+# Launches the dev loop: bun watchers (TS + Tailwind via concurrently) and dotnet watch.
 # Two new PowerShell windows open with named titles; close each with Ctrl+C or the window X.
 #
 # RunBunBuild=false is exported to the backend window so MSBuild skips the bun-build target —
@@ -15,7 +15,7 @@ Start-Process powershell -ArgumentList '-NoExit', '-Command', $backCmd
 
 Write-Host ''
 Write-Host 'Started two dev processes in separate windows:'
-Write-Host '  yobalog-frontend  - bun watchers (ts + tailwind)'
+Write-Host '  yobalog-frontend  - ts + tailwind watchers (via concurrently)'
 Write-Host '  yobalog-backend   - dotnet watch (hot-reload .cs/.cshtml)'
 Write-Host ''
 Write-Host 'Ctrl+C in each window to stop, or close the window.'
