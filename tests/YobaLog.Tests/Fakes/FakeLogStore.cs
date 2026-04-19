@@ -32,6 +32,9 @@ public sealed class FakeLogStore : ILogStore
 	public Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>
 		throw new NotSupportedException();
 
+	public Task<IReadOnlyList<string>> GetPropertyKeysAsync(WorkspaceId workspaceId, CancellationToken ct) =>
+		throw new NotSupportedException();
+
 	public ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct) =>
 		throw new NotSupportedException();
 

@@ -10,6 +10,9 @@ public interface ILogStore
 	IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 	IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
 	Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
+
+	/// <summary>Distinct top-level property keys observed in the most recent events — feeds Properties.&lt;key&gt; autocomplete.</summary>
+	Task<IReadOnlyList<string>> GetPropertyKeysAsync(WorkspaceId workspaceId, CancellationToken ct);
 	ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 
 	ValueTask<long> DeleteOlderThanAsync(WorkspaceId workspaceId, DateTimeOffset cutoff, CancellationToken ct);

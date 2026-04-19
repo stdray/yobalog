@@ -38,12 +38,13 @@
 <form method="get" class="mb-4 bg-base-200 border border-base-300 rounded-box p-4 flex flex-col gap-3">
 	<div class="relative" id="kql-editor">
 		<textarea name="kql" rows="6" id="kql-textarea"
+			data-workspace="@Model.Workspace.Value"
 			placeholder="events | where Level >= 3 | where Message contains 'boom'"
 			hx-get="/api/kql/completions"
 			hx-trigger="keyup changed delay:250ms, click"
 			hx-target="#kql-completions"
 			hx-swap="innerHTML"
-			hx-vals='js:{ q: document.getElementById("kql-textarea").value, pos: document.getElementById("kql-textarea").selectionStart }'
+			hx-vals='js:{ q: document.getElementById("kql-textarea").value, pos: document.getElementById("kql-textarea").selectionStart, ws: document.getElementById("kql-textarea").dataset.workspace }'
 			class="textarea textarea-sm textarea-bordered w-full font-mono text-xs">@Model.UserKql</textarea>
 		<div id="kql-completions" class="absolute left-0 right-0 top-full z-10"></div>
 	</div>

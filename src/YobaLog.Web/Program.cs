@@ -120,12 +120,31 @@ app.MapPost("/Logout", async (HttpContext ctx) =>
 	return Results.Redirect("/Login");
 });
 
-app.MapGet("/api/kql/completions", (
+app.MapGet("/api/kql/completions", async (
 	[FromQuery(Name = "q")] string? query,
 	[FromQuery(Name = "pos")] int? position,
-	KqlCompletionService completions) =>
+	[FromQuery(Name = "ws")] string? ws,
+	KqlCompletionService completions,
+	ILogStore store,
+	CancellationToken ct) =>
 {
-	var result = completions.Complete(query ?? "", position ?? 0);
+	var q = query ?? "";
+	var p = Math.Clamp(position ?? 0, 0, q.Length);
+
+	if (PropertyKeyContext.TryMatch(q, p, out var editStart, out var prefix)
+		&& !string.IsNullOrEmpty(ws)
+		&& WorkspaceId.TryParse(ws, out var workspace))
+	{
+		var keys = await store.GetPropertyKeysAsync(workspace, ct);
+		var items = keys
+			.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+			.Take(KqlCompletionService.MaxItems)
+			.Select(k => new KqlCompletionItem("Property", k, k, ""))
+			.ToList();
+		return Results.Extensions.CompletionsHtml(new KqlCompletionsResponse(editStart, prefix.Length, items));
+	}
+
+	var result = completions.Complete(q, p);
 	return Results.Extensions.CompletionsHtml(result);
 });
 

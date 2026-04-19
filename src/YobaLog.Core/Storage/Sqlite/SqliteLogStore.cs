@@ -36,6 +36,36 @@ public sealed class SqliteLogStore : ILogStore
 			yield return ToLogEvent(r);
 	}
 
+	// Scan window for property-key discovery — newest N events parsed in C#. Good enough for MVP;
+	// switch to a `json_each` SQL when the key catalog grows beyond what fits in one pass.
+	const int PropertyKeyScanSize = 500;
+
+	public async Task<IReadOnlyList<string>> GetPropertyKeysAsync(WorkspaceId workspaceId, CancellationToken ct)
+	{
+		await using var db = Open(workspaceId);
+		var table = db.GetTable<EventRecord>();
+		var recent = table.OrderByDescending(e => e.Id).Take(PropertyKeyScanSize).Select(e => e.PropertiesJson);
+
+		var keys = new HashSet<string>(StringComparer.Ordinal);
+		await foreach (var json in recent.AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
+		{
+			if (string.IsNullOrEmpty(json) || json == "{}")
+				continue;
+			try
+			{
+				using var doc = JsonDocument.Parse(json);
+				if (doc.RootElement.ValueKind != JsonValueKind.Object)
+					continue;
+				foreach (var prop in doc.RootElement.EnumerateObject())
+					keys.Add(prop.Name);
+			}
+			catch (JsonException)
+			{
+			}
+		}
+		return [.. keys.OrderBy(k => k, StringComparer.Ordinal)];
+	}
+
 	// Hard cap on materialized rows for KqlResult — guards against unbounded 'project' / 'extend' output
 	// in the viewer path. Aggregate ops (count / summarize) produce small results and never hit this.
 	const int MaxMaterializedRows = 10_000;
