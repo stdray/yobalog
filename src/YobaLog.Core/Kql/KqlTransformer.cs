@@ -187,26 +187,26 @@ sealed class KqlTransformer
 				switch (element.Element)
 				{
 					case NameReference n:
-					{
-						var idx = FindColumnIndex(input.Columns, n.SimpleName);
-						if (idx < 0)
-							throw new UnsupportedKqlException($"summarize by: unknown column '{n.SimpleName}'");
-						outputColumns.Add(new KqlColumn(n.SimpleName, input.Columns[idx].ClrType));
-						var captured = idx;
-						extractors.Add(row => row[captured]);
-						break;
-					}
+						{
+							var idx = FindColumnIndex(input.Columns, n.SimpleName);
+							if (idx < 0)
+								throw new UnsupportedKqlException($"summarize by: unknown column '{n.SimpleName}'");
+							outputColumns.Add(new KqlColumn(n.SimpleName, input.Columns[idx].ClrType));
+							var captured = idx;
+							extractors.Add(row => row[captured]);
+							break;
+						}
 					case PathExpression p when IsPropertiesPath(p, out var propKey):
-					{
-						var propIdx = FindColumnIndex(input.Columns, nameof(Storage.Sqlite.EventRecord.PropertiesJson));
-						if (propIdx < 0)
-							throw new UnsupportedKqlException(
-								"summarize by Properties.<key>: input shape has no PropertiesJson column");
-						var path = "$." + propKey;
-						outputColumns.Add(new KqlColumn("Properties." + propKey, typeof(string)));
-						extractors.Add(row => KqlSqlExpressions.JsonExtract(row[propIdx] as string, path));
-						break;
-					}
+						{
+							var propIdx = FindColumnIndex(input.Columns, nameof(Storage.Sqlite.EventRecord.PropertiesJson));
+							if (propIdx < 0)
+								throw new UnsupportedKqlException(
+									"summarize by Properties.<key>: input shape has no PropertiesJson column");
+							var path = "$." + propKey;
+							outputColumns.Add(new KqlColumn("Properties." + propKey, typeof(string)));
+							extractors.Add(row => KqlSqlExpressions.JsonExtract(row[propIdx] as string, path));
+							break;
+						}
 					default:
 						throw new UnsupportedKqlException(
 							$"summarize by '{element.Element.Kind}' not supported (column ref or Properties.<key>)");
