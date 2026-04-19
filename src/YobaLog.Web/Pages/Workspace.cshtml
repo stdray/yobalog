@@ -108,7 +108,72 @@
 	</label>
 	<input type="hidden" name="kql" value="@Model.UserKql" />
 	<button type="submit" class="btn btn-sm btn-secondary">Save as…</button>
+	<button type="button" class="btn btn-sm btn-accent"
+		data-share-modal-open
+		data-workspace="@Model.Workspace.Value"
+		data-kql="@Model.UserKql">Share as TSV…</button>
 </form>
+
+<dialog id="share-modal" class="modal">
+	<div class="modal-box max-w-2xl">
+		<h3 class="text-lg font-semibold mb-1">Share as TSV</h3>
+		<p class="text-xs opacity-70 mb-3">Anonymous URL returning TSV. Pick which fields get masked (HMAC — connections stay, values don't leak) or hidden.</p>
+
+		<div class="mb-3 flex items-center gap-2">
+			<span class="text-xs opacity-70">Expires in:</span>
+			<div class="join" data-share-ttl-group>
+				<button type="button" class="btn btn-xs join-item" data-ttl="1">1h</button>
+				<button type="button" class="btn btn-xs join-item btn-active" data-ttl="24">24h</button>
+				<button type="button" class="btn btn-xs join-item" data-ttl="168">7d</button>
+			</div>
+		</div>
+
+		<div class="mb-3">
+			<div class="text-xs opacity-70 mb-1">Field policy (remembered per workspace):</div>
+			<div class="max-h-64 overflow-y-auto rounded border border-base-300">
+				<table class="table table-xs">
+					<thead class="sticky top-0 bg-base-200">
+						<tr><th>Field</th><th class="w-16 text-center">Keep</th><th class="w-16 text-center">Mask</th><th class="w-16 text-center">Hide</th></tr>
+					</thead>
+					<tbody>
+						@foreach (var path in Model.ShareFieldPaths)
+						{
+							var mode = Model.MaskingPolicy.ModeFor(path);
+							<tr>
+								<td class="font-mono">@path</td>
+								<td class="text-center">
+									<input type="radio" class="radio radio-xs" name="mode@path" value="keep" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Keep)" data-share-radio data-path="@path" />
+								</td>
+								<td class="text-center">
+									<input type="radio" class="radio radio-xs" name="mode@path" value="mask" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Mask)" data-share-radio data-path="@path" />
+								</td>
+								<td class="text-center">
+									<input type="radio" class="radio radio-xs" name="mode@path" value="hide" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Hide)" data-share-radio data-path="@path" />
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<div class="flex gap-2">
+			<button type="button" id="share-generate" class="btn btn-sm btn-primary">Generate</button>
+			<form method="dialog" class="contents"><button class="btn btn-sm btn-ghost">Close</button></form>
+		</div>
+
+		<div id="share-result" class="hidden mt-3">
+			<div class="join w-full">
+				<input id="share-url" type="text" readonly class="input input-sm input-bordered join-item w-full font-mono text-xs" />
+				<button type="button" class="btn btn-sm join-item" data-share-copy>Copy</button>
+			</div>
+			<p class="text-xs opacity-60 mt-1">Expires at <span id="share-expires"></span>.</p>
+		</div>
+
+		<div id="share-error" class="hidden mt-3 alert alert-error text-xs"></div>
+	</div>
+	<form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 @if (Model.KqlError is not null)
 {

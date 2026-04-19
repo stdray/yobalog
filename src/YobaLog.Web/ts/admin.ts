@@ -88,6 +88,94 @@ document.addEventListener("change", (event) => {
 	window.htmx?.process(container);
 });
 
+// ---------- Share as TSV modal ----------
+
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	if (!target) return;
+
+	const openBtn = target.closest("[data-share-modal-open]") as HTMLElement | null;
+	if (openBtn) {
+		const modal = document.getElementById("share-modal") as HTMLDialogElement | null;
+		modal?.showModal();
+		const result = document.getElementById("share-result");
+		const error = document.getElementById("share-error");
+		result?.classList.add("hidden");
+		error?.classList.add("hidden");
+		return;
+	}
+
+	const ttlBtn = target.closest("[data-ttl]") as HTMLElement | null;
+	if (ttlBtn) {
+		const group = ttlBtn.closest("[data-share-ttl-group]");
+		if (group) {
+			for (const b of group.querySelectorAll("[data-ttl]")) b.classList.remove("btn-active");
+		}
+		ttlBtn.classList.add("btn-active");
+		return;
+	}
+
+	if (target.id === "share-generate") {
+		void generateShare();
+		return;
+	}
+
+	if (target.closest("[data-share-copy]")) {
+		const url = (document.getElementById("share-url") as HTMLInputElement | null)?.value ?? "";
+		void navigator.clipboard.writeText(url);
+		return;
+	}
+});
+
+async function generateShare(): Promise<void> {
+	const trigger = document.querySelector("[data-share-modal-open]") as HTMLElement | null;
+	const wsId = trigger?.dataset["workspace"];
+	const kql = trigger?.dataset["kql"] ?? "LogEvents";
+	if (!wsId) return;
+
+	const ttlAttr = document.querySelector("[data-share-ttl-group] .btn-active") as HTMLElement | null;
+	const ttlHours = Number(ttlAttr?.dataset["ttl"] ?? "24");
+
+	const modes: Record<string, string> = {};
+	for (const r of document.querySelectorAll<HTMLInputElement>("[data-share-radio]:checked")) {
+		const path = r.dataset["path"];
+		const value = r.value;
+		if (path && value !== "keep") modes[path] = value;
+	}
+
+	const result = document.getElementById("share-result");
+	const error = document.getElementById("share-error");
+	result?.classList.add("hidden");
+	error?.classList.add("hidden");
+
+	try {
+		const resp = await fetch(`/api/ws/${encodeURIComponent(wsId)}/share`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ kql, ttlHours, modes, savePolicy: true }),
+		});
+		if (!resp.ok) {
+			const text = await resp.text();
+			if (error) {
+				error.textContent = `Error: ${resp.status} ${text}`;
+				error.classList.remove("hidden");
+			}
+			return;
+		}
+		const body = (await resp.json()) as { url: string; expiresAt: string };
+		const urlInput = document.getElementById("share-url") as HTMLInputElement | null;
+		const expiresEl = document.getElementById("share-expires");
+		if (urlInput) urlInput.value = body.url;
+		if (expiresEl) expiresEl.textContent = new Date(body.expiresAt).toLocaleString();
+		result?.classList.remove("hidden");
+	} catch (e) {
+		if (error) {
+			error.textContent = `Network error: ${String(e)}`;
+			error.classList.remove("hidden");
+		}
+	}
+}
+
 // ---------- Expandable event row ----------
 
 document.addEventListener("click", (event) => {

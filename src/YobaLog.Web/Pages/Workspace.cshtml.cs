@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
 using YobaLog.Core.Kql;
 using YobaLog.Core.SavedQueries;
+using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 using LogLevel = YobaLog.Core.LogLevel;
@@ -16,11 +17,16 @@ public sealed class WorkspaceModel : PageModel
 {
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
+	readonly IFieldMaskingPolicyStore _maskingPolicies;
 
-	public WorkspaceModel(ILogStore store, ISavedQueryStore savedQueries)
+	public WorkspaceModel(
+		ILogStore store,
+		ISavedQueryStore savedQueries,
+		IFieldMaskingPolicyStore maskingPolicies)
 	{
 		_store = store;
 		_savedQueries = savedQueries;
+		_maskingPolicies = maskingPolicies;
 	}
 
 	public WorkspaceId Workspace { get; private set; }
@@ -70,6 +76,10 @@ public sealed class WorkspaceModel : PageModel
 	public string? ActiveSavedName { get; private set; }
 
 	public string? FlashError { get; private set; }
+
+	public FieldMaskingPolicy MaskingPolicy { get; private set; } = FieldMaskingPolicy.Empty;
+
+	public IReadOnlyList<string> ShareFieldPaths { get; private set; } = [];
 
 	public async Task<IActionResult> OnGetAsync(string id, CancellationToken ct)
 	{
@@ -136,7 +146,32 @@ public sealed class WorkspaceModel : PageModel
 		if (Request.Headers.ContainsKey("HX-Request"))
 			return Partial("_RowsFragment", this);
 
+		MaskingPolicy = await _maskingPolicies.GetAsync(ws, ct);
+		ShareFieldPaths = BuildShareFieldPaths();
+
 		return Page();
+	}
+
+	IReadOnlyList<string> BuildShareFieldPaths()
+	{
+		var paths = new SortedSet<string>(StringComparer.Ordinal)
+		{
+			nameof(LogEvent.MessageTemplate),
+			nameof(LogEvent.Message),
+			nameof(LogEvent.Exception),
+			nameof(LogEvent.TraceId),
+			nameof(LogEvent.SpanId),
+			nameof(LogEvent.EventId),
+			"Properties",
+		};
+		foreach (var e in Events)
+		{
+			foreach (var key in e.Properties.Keys)
+				paths.Add("Properties." + key);
+		}
+		foreach (var key in MaskingPolicy.Modes.Keys)
+			paths.Add(key);
+		return [.. paths];
 	}
 
 	public async Task<IActionResult> OnPostSaveAsync(
