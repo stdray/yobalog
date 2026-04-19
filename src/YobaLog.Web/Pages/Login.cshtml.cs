@@ -50,9 +50,17 @@ public sealed class LoginModel : PageModel
 			: RedirectToPage("/Index");
 	}
 
-	bool MatchesAdmin(string username, string password) =>
-		FixedTimeEquals(username, _options.Username) &&
-		FixedTimeEquals(password, _options.Password);
+	bool MatchesAdmin(string username, string password)
+	{
+		if (!FixedTimeEquals(username, _options.Username))
+			return false;
+
+		if (!string.IsNullOrEmpty(_options.PasswordHash))
+			return AdminPasswordHasher.Verify(password, _options.PasswordHash);
+
+		return !string.IsNullOrEmpty(_options.Password)
+			&& FixedTimeEquals(password, _options.Password);
+	}
 
 	static bool FixedTimeEquals(string a, string b)
 	{

@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using YobaLog.Core.Auth;
 
 namespace YobaLog.Tests.Web;
 
@@ -93,6 +94,73 @@ public sealed class LoginTests : IAsyncLifetime
 		resp.StatusCode.Should().Be(HttpStatusCode.Redirect);
 		resp.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
 		cookies!.Should().Contain(c => c.Contains(".AspNetCore.Cookies", StringComparison.Ordinal));
+	}
+
+	[Fact]
+	public async Task HashedPassword_AllowsLogin()
+	{
+		var hash = AdminPasswordHasher.Hash("hashed-secret");
+		using var hashFactory = new WebApplicationFactory<Program>()
+			.WithWebHostBuilder(b =>
+			{
+				b.UseEnvironment("Testing");
+				b.ConfigureAppConfiguration((_, cfg) =>
+				{
+					cfg.AddInMemoryCollection(new Dictionary<string, string?>
+					{
+						["SqliteLogStore:DataDirectory"] = _tempDir,
+						["Admin:Username"] = "admin",
+						["Admin:PasswordHash"] = hash,
+					});
+				});
+			});
+
+		using var client = hashFactory.CreateClient(NoRedirect());
+		using var resp = await client.PostAsync(
+			"/Login",
+			new FormUrlEncodedContent(new Dictionary<string, string>
+			{
+				["Username"] = "admin",
+				["Password"] = "hashed-secret",
+			}));
+
+		resp.StatusCode.Should().Be(HttpStatusCode.Redirect);
+		resp.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
+		cookies!.Should().Contain(c => c.Contains(".AspNetCore.Cookies", StringComparison.Ordinal));
+
+		await hashFactory.DisposeAsync();
+	}
+
+	[Fact]
+	public async Task HashedPassword_WrongInput_Rejects()
+	{
+		var hash = AdminPasswordHasher.Hash("hashed-secret");
+		using var hashFactory = new WebApplicationFactory<Program>()
+			.WithWebHostBuilder(b =>
+			{
+				b.UseEnvironment("Testing");
+				b.ConfigureAppConfiguration((_, cfg) =>
+				{
+					cfg.AddInMemoryCollection(new Dictionary<string, string?>
+					{
+						["SqliteLogStore:DataDirectory"] = _tempDir,
+						["Admin:Username"] = "admin",
+						["Admin:PasswordHash"] = hash,
+					});
+				});
+			});
+
+		using var client = hashFactory.CreateClient();
+		using var resp = await client.PostAsync(
+			"/Login",
+			new FormUrlEncodedContent(new Dictionary<string, string>
+			{
+				["Username"] = "admin",
+				["Password"] = "different",
+			}));
+
+		(await resp.Content.ReadAsStringAsync()).Should().Contain("Invalid username or password");
+		await hashFactory.DisposeAsync();
 	}
 
 	[Fact]

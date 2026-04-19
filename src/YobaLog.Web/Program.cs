@@ -14,6 +14,12 @@ using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 using YobaLog.Web;
 
+if (args.Length >= 2 && args[0] == "--hash-password")
+{
+	Console.WriteLine(AdminPasswordHasher.Hash(args[1]));
+	return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<SqliteLogStoreOptions>(builder.Configuration.GetSection("SqliteLogStore"));

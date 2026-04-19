@@ -13,6 +13,23 @@
 		YobaLog.Core.LogLevel.Fatal => "badge-error",
 		_ => "badge-ghost",
 	};
+
+	string PropertiesJson(YobaLog.Core.LogEvent ev)
+	{
+		if (ev.Properties.Count == 0) return "";
+		using var ms = new System.IO.MemoryStream();
+		using (var w = new System.Text.Json.Utf8JsonWriter(ms, new System.Text.Json.JsonWriterOptions { Indented = true }))
+		{
+			w.WriteStartObject();
+			foreach (var (k, v) in ev.Properties)
+			{
+				w.WritePropertyName(k);
+				v.WriteTo(w);
+			}
+			w.WriteEndObject();
+		}
+		return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+	}
 }
 
 <div class="mb-4 flex items-baseline gap-3 flex-wrap">
@@ -144,17 +161,64 @@ else
 			<tbody>
 				@foreach (var e in Model.Events)
 				{
-					<tr class="align-top hover">
+					var propsJson = PropertiesJson(e);
+					<tr class="align-top hover cursor-pointer" data-event-id="@e.Id">
 						<td class="font-mono text-xs opacity-70 whitespace-nowrap">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
 						<td><span class="badge badge-sm @LevelBadge(e.Level)">@e.Level</span></td>
 						<td class="break-words">
-							<div>@e.Message</div>
+							<div class="flex items-start gap-2">
+								<span class="flex-1">@e.Message</span>
+								<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+									data-copy="@e.Message"
+									title="Copy message">⧉</button>
+							</div>
 							@if (!string.IsNullOrEmpty(e.Exception))
 							{
 								<pre class="mt-1 text-xs text-error whitespace-pre-wrap">@e.Exception</pre>
 							}
 						</td>
 						<td class="font-mono text-xs opacity-70 truncate">@e.TraceId</td>
+					</tr>
+					<tr class="event-details hidden bg-base-300/50">
+						<td colspan="4" class="text-xs">
+							<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono">
+								<dt class="opacity-60">Id</dt><dd>@e.Id</dd>
+								<dt class="opacity-60">Timestamp</dt><dd>@e.Timestamp.ToString("O")</dd>
+								<dt class="opacity-60">Level</dt><dd>@e.Level (@((int)e.Level))</dd>
+								@if (!string.IsNullOrEmpty(e.MessageTemplate) && e.MessageTemplate != e.Message)
+								{
+									<dt class="opacity-60">Template</dt><dd class="break-all">@e.MessageTemplate</dd>
+								}
+								@if (!string.IsNullOrEmpty(e.TraceId))
+								{
+									<dt class="opacity-60">TraceId</dt>
+									<dd class="flex items-center gap-2">
+										<span>@e.TraceId</span>
+										<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+											data-copy="@e.TraceId" title="Copy trace id">⧉</button>
+									</dd>
+								}
+								@if (!string.IsNullOrEmpty(e.SpanId))
+								{
+									<dt class="opacity-60">SpanId</dt><dd>@e.SpanId</dd>
+								}
+								@if (e.EventId is not null)
+								{
+									<dt class="opacity-60">EventId</dt><dd>@e.EventId</dd>
+								}
+							</dl>
+							@if (!string.IsNullOrEmpty(propsJson))
+							{
+								<div class="mt-3">
+									<div class="flex items-center gap-2 mb-1">
+										<span class="opacity-60">Properties</span>
+										<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
+											data-copy="@propsJson" title="Copy properties JSON">⧉ json</button>
+									</div>
+									<pre class="whitespace-pre-wrap break-all bg-base-200 p-2 rounded">@propsJson</pre>
+								</div>
+							}
+						</td>
 					</tr>
 				}
 			</tbody>
