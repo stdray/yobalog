@@ -292,6 +292,9 @@ sealed class KqlTransformer
 				FilterOperator f => ApplyWhere(q, f),
 				TakeOperator t => ApplyTake(q, t),
 				SortOperator s => ApplySort(q, s),
+				ProjectOperator or CountOperator or SummarizeOperator or ExtendOperator
+					=> throw new UnsupportedKqlException(
+						$"operator '{op.Kind}' changes result shape — the viewer currently renders event-shape only. Use 'where' / 'take' / 'order by' here; shape-changing ops work in standalone tools that consume KqlResult."),
 				_ => throw new UnsupportedKqlException($"operator '{op.Kind}' not supported in yobalog"),
 			};
 		}
