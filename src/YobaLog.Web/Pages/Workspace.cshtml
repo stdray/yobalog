@@ -36,54 +36,18 @@
 }
 
 <form method="get" class="mb-4 bg-base-200 border border-base-300 rounded-box p-4 flex flex-col gap-3">
-	<div class="grid grid-cols-1 md:grid-cols-6 gap-3 @(Model.RawKqlMode ? "opacity-40 pointer-events-none" : "")">
-		<label class="form-control md:col-span-2">
-			<span class="label-text text-xs opacity-70">Message contains</span>
-			<input type="text" name="message" value="@Model.Message" class="input input-sm input-bordered" />
-		</label>
-		<label class="form-control">
-			<span class="label-text text-xs opacity-70">Min level</span>
-			<select name="minLevel" class="select select-sm select-bordered">
-				<option value="">(any)</option>
-				@foreach (var lvl in Enum.GetValues<YobaLog.Core.LogLevel>())
-				{
-					<option value="@lvl" selected="@(Model.MinLevel == lvl)">@lvl</option>
-				}
-			</select>
-		</label>
-		<label class="form-control">
-			<span class="label-text text-xs opacity-70">Trace ID</span>
-			<input type="text" name="traceId" value="@Model.TraceId" class="input input-sm input-bordered font-mono" />
-		</label>
-		<label class="form-control">
-			<span class="label-text text-xs opacity-70">From (UTC)</span>
-			<input type="datetime-local" name="from" value="@Model.From" class="input input-sm input-bordered" />
-		</label>
-		<label class="form-control">
-			<span class="label-text text-xs opacity-70">To (UTC)</span>
-			<input type="datetime-local" name="to" value="@Model.To" class="input input-sm input-bordered" />
-		</label>
+	<div class="relative" id="kql-editor">
+		<textarea name="kql" rows="6" id="kql-textarea"
+			placeholder="LogEvents | where Level >= 3 | where Message contains 'boom'"
+			hx-get="/api/kql/completions"
+			hx-trigger="keyup changed delay:250ms, click"
+			hx-target="#kql-completions"
+			hx-swap="innerHTML"
+			hx-vals='js:{ q: document.getElementById("kql-textarea").value, pos: document.getElementById("kql-textarea").selectionStart }'
+			class="textarea textarea-sm textarea-bordered w-full font-mono text-xs">@Model.UserKql</textarea>
+		<div id="kql-completions" class="absolute left-0 right-0 top-full z-10"></div>
 	</div>
-
-	<details class="bg-base-300 rounded-box p-3" @(Model.RawKqlMode ? "open" : "")>
-		<summary class="cursor-pointer text-xs opacity-70 select-none">
-			KQL @(Model.RawKqlMode ? "(raw mode — form disabled)" : "(derived from form above)")
-		</summary>
-		<div class="relative mt-2" id="kql-editor">
-			<textarea name="kql" rows="6" id="kql-textarea"
-				placeholder="LogEvents | where Level >= 3 | where Message contains 'boom'"
-				hx-get="/api/kql/completions"
-				hx-trigger="keyup changed delay:250ms, click"
-				hx-target="#kql-completions"
-				hx-swap="innerHTML"
-				hx-vals='js:{ q: document.getElementById("kql-textarea").value, pos: document.getElementById("kql-textarea").selectionStart }'
-				class="textarea textarea-sm textarea-bordered w-full font-mono text-xs">@(Model.RawKqlMode ? Model.RawKql : Model.UserKql)</textarea>
-			<div id="kql-completions" class="absolute left-0 right-0 top-full"></div>
-		</div>
-		<p class="text-xs opacity-60 mt-1">
-			Typing here overrides the form above. Clear to re-enable form mode. Paging (order by, take, cursor) appended automatically.
-		</p>
-	</details>
+	<p class="text-xs opacity-60 -mt-2">Paging (<code>order by</code>, <code>take</code>, cursor) appended automatically.</p>
 
 	<div class="flex gap-2 flex-wrap items-center">
 		<button type="submit" class="btn btn-sm btn-primary">Apply</button>

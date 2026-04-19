@@ -8,11 +8,6 @@
 {
 	<tr hx-get="@Url.Page("/Workspace", new {
 			id = Model.Workspace.Value,
-			from = Model.From,
-			to = Model.To,
-			minLevel = Model.MinLevel,
-			traceId = Model.TraceId,
-			message = Model.Message,
 			kql = Model.RawKql,
 			saved = Model.ActiveSavedName,
 			cursor = Model.NextCursor,

@@ -9,7 +9,6 @@ using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
-using LogLevel = YobaLog.Core.LogLevel;
 
 namespace YobaLog.Web.Pages;
 
@@ -32,21 +31,6 @@ public sealed class WorkspaceModel : PageModel
 	public WorkspaceId Workspace { get; private set; }
 
 	[BindProperty(SupportsGet = true)]
-	public string? From { get; set; }
-
-	[BindProperty(SupportsGet = true)]
-	public string? To { get; set; }
-
-	[BindProperty(SupportsGet = true)]
-	public LogLevel? MinLevel { get; set; }
-
-	[BindProperty(SupportsGet = true)]
-	public string? TraceId { get; set; }
-
-	[BindProperty(SupportsGet = true)]
-	public string? Message { get; set; }
-
-	[BindProperty(SupportsGet = true)]
 	public string? Cursor { get; set; }
 
 	[BindProperty(SupportsGet = true, Name = "kql")]
@@ -62,8 +46,6 @@ public sealed class WorkspaceModel : PageModel
 	public string? NextCursor { get; private set; }
 
 	public bool SchemaMissing { get; private set; }
-
-	public bool RawKqlMode { get; private set; }
 
 	public string UserKql { get; private set; } = "";
 
@@ -99,8 +81,7 @@ public sealed class WorkspaceModel : PageModel
 			}
 		}
 
-		RawKqlMode = !string.IsNullOrWhiteSpace(RawKql);
-		UserKql = RawKqlMode ? RawKql!.Trim() : BuildUserKql();
+		UserKql = string.IsNullOrWhiteSpace(RawKql) ? "LogEvents" : RawKql.Trim();
 		EffectiveKql = AppendPageLimits(UserKql);
 
 		KustoCode code;
@@ -221,47 +202,13 @@ public sealed class WorkspaceModel : PageModel
 		{
 			var (ts, cid) = CursorCodec.Decode(cursorBytes.Span);
 			var dt = DateTimeOffset.FromUnixTimeMilliseconds(ts);
-			var tsLit = FormatDatetime(dt);
+			var tsLit = $"datetime({dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture)})";
 			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp < {tsLit} or (Timestamp == {tsLit} and Id < {cid})");
 		}
 		sb.Append("\n| order by Timestamp desc, Id desc");
 		sb.Append(CultureInfo.InvariantCulture, $"\n| take {PageSize + 1}");
 		return sb.ToString();
 	}
-
-	string BuildUserKql()
-	{
-		var sb = new StringBuilder("LogEvents");
-
-		if (TryParseUtc(From, out var fromDt))
-			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp >= {FormatDatetime(fromDt)}");
-		if (TryParseUtc(To, out var toDt))
-			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp < {FormatDatetime(toDt)}");
-		if (MinLevel is { } level)
-			sb.Append(CultureInfo.InvariantCulture, $"\n| where Level >= {(int)level}");
-		if (NullIfEmpty(TraceId) is { } trace)
-			sb.Append(CultureInfo.InvariantCulture, $"\n| where TraceId == '{EscapeKqlString(trace)}'");
-		if (NullIfEmpty(Message) is { } msg)
-			sb.Append(CultureInfo.InvariantCulture, $"\n| where Message contains '{EscapeKqlString(msg)}'");
-
-		return sb.ToString();
-	}
-
-	static bool TryParseUtc(string? s, out DateTimeOffset value) =>
-		DateTimeOffset.TryParse(
-			s,
-			CultureInfo.InvariantCulture,
-			DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-			out value);
-
-	static string FormatDatetime(DateTimeOffset dt) =>
-		$"datetime({dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture)})";
-
-	static string EscapeKqlString(string s) =>
-		s.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal);
-
-	static string? NullIfEmpty(string? s) =>
-		string.IsNullOrWhiteSpace(s) ? null : s;
 
 	static ReadOnlyMemory<byte>? DecodeCursor(string? s)
 	{
