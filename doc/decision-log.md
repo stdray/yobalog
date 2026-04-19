@@ -13,9 +13,10 @@
 - Для "правильной" early-termination через FTS нужен rewrite на raw SQL (не через linq2db `[Sql.Expression]`): FTS-table как driving, явный LIMIT. Это ломает compose с другими `where` предикатами (нужен полный SQL-builder или отдельная `QueryFtsAsync` ветка на `SqliteLogStore`).
 
 Пока — задокументировано в `perf-baseline.md` как surprise, и UI-hint пользователю "used `has` → fast on rare terms, slow on frequent" можно дать при появлении editor-warnings. Fix-варианты:
-1. `ANALYZE` на boot / после крупного ingest — дешёвый эксперимент.
+1. ~~`ANALYZE` на boot / после крупного ingest~~ — **проверено: не помогает**. `ANALYZE` на seeded 100k-фикстуре дал QueryFtsHas 8 056 μs vs 8 257 μs без — в пределах noise. Это не проблема устаревшей статистики, а структурная — `IN (SELECT rowid FROM fts WHERE MATCH)` материализует rowid-set до внешнего LIMIT, query-plan тут детерминирован и не зависит от stats.
 2. Raw-SQL ветка `SqliteLogStore.QueryFtsMatchAsync(message, take)` для специфического `has + take` паттерна.
-3. Принять разницу и рекомендовать `contains` для частых слов.
+3. Word-boundary LIKE fallback при `has + take` (в transformer'е детектить take и эмитить `LIKE '% x %' OR LIKE 'x %' OR LIKE '% x'` вместо FTS subquery). Сохраняет word-boundary семантику + даёт early-exit. Но разрастается matrix sql-комбинаций.
+4. Принять разницу и рекомендовать `contains` для частых слов.
 
 **Источники:**
 - [SQLite User Forum: Bad query plans from FTS5](https://sqlite.org/forum/info/e0e30e9eb1998e3c9305aea26957bec804615283969d11c1f9326a6b787526eb)
