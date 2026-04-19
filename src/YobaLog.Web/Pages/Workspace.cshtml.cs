@@ -133,6 +133,9 @@ public sealed class WorkspaceModel : PageModel
 			NextCursor = EncodeCursor(last);
 		}
 
+		if (Request.Headers.ContainsKey("HX-Request"))
+			return Partial("_RowsFragment", this);
+
 		return Page();
 	}
 

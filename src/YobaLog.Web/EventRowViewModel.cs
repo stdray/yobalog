@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using YobaLog.Core;
 using LogLevel = YobaLog.Core.LogLevel;
 
@@ -16,7 +18,7 @@ public sealed record EventRowViewModel(
 	string PropertiesJson,
 	bool IsLive)
 {
-	public static EventRowViewModel FromStored(LogEvent e, string propertiesJson) => new(
+	public static EventRowViewModel FromStored(LogEvent e) => new(
 		e.Id,
 		e.Timestamp,
 		e.Level,
@@ -26,7 +28,7 @@ public sealed record EventRowViewModel(
 		e.TraceId,
 		e.SpanId,
 		e.EventId,
-		propertiesJson,
+		SerializeProperties(e),
 		IsLive: false);
 
 	public static EventRowViewModel FromLive(LogEventCandidate c) => new(
@@ -52,4 +54,22 @@ public sealed record EventRowViewModel(
 		LogLevel.Fatal => "badge-error",
 		_ => "badge-ghost",
 	};
+
+	static string SerializeProperties(LogEvent e)
+	{
+		if (e.Properties.Count == 0)
+			return "";
+		using var stream = new MemoryStream();
+		using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+		{
+			writer.WriteStartObject();
+			foreach (var (k, v) in e.Properties)
+			{
+				writer.WritePropertyName(k);
+				v.WriteTo(writer);
+			}
+			writer.WriteEndObject();
+		}
+		return Encoding.UTF8.GetString(stream.ToArray());
+	}
 }

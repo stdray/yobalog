@@ -2,23 +2,6 @@
 @model YobaLog.Web.Pages.WorkspaceModel
 @{
 	ViewData["Title"] = Model.Workspace.Value;
-
-	string PropertiesJson(YobaLog.Core.LogEvent ev)
-	{
-		if (ev.Properties.Count == 0) return "";
-		using var ms = new System.IO.MemoryStream();
-		using (var w = new System.Text.Json.Utf8JsonWriter(ms, new System.Text.Json.JsonWriterOptions { Indented = true }))
-		{
-			w.WriteStartObject();
-			foreach (var (k, v) in ev.Properties)
-			{
-				w.WritePropertyName(k);
-				v.WriteTo(w);
-			}
-			w.WriteEndObject();
-		}
-		return System.Text.Encoding.UTF8.GetString(ms.ToArray());
-	}
 }
 
 <div class="mb-4 flex items-baseline gap-3 flex-wrap">
@@ -154,29 +137,8 @@ else
 				</tr>
 			</thead>
 			<tbody id="events-body">
-				@foreach (var e in Model.Events)
-				{
-					<partial name="_EventRow" model="EventRowViewModel.FromStored(e, PropertiesJson(e))" />
-				}
+				<partial name="_RowsFragment" model="Model" />
 			</tbody>
 		</table>
 	</div>
-
-	@if (Model.NextCursor is not null)
-	{
-		<div class="mt-3">
-			<a asp-page="/Workspace"
-				asp-route-id="@Model.Workspace.Value"
-				asp-route-from="@Model.From"
-				asp-route-to="@Model.To"
-				asp-route-minLevel="@Model.MinLevel"
-				asp-route-traceId="@Model.TraceId"
-				asp-route-message="@Model.Message"
-				asp-route-kql="@Model.RawKql"
-				asp-route-cursor="@Model.NextCursor"
-				class="btn btn-sm btn-ghost">
-				Load older →
-			</a>
-		</div>
-	}
 }

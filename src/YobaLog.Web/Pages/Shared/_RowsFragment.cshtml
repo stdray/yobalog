@@ -1,0 +1,27 @@
+@using YobaLog.Web
+@model YobaLog.Web.Pages.WorkspaceModel
+@foreach (var e in Model.Events)
+{
+	<partial name="_EventRow" model="EventRowViewModel.FromStored(e)" />
+}
+@if (Model.NextCursor is not null)
+{
+	<tr hx-get="@Url.Page("/Workspace", new {
+			id = Model.Workspace.Value,
+			from = Model.From,
+			to = Model.To,
+			minLevel = Model.MinLevel,
+			traceId = Model.TraceId,
+			message = Model.Message,
+			kql = Model.RawKql,
+			saved = Model.ActiveSavedName,
+			cursor = Model.NextCursor,
+		})"
+		hx-trigger="intersect once"
+		hx-swap="outerHTML"
+		hx-target="this">
+		<td colspan="4" class="text-center text-xs opacity-50 py-4">
+			<span class="loading loading-spinner loading-xs"></span> Loading older…
+		</td>
+	</tr>
+}
