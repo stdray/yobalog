@@ -34,6 +34,9 @@ public sealed class FakeLogStore : ILogStore
 	public ValueTask<long> DeleteOlderThanAsync(WorkspaceId workspaceId, DateTimeOffset cutoff, CancellationToken ct) =>
 		throw new NotSupportedException();
 
+	public ValueTask<long> DeleteKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>
+		throw new NotSupportedException();
+
 	public ValueTask DeclareIndexAsync(WorkspaceId workspaceId, string propertyPath, IndexKind kind, CancellationToken ct) =>
 		throw new NotSupportedException();
 

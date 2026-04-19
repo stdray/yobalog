@@ -119,6 +119,14 @@ public sealed class SqliteLogStore : ILogStore
 			.ConfigureAwait(false);
 	}
 
+	public async ValueTask<long> DeleteKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct)
+	{
+		await using var db = Open(workspaceId);
+		var source = db.GetTable<EventRecord>();
+		var filtered = _kql.Apply(source.AsQueryable(), kql);
+		return await filtered.DeleteAsync(ct).ConfigureAwait(false);
+	}
+
 	public async ValueTask DeclareIndexAsync(
 		WorkspaceId workspaceId,
 		string propertyPath,
