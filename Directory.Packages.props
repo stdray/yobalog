@@ -10,6 +10,8 @@
 		<PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.6" />
 		<PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.6" />
 		<PackageVersion Include="linq2db.SQLite.MS" Version="5.4.1" />
+		<PackageVersion Include="Microsoft.Azure.Kusto.Language" Version="12.3.2" />
+		<PackageVersion Include="KustoLoco.Core" Version="1.4.2" />
 	</ItemGroup>
 
 	<ItemGroup>

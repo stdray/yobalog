@@ -5,6 +5,8 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
 		<PackageReference Include="Microsoft.Extensions.Options" />
 		<PackageReference Include="linq2db.SQLite.MS" />
+		<PackageReference Include="Microsoft.Azure.Kusto.Language" />
+		<PackageReference Include="KustoLoco.Core" />
 	</ItemGroup>
 
 </Project>
