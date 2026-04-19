@@ -110,4 +110,26 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 		var messages = await RunAsync("LogEvents | where Message contains 'boom'");
 		messages.Should().Contain("boom");
 	}
+
+	[Fact]
+	public async Task TimestampGte_TranslatesToSql()
+	{
+		var messages = await RunAsync("LogEvents | where Timestamp >= datetime(2026-04-19T10:03:00Z)");
+		messages.Should().BeEquivalentTo(["meh", "crash on Earth", "starting"]);
+	}
+
+	[Fact]
+	public async Task TimestampLt_TranslatesToSql()
+	{
+		var messages = await RunAsync("LogEvents | where Timestamp < datetime(2026-04-19T10:03:00Z)");
+		messages.Should().BeEquivalentTo(["hello world", "boom"]);
+	}
+
+	[Fact]
+	public async Task TimestampRange_TranslatesToSql()
+	{
+		var messages = await RunAsync(
+			"LogEvents | where Timestamp >= datetime(2026-04-19T10:02:00Z) and Timestamp < datetime(2026-04-19T10:05:00Z)");
+		messages.Should().BeEquivalentTo(["boom", "meh", "crash on Earth"]);
+	}
 }

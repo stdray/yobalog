@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+using Kusto.Language;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
@@ -44,30 +47,25 @@ public sealed class WorkspaceModel : PageModel
 
 	public bool SchemaMissing { get; private set; }
 
+	public string Kql { get; private set; } = "";
+
 	public async Task<IActionResult> OnGetAsync(string id, CancellationToken ct)
 	{
 		if (!WorkspaceId.TryParse(id, out var ws))
 			return NotFound();
 
 		Workspace = ws;
+		Kql = BuildKql();
 
-		var query = new LogQuery(
-			PageSize: PageSize + 1,
-			From: ParseDate(From),
-			To: ParseDate(To),
-			MinLevel: MinLevel,
-			TraceId: NullIfEmpty(TraceId),
-			MessageSubstring: NullIfEmpty(Message),
-			Cursor: DecodeCursor(Cursor));
+		var code = KustoCode.Parse(Kql);
 
 		try
 		{
-			await foreach (var e in _store.QueryAsync(ws, query, ct))
+			await foreach (var e in _store.QueryKqlAsync(ws, code, ct))
 				Events.Add(e);
 		}
 		catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
 		{
-			// "no such table: Events" — workspace not yet created
 			SchemaMissing = true;
 			return Page();
 		}
@@ -82,8 +80,46 @@ public sealed class WorkspaceModel : PageModel
 		return Page();
 	}
 
-	static DateTimeOffset? ParseDate(string? s) =>
-		DateTimeOffset.TryParse(s, out var d) ? d : null;
+	string BuildKql()
+	{
+		var sb = new StringBuilder("LogEvents");
+
+		if (TryParseUtc(From, out var fromDt))
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp >= {FormatDatetime(fromDt)}");
+		if (TryParseUtc(To, out var toDt))
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp < {FormatDatetime(toDt)}");
+		if (MinLevel is { } level)
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where Level >= {(int)level}");
+		if (NullIfEmpty(TraceId) is { } trace)
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where TraceId == '{EscapeKqlString(trace)}'");
+		if (NullIfEmpty(Message) is { } msg)
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where Message contains '{EscapeKqlString(msg)}'");
+
+		if (DecodeCursor(Cursor) is { } cursorBytes)
+		{
+			var (ts, cid) = CursorCodec.Decode(cursorBytes.Span);
+			var dt = DateTimeOffset.FromUnixTimeMilliseconds(ts);
+			var tsLit = FormatDatetime(dt);
+			sb.Append(CultureInfo.InvariantCulture, $"\n| where Timestamp < {tsLit} or (Timestamp == {tsLit} and Id < {cid})");
+		}
+
+		sb.Append("\n| order by Timestamp desc, Id desc");
+		sb.Append(CultureInfo.InvariantCulture, $"\n| take {PageSize + 1}");
+		return sb.ToString();
+	}
+
+	static bool TryParseUtc(string? s, out DateTimeOffset value) =>
+		DateTimeOffset.TryParse(
+			s,
+			CultureInfo.InvariantCulture,
+			DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+			out value);
+
+	static string FormatDatetime(DateTimeOffset dt) =>
+		$"datetime({dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture)})";
+
+	static string EscapeKqlString(string s) =>
+		s.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal);
 
 	static string? NullIfEmpty(string? s) =>
 		string.IsNullOrWhiteSpace(s) ? null : s;

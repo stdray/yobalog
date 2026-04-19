@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using Kusto.Language;
 using YobaLog.Core.Storage;
 
 namespace YobaLog.Tests.Fakes;
@@ -22,6 +23,9 @@ public sealed class FakeLogStore : ILogStore
 	}
 
 	public IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct) =>
+		throw new NotSupportedException();
+
+	public IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>
 		throw new NotSupportedException();
 
 	public ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct) =>

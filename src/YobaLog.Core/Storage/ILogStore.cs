@@ -1,3 +1,5 @@
+using Kusto.Language;
+
 namespace YobaLog.Core.Storage;
 
 public interface ILogStore
@@ -5,6 +7,7 @@ public interface ILogStore
 	ValueTask AppendBatchAsync(WorkspaceId workspaceId, IReadOnlyList<LogEventCandidate> batch, CancellationToken ct);
 
 	IAsyncEnumerable<LogEvent> QueryAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
+	IAsyncEnumerable<LogEvent> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct);
 	ValueTask<long> CountAsync(WorkspaceId workspaceId, LogQuery query, CancellationToken ct);
 
 	ValueTask<long> DeleteOlderThanAsync(WorkspaceId workspaceId, DateTimeOffset cutoff, CancellationToken ct);

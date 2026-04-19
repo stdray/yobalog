@@ -42,7 +42,13 @@
     - [ ] FTS5 MATCH special case для `Message contains` — сейчас через LIKE (full scan, spec §7 warning ок). Оптимизация, не блокер.
     - [ ] Timestamp в dual-executor — kusto-loco странно обрабатывает `datetime()`-литерал; production корректен, reference закомментирован.
     - [x] Unsupported operators/predicates → explicit `UnsupportedKqlException` с actionable message.
-- [ ] **Фаза C — swap на KQL.** Хардкод-фильтры UI заменяются на `<textarea>` с KQL (server-side автокомплит через htmx — позже). Saved queries (CRUD). Retention-политики с фильтрами-ссылками на saved queries.
+- [~] **Фаза C — swap на KQL.** Viewer прозрачно переехал на KQL: форма та же, page-model билдит KQL-строку и гоняет через `SqliteLogStore.QueryKqlAsync`. Pagination через `where Timestamp < cursor or (Timestamp == cursor and Id < id)`. Протестировано через Playwright end-to-end (55 событий, 2 страницы, фильтры сходятся).
+    - [x] Form → KQL builder в `WorkspaceModel.BuildKql()` — from/to/minLevel/trace/message/cursor.
+    - [x] `ILogStore.QueryKqlAsync` — часть контракта; `SqliteLogStore` реализует.
+    - [ ] `<textarea>` с сырым KQL — пользователь пишет KQL напрямую. Отложено до следующей итерации (форма всё ещё полезна для быстрых filter'ов, KQL-editor будет как альтернатива).
+    - [ ] Server-side автокомплит через htmx (`KustoCode.GetCompletions`).
+    - [ ] Saved queries (CRUD) — `.meta.db` per workspace.
+    - [ ] Retention-политики с фильтрами-ссылками на saved queries.
 - [ ] **Фаза D — usability.** Share links + маскирование UI; TSV export; live tail (SSE + sliding window).
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
