@@ -6,11 +6,13 @@ using YobaLog.Core;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Ingestion;
 using YobaLog.Core.Kql;
-using YobaLog.Web;
 using YobaLog.Core.Retention;
+using YobaLog.Core.SavedQueries;
+using YobaLog.Core.SavedQueries.Sqlite;
 using YobaLog.Core.SelfLogging;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +24,7 @@ builder.Services.Configure<SystemLoggerOptions>(builder.Configuration.GetSection
 builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("Admin"));
 
 builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
+builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
 builder.Services.AddSingleton<IApiKeyStore, ConfigApiKeyStore>();
 builder.Services.AddSingleton<ICleFParser, CleFParser>();
 builder.Services.AddSingleton<KqlCompletionService>();
