@@ -113,13 +113,13 @@
 							<tr>
 								<td class="font-mono">@path</td>
 								<td class="text-center">
-									<input type="radio" class="radio radio-xs" name="mode@path" value="keep" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Keep)" data-share-radio data-path="@path" />
+									<input type="radio" class="radio radio-xs" name="mode-@(path)" value="keep" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Keep)" data-share-radio data-path="@path" />
 								</td>
 								<td class="text-center">
-									<input type="radio" class="radio radio-xs" name="mode@path" value="mask" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Mask)" data-share-radio data-path="@path" />
+									<input type="radio" class="radio radio-xs" name="mode-@(path)" value="mask" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Mask)" data-share-radio data-path="@path" />
 								</td>
 								<td class="text-center">
-									<input type="radio" class="radio radio-xs" name="mode@path" value="hide" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Hide)" data-share-radio data-path="@path" />
+									<input type="radio" class="radio radio-xs" name="mode-@(path)" value="hide" checked="@(mode == YobaLog.Core.Sharing.MaskMode.Hide)" data-share-radio data-path="@path" />
 								</td>
 							</tr>
 						}
