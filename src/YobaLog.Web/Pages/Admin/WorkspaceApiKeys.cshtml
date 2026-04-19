@@ -1,0 +1,84 @@
+@page "/ws/{id}/admin/api-keys"
+@model YobaLog.Web.Pages.Admin.WorkspaceApiKeysModel
+@{
+	ViewData["Title"] = $"API keys — {Model.Workspace.Value}";
+}
+
+<div class="mb-4 flex items-center gap-3 flex-wrap">
+	<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="text-sm opacity-60 hover:opacity-100">← @Model.Workspace.Value</a>
+	<h1 class="text-2xl font-semibold">API keys <span class="font-mono opacity-60 text-base">/ @Model.Workspace.Value</span></h1>
+</div>
+
+@if (Model.RevealedToken is not null)
+{
+	<div class="alert alert-warning mb-4 flex-col items-start gap-2">
+		<div class="font-semibold">Copy this token now — it will NOT be shown again.</div>
+		@if (!string.IsNullOrWhiteSpace(Model.RevealedTitle))
+		{
+			<div class="text-xs opacity-70">Title: <span class="font-mono">@Model.RevealedTitle</span></div>
+		}
+		<div class="join w-full max-w-xl">
+			<input type="text" readonly
+				value="@Model.RevealedToken"
+				class="input input-sm input-bordered join-item w-full font-mono text-xs" />
+			<button type="button" class="btn btn-sm join-item"
+				data-copy="@Model.RevealedToken">Copy</button>
+		</div>
+	</div>
+}
+else if (Model.FlashMessage is not null)
+{
+	<div class="alert alert-success mb-4 text-sm">@Model.FlashMessage</div>
+}
+@if (Model.ErrorMessage is not null)
+{
+	<div class="alert alert-error mb-4 text-sm">@Model.ErrorMessage</div>
+}
+
+<form method="post" asp-page-handler="create" asp-route-id="@Model.Workspace.Value"
+	class="mb-4 flex gap-2 items-center flex-wrap">
+	<input type="text" name="title" maxlength="80"
+		placeholder="title (optional, e.g. 'prod-api')"
+		class="input input-sm input-bordered w-72" />
+	<button type="submit" class="btn btn-sm btn-primary">Create key</button>
+	<span class="text-xs opacity-60">Plaintext shown once, after that only sha256 + 6-char prefix is kept.</span>
+</form>
+
+@if (Model.Keys.Count == 0)
+{
+	<div class="alert text-sm">No keys yet. Create one above.</div>
+}
+else
+{
+	<div class="overflow-x-auto rounded-box border border-base-300 bg-base-200">
+		<table class="table table-sm">
+			<thead>
+				<tr>
+					<th class="w-40">Prefix</th>
+					<th>Title</th>
+					<th class="w-48">Created (UTC)</th>
+					<th class="w-32"></th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var k in Model.Keys)
+				{
+					<tr>
+						<td class="font-mono">@k.Prefix<span class="opacity-40">…</span></td>
+						<td>@(k.Title ?? "")</td>
+						<td class="font-mono text-xs opacity-70">
+							<time class="local-time" datetime="@EventRowViewModel.IsoUtc(k.CreatedAt)" title="UTC: @EventRowViewModel.IsoUtc(k.CreatedAt)">@EventRowViewModel.IsoUtc(k.CreatedAt)</time>
+						</td>
+						<td>
+							<form method="post" asp-page-handler="delete" asp-route-id="@Model.Workspace.Value">
+								<input type="hidden" name="keyId" value="@k.Id" />
+								<button type="submit" class="btn btn-xs btn-ghost text-error"
+									onclick="return confirm('Delete key @k.Prefix… ? Clients using it will stop being able to ingest.');">Delete</button>
+							</form>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}

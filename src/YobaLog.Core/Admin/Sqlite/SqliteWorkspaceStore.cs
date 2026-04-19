@@ -2,6 +2,7 @@ using LinqToDB;
 using LinqToDB.Data;
 using LinqToDB.DataProvider.SQLite;
 using Microsoft.Extensions.Options;
+using YobaLog.Core.Auth;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 
@@ -11,11 +12,13 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 {
 	readonly SqliteLogStoreOptions _options;
 	readonly ILogStore _logStore;
+	readonly IApiKeyAdmin _apiKeyAdmin;
 
-	public SqliteWorkspaceStore(IOptions<SqliteLogStoreOptions> options, ILogStore logStore)
+	public SqliteWorkspaceStore(IOptions<SqliteLogStoreOptions> options, ILogStore logStore, IApiKeyAdmin apiKeyAdmin)
 	{
 		_options = options.Value;
 		_logStore = logStore;
+		_apiKeyAdmin = apiKeyAdmin;
 	}
 
 	string AdminDbPath => Path.Combine(_options.DataDirectory, $"{WorkspaceId.System.Value}.meta.db");
@@ -64,6 +67,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 		}
 
 		await _logStore.CreateWorkspaceAsync(id, new WorkspaceSchema(), ct).ConfigureAwait(false);
+		await _apiKeyAdmin.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
 		return new WorkspaceInfo(id, now);
 	}
 
@@ -83,7 +87,10 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 		}
 
 		if (deleted > 0)
+		{
 			await _logStore.DropWorkspaceAsync(id, ct).ConfigureAwait(false);
+			await _apiKeyAdmin.DropWorkspaceAsync(id, ct).ConfigureAwait(false);
+		}
 
 		return deleted > 0;
 	}

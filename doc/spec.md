@@ -38,6 +38,7 @@
 - **Admin:**
     - Управление пользователями, workspace'ами, API-ключами.
     - **API-ключи (стиль Seq):** `X-Seq-ApiKey` header или `?apiKey=`. Скоуп — workspace. Rate-limit per key — планируется, не реализован в MVP.
+    - **Двухуровневый стек ключей:** `ConfigApiKeyStore` (plaintext в `appsettings.json`, без UI — backdoor для админа / bootstrap / master-ключа «на всё, что прописано в конфиге») + `SqliteApiKeyStore` (per-workspace `.meta.db`, CRUD через `/ws/{id}/admin/api-keys`, plaintext показывается один раз при создании, в БД — `sha256(token)` + 6-символьный префикс для UI). `CompositeApiKeyStore` на hot-path валидации пробегает stores по-порядку (Config первым), ConfiguredWorkspaces = union.
     - **Retention-политики (стиль Seq):** набор правил; каждое правило = KQL-фильтр + отсечка по дате. Пример: `@l in [Error, Fatal] → 90 дней; @l == Warning → 30 дней; остальное → 7 дней`. Глобальный hard cap по размеру файла.
     - **Retention-фильтры = saved queries.** Retention-правило не имеет своего редактора запросов — ссылается на сохранённый запрос из workspace. Удаление saved query, на который ссылается retention, блокируется с предупреждением "используется в retention-политике {name}". Это единственное UI-отличие retention-фильтра от обычного сохранённого запроса.
 
@@ -72,13 +73,12 @@
 - **`$system.logs.db`** — self-observability события (retention-проходы, ingestion-ошибки, query-статистика, аудит). Пишутся через обычный `ILogStore.AppendBatchAsync`, читаются через обычный viewer (workspace видно админу).
 - **`$system.meta.db`** — global admin state:
     - `Workspaces(Id, CreatedAtMs)` — каталог workspace'ов.
-    - `ApiKeys(...)` — API-ключи (sha256 хеши + UI hint из первых символов).
-    - `Users(...)` — multi-admin.
-    - `RetentionPolicies(...)` — retention rules со ссылкой на saved query.
+    - `Users(...)` — multi-admin (план).
+    - `RetentionPolicies(...)` — retention rules со ссылкой на saved query (план).
     - Плюс собственные saved queries / share links / masking policies `$system` (как у любого workspace'а).
 - **Per-user-workspace пара файлов:**
     - `{workspace}.logs.db` — сами события (горячие данные, высокий write throughput, агрессивный retention/shrink).
-    - `{workspace}.meta.db` — сохранённые запросы, share links, field-masking policies для этого workspace'а.
+    - `{workspace}.meta.db` — сохранённые запросы, share links, field-masking policies и **API-ключи** (`sha256(token)` + 6-символьный префикс) для этого workspace'а. Удалили workspace → `.meta.db` исчезает вместе с ключами и всем остальным.
 - **Обоснование разделения:** retention чистит `logs.db`, не трогая meta; shrink логов не блокирует чтение сохранённых запросов; бэкап/экспорт разных частей с разной частотой. `$system.meta.db` как global DB — один файл вместо двух (master + $system), без новой концепции "system vs regular workspace".
 - **Workspace ID:** пользовательский slug, regex `^[a-z0-9][a-z0-9-]{1,39}$` (стиль Docker image names — `acme-prod`, `yobapub`). Зарезервированный префикс `$` только для системных (`$system`). Ренейминг на старте не поддерживается (ломает share-links и URL-ы) — добавляется позже с редиректами.
 

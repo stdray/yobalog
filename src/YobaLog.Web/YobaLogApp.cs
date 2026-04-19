@@ -8,6 +8,7 @@ using YobaLog.Core;
 using YobaLog.Core.Admin;
 using YobaLog.Core.Admin.Sqlite;
 using YobaLog.Core.Auth;
+using YobaLog.Core.Auth.Sqlite;
 using YobaLog.Core.Ingestion;
 using YobaLog.Core.Kql;
 using YobaLog.Core.Retention;
@@ -42,7 +43,16 @@ public static class YobaLogApp
 		builder.Services.AddSingleton<IFieldMaskingPolicyStore, SqliteFieldMaskingPolicyStore>();
 		builder.Services.AddSingleton<IShareLinkStore, SqliteShareLinkStore>();
 		builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
-		builder.Services.AddSingleton<IApiKeyStore, ConfigApiKeyStore>();
+
+		// Two-tier api-key stack: ConfigApiKeyStore (appsettings, admin backdoor — no UI)
+		// and SqliteApiKeyStore (per-workspace `.meta.db`, managed via /ws/{id}/admin/api-keys).
+		// CompositeApiKeyStore fronts both for ingestion validation + retention workspace enumeration.
+		builder.Services.AddSingleton<ConfigApiKeyStore>();
+		builder.Services.AddSingleton<SqliteApiKeyStore>();
+		builder.Services.AddSingleton<IApiKeyAdmin>(sp => sp.GetRequiredService<SqliteApiKeyStore>());
+		builder.Services.AddSingleton<IApiKeyStore>(sp => new CompositeApiKeyStore(
+			sp.GetRequiredService<ConfigApiKeyStore>(),
+			sp.GetRequiredService<SqliteApiKeyStore>()));
 		builder.Services.AddSingleton<ICleFParser, CleFParser>();
 		builder.Services.AddSingleton<KqlCompletionService>();
 		builder.Services.AddSingleton<InMemoryTailBroadcaster>();
