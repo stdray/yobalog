@@ -72,6 +72,7 @@ sealed class KqlTransformer
 				ProjectOperator p => ApplyProject(current, p),
 				CountOperator => ApplyCount(current),
 				SummarizeOperator s => ApplySummarize(current, s),
+				ExtendOperator e => ApplyExtend(current, e),
 				_ => throw new UnsupportedKqlException($"operator '{op.Kind}' not supported (yet) in shape-changing pipeline"),
 			};
 		}
@@ -103,6 +104,43 @@ sealed class KqlTransformer
 		}
 
 		return new KqlResult(newColumns, StreamProjected(input.Rows, [.. specs.Select(s => s.SourceIndex)]));
+	}
+
+	static KqlResult ApplyExtend(KqlResult input, ExtendOperator op)
+	{
+		var specs = new List<(string OutputName, int SourceIndex)>();
+		var columns = new List<KqlColumn>(input.Columns);
+
+		foreach (var element in op.Expressions)
+		{
+			if (element.Element is not SimpleNamedExpression { Name: NameDeclaration alias, Expression: NameReference src })
+				throw new UnsupportedKqlException(
+					$"extend expression '{element.Element.Kind}' not supported (only 'alias = column' for now)");
+
+			var sourceIndex = FindColumnIndex(input.Columns, src.SimpleName);
+			if (sourceIndex < 0)
+				throw new UnsupportedKqlException($"extend: unknown column '{src.SimpleName}'");
+
+			specs.Add((alias.Name.SimpleName, sourceIndex));
+			columns.Add(new KqlColumn(alias.Name.SimpleName, input.Columns[sourceIndex].ClrType));
+		}
+
+		return new KqlResult(columns, StreamExtended(input.Rows, [.. specs.Select(s => s.SourceIndex)]));
+	}
+
+	static async IAsyncEnumerable<object?[]> StreamExtended(
+		IAsyncEnumerable<object?[]> source,
+		int[] appendIndices,
+		[EnumeratorCancellation] CancellationToken ct = default)
+	{
+		await foreach (var row in source.WithCancellation(ct).ConfigureAwait(false))
+		{
+			var result = new object?[row.Length + appendIndices.Length];
+			Array.Copy(row, result, row.Length);
+			for (var i = 0; i < appendIndices.Length; i++)
+				result[row.Length + i] = row[appendIndices[i]];
+			yield return result;
+		}
 	}
 
 	static KqlResult ApplyCount(KqlResult input)

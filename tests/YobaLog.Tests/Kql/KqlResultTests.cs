@@ -228,4 +228,40 @@ public sealed class KqlResultTests
 		var act = () => _transformer.Execute(SummarizeRows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*avg*");
 	}
+
+	[Fact]
+	public async Task Extend_AppendsAliasColumn()
+	{
+		var ast = KustoCode.Parse("LogEvents | extend Copy = Level");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		result.Columns.Should().HaveCount(KqlTransformer.EventRecordColumns.Count + 1);
+		result.Columns[^1].Name.Should().Be("Copy");
+		result.Columns[^1].ClrType.Should().Be<int>();
+
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows[0][^1].Should().Be((int)LogLevel.Information);
+		rows[1][^1].Should().Be((int)LogLevel.Error);
+	}
+
+	[Fact]
+	public async Task Extend_Then_Project_Works()
+	{
+		var ast = KustoCode.Parse("LogEvents | extend Copy = Level | project Id, Copy");
+		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+
+		result.Columns.Select(c => c.Name).Should().ContainInOrder("Id", "Copy");
+		var rows = new List<object?[]>();
+		await foreach (var r in result.Rows) rows.Add(r);
+		rows[0][1].Should().Be((int)LogLevel.Information);
+	}
+
+	[Fact]
+	public void Extend_UnknownColumn_Throws()
+	{
+		var ast = KustoCode.Parse("LogEvents | extend X = Nope");
+		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Nope*");
+	}
 }
