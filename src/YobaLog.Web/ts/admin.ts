@@ -89,6 +89,31 @@ function ensureToastRoot(): HTMLDivElement {
 	return root;
 }
 
+const PendingToastKey = "yobalog.pendingToast";
+
+function deferHotkeyToast(combo: string, action: string): void {
+	try {
+		sessionStorage.setItem(PendingToastKey, JSON.stringify({ combo, action, t: Date.now() }));
+	} catch {
+		// sessionStorage unavailable (private mode / SecurityError) — just show now and hope navigation is slow.
+		showHotkeyToast(combo, action);
+	}
+}
+
+(() => {
+	const raw = sessionStorage.getItem(PendingToastKey);
+	if (!raw) return;
+	sessionStorage.removeItem(PendingToastKey);
+	try {
+		const data = JSON.parse(raw) as { combo?: string; action?: string; t?: number };
+		if (!data.combo || !data.action || typeof data.t !== "number") return;
+		if (Date.now() - data.t > 3000) return;
+		showHotkeyToast(data.combo, data.action);
+	} catch {
+		// malformed payload — drop silently.
+	}
+})();
+
 // ---------- Global focus shortcut: "/" jumps to KQL textarea ----------
 
 document.addEventListener("keydown", (event) => {
@@ -145,7 +170,9 @@ document.addEventListener("keydown", (event) => {
 		closeKqlPanel();
 		const submit = target.form?.querySelector<HTMLButtonElement>('button[type="submit"]');
 		if (submit) flashButton(submit);
-		showHotkeyToast(event.metaKey ? "⌘+Enter" : "Ctrl+Enter", "apply");
+		// Toast would die mid-fade when requestSubmit() navigates; stash it and replay
+		// from sessionStorage on the next page load so the user actually sees it.
+		deferHotkeyToast(event.metaKey ? "⌘+Enter" : "Ctrl+Enter", "apply");
 		target.form?.requestSubmit();
 		return;
 	}
