@@ -54,7 +54,6 @@
     - [ ] **Viewport awareness:** пока пользователь не наверху — новые события не префендятся, накапливаются в индикаторе "N новых"; клик/скролл к верху применяет.
     - [x] **Infinite scroll (вместо "Load older"):** sentinel-row в конце `<tbody>` с `hx-trigger="intersect once"` фетчит следующую страницу через ту же `/ws/{id}` URL. `WorkspaceModel.OnGetAsync` при `HX-Request` возвращает `Partial("_RowsFragment", this)` — те же rows + новый sentinel. htmx 2.0 `outerHTML`-swap на `<tr>` использует template-fragments автоматически. Copy/expand handlers в `admin.ts` делают event-delegation на `document`, так что работают на новых строках без `htmx.process`. Верхняя граница (cursor-based "show newer") — когда появится use-case. Spec §7 запрещает offset.
     - [x] **Share → masked TSV** per spec §3. DB-backed links: `ShareLink(Id, Kql, CreatedAt, ExpiresAt, Salt, Columns, Modes)` в `.meta.db` per workspace, Id — `ShortGuid` (22-char base64url от Guid.NewGuid). `GET /share/{ws}/{id}.tsv` anonymous, 404 для неизвестного id, 410 Gone + lazy-delete при expiry. `RetentionService` сметает протухшие ссылки заодно с событиями. Три режима на поле: `keep` / `mask` (детерминированный HMAC-SHA256(salt,value)→4-byte hex с префиксом из последнего сегмента пути — `email:a1b2c3d4`, связи в рамках одной ссылки сохраняются) / `hide` (поле вырезается, column тоже). Property keys — плоский namespace с top-level, top-level shadows properties на collision. Policy-per-workspace в `FieldMaskingPolicy` — модалка не переспрашивает одно и то же. Revocation — `DELETE` row (UI пока нет). HTML-preview шарированного view отложен — 99% use-case TSV-to-LLM.
-    - [ ] **Auto-detect field names** (`email|ip|auth|token|password|ssn` в путях) → предзаполнить `mask`/`hide` в модалке. Отдельный коммит поверх policy-store.
 - [ ] **Фаза E — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
 ## Perf / регрессии
@@ -95,3 +94,11 @@
     - Sync между тем, что парсится в Kusto AST, и тем, что реально работает в наших бэкендах — явный allowlist; автоматическая проверка в тестах (любой AST-node вне allowlist → explicit fail на трансляции).
 - [ ] **Props indexing policy.** Allowlist путей per-workspace через `ILogStore.DeclareIndexAsync` — единая стратегия (SQLite/DuckDB/Postgres expression-index на `json_extract`). Подвопросы: UX управления allowlist'ом; автодетект "горячих" путей по статистике запросов; защита от high-cardinality полей (UUID-ы как ключи Properties).
 - [ ] **Time handling.** Клиентский `@t` в CLEF — ISO 8601 с offset. Seq верит клиенту, хранит UTC-эквивалент, не компенсирует clock skew. Повторяем это поведение. Подвопрос: UI — показывать время в TZ смотрящего или в TZ события?
+
+---
+
+## Рюшечки
+
+Чистое UX-добро, не блокирует dog-food / никаких архитектурных решений. Делать, когда будет скучно.
+
+- [ ] **Auto-detect чувствительных полей** в share-модалке: `email|ip|auth|token|password|ssn` в имени пути → предзаполнить radio как `mask`/`hide`, чтобы не клацать вручную.
