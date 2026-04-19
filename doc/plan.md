@@ -29,7 +29,7 @@
     - [x] `POST /api/events/raw` — 201 с partial-batch ack `{received, errors}`, 401 на bad/missing key.
     - [x] `WorkspaceBootstrapper` — на старте создаёт `$system` + все workspaces из API-ключей.
     - [x] Retention service — `BackgroundService`, гоняет `DeleteOlderThanAsync` per workspace; отдельный `SystemRetentionDays` для `$system`.
-    - [ ] Self-observability — `SystemLoggerProvider`, фильтр категорий, собственные логи в `$system`.
+    - [x] Self-observability — `SystemLoggerProvider` + `SystemLogFlusher`, фильтр по префиксу категории (`YobaLog.*`), собственные логи в `$system` через прямой `ILogStore.AppendBatchAsync` (минуя pipeline, чтобы не словить рекурсию). Queue-full → drop (DropWrite).
     - [ ] Минимальный viewer — Razor Pages: логин + список + фильтры + cursor-пагинация.
 - [ ] **Фаза B (параллельно A) — transformer и dual-executor тесты.** Parser, AST и reference executor не пишем — всё из `Kusto.Language` + `kusto-loco`. Пишем только: visitor по Kusto AST → SQL через `linq2db` (SQLite+FTS5); allowlist поддерживаемых операторов (MVP: `where`, `project`, `extend`, `summarize`, `count`, `take`, `order by`); специальный case для full-text на `Message` — транслируется в FTS5 MATCH; dual-executor property-тесты (KQL-строка прогоняется через `KustoQueryContext` и через наш SQLite-transformer, результаты сравниваются). В UI пока не подключается.
 - [ ] **Фаза C — swap на KQL.** Хардкод-фильтры UI заменяются на `<textarea>` с KQL (server-side автокомплит через htmx — позже). Saved queries (CRUD). Retention-политики с фильтрами-ссылками на saved queries.

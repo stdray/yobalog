@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-04-19 — Тестовый проект: подавление CA1707, CA1848, CA1861, CA1873, CA2007
+**Решение:** `<NoWarn>$(NoWarn);CA1707;CA1848;CA1861;CA1873;CA2007</NoWarn>` в `tests/YobaLog.Tests/YobaLog.Tests.csproj`. В production-коде все эти правила остаются активными (escalate to error).
+**Причина:**
+- **CA1707** — запрет underscore в именах. В тестах стандартная конвенция `Method_Condition_Expectation` вынуждает.
+- **CA1848** — требует `LoggerMessage.Define` / source-gen вместо `logger.LogInformation(...)`. В тестах мы пишем short-lived код ради assertion'ов, source-gen boilerplate нечитаем; perf тут не важен.
+- **CA1861** — `InlineData` с array-литералом "expensive". В xunit Theory нормально — выполняется один раз на тест.
+- **CA1873** — "evaluation may be expensive if logging disabled". Тесты всегда logging-enabled, предупреждение ложное.
+- **CA2007** — `ConfigureAwait(false)` во всех await. В xunit-тестах нет SynchronizationContext, предупреждение шумовое.
+**Откатили:** идею подчинять тесты тем же правилам, что и production, ради "чистоты" — шум превышает пользу.
+
 ## 2026-04-19 — `.editorconfig`: `indent_size = 2` вместо `indent_size = tab`
 **Решение:** финальная конфигурация `.editorconfig` — `indent_style = tab`, `tab_width = 2`, `indent_size = 2` (число, не `tab`).
 **Причина:** `indent_size = tab` по спеке editorconfig значит "одна ступень = tab_width пробелов, пишется табом" → 1 уровень = 1 таб. `dotnet format` интерпретирует иначе: `indent_size` — это ширина ступени в символах отступа, а `indent_style = tab` → пиши это число символов табами 1-к-1. Получалось 2 таба на уровень (4 пробела отображения) вместо 1. С `indent_size = 2` + `tab_width = 2` format корректно даёт 1 таб на уровень (2 пробела). Biome тоже перестаёт падать на парсинге (он не понимает `indent_size = tab`).

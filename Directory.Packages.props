@@ -6,14 +6,15 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
-		<PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
-		<PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.6" />
+		<PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.6" />
+		<PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.6" />
 		<PackageVersion Include="linq2db.SQLite.MS" Version="5.4.1" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
+		<PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
+		<PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.5.0" />
 		<PackageVersion Include="coverlet.collector" Version="6.0.4" />
 		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
 		<PackageVersion Include="xunit" Version="2.9.3" />
