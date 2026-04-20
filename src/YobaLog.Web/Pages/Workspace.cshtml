@@ -30,7 +30,7 @@
 				title="Share query as TSV">Share</button>
 		}
 		<a asp-page="/Admin/WorkspaceApiKeys" asp-route-id="@Model.Workspace.Value"
-			class="btn btn-xs btn-ghost" title="Manage API keys for this workspace">Keys</a>
+			class="btn btn-ghost btn-xs" title="Manage API keys for this workspace">Keys</a>
 	</div>
 </div>
 
@@ -38,9 +38,9 @@
 	var baseUrl = $"{ViewContext.HttpContext.Request.Scheme}://{ViewContext.HttpContext.Request.Host}";
 	var seqBase = $"{baseUrl}/compat/seq";
 }
-<details class="mb-4 rounded-box border border-base-300 bg-base-200">
-	<summary class="cursor-pointer px-4 py-2 text-sm font-semibold select-none">Ingestion endpoints</summary>
-	<div class="px-4 pb-4">
+<details class="bg-base-200 border border-base-300 mb-4 rounded-box">
+	<summary class="cursor-pointer font-semibold px-4 py-2 select-none text-sm">Ingestion endpoints</summary>
+	<div class="pb-4 px-4">
 		<table class="table table-xs">
 			<thead>
 				<tr>
@@ -59,7 +59,7 @@
 				</tr>
 			</tbody>
 		</table>
-		<p class="text-xs opacity-60 mt-2">Use with Serilog.Sinks.Seq / winston-seq / seqlog — set <code>serverUrl</code> to the base URL above; the client appends the Seq raw-events path automatically.</p>
+		<p class="mt-2 opacity-60 text-xs">Use with Serilog.Sinks.Seq / winston-seq / seqlog — set <code>serverUrl</code> to the base URL above; the client appends the Seq raw-events path automatically.</p>
 	</div>
 </details>
 
