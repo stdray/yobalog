@@ -17,9 +17,10 @@
 			<input type="text" name="name" value="@Model.ActiveSavedName" required
 				placeholder="save as…"
 				pattern="[A-Za-z0-9 _\-]+"
+				data-testid="saved-query-name"
 				class="input input-xs input-bordered w-36" />
 			<input type="hidden" name="kql" value="@Model.UserKql" />
-			<button type="submit" class="btn btn-xs btn-ghost" title="Save current query">Save</button>
+			<button type="submit" data-testid="saved-query-save" class="btn btn-xs btn-ghost" title="Save current query">Save</button>
 		</form>
 		@if (!Model.IsShapeChanged)
 		{
@@ -73,6 +74,8 @@
 				<a asp-page="/Workspace"
 					asp-route-id="@Model.Workspace.Value"
 					asp-route-saved="@sq.Name"
+					data-testid="saved-query-chip"
+					data-saved-name="@sq.Name"
 					class="btn btn-xs join-item font-mono @(Model.ActiveSavedName == sq.Name ? "btn-primary" : "btn-ghost")">@sq.Name</a>
 				<form method="post" asp-page-handler="delete" asp-route-id="@Model.Workspace.Value" class="join-item">
 					<input type="hidden" name="savedId" value="@sq.Id" />

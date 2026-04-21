@@ -100,16 +100,16 @@ Playwright MCP (интерактивно, через Claude) — для smoke-п
             Expect(page.GetByTestId("kql-error")).ToContainTextAsync(text);
     }
     ```
-- [~] **Golden paths (must-cover):** первая волна закрыта — login (wrong + right creds) и workspace KQL (filter by level + parse-error alert). Остальное по мере расширения coverage.
+- [~] **Golden paths (must-cover):** всё кроме admin закрыто. Сейчас 13 E2E-тестов (7 UI + 2 Serilog-compat + 1 Winston-compat + 3 share/live-tail contract-тестов).
     - [x] Login: wrong creds → alert; right → workspace-list.
     - [x] Workspace KQL: filter применяется; parse-error показывается красным.
-    - [ ] Logout чистит cookie.
-    - [ ] Cursor pagination / infinite scroll: sentinel intersect → следующая страница догружается.
-    - [ ] Live tail: toggle → SSE подключается → новые события появляются сверху.
-    - [ ] Saved queries: save → chip появляется → click перезагружает KQL.
-    - [ ] Share: generate → anonymous TSV fetch → expired link → 410.
-    - [ ] Admin workspaces: create → появился в listing → delete → `.db` снесён.
-    - [ ] Admin API keys: create показывает plaintext один раз → ключ валидирует ingestion → delete инвалидирует кеш.
+    - [x] Logout чистит cookie.
+    - [x] Cursor pagination / infinite scroll: seed 60 событий → первая страница 50 + sentinel; навигация по sentinel href → оставшиеся 10. Client-side htmx intersect не проверяется (внешний CDN заблокирован в тестах) — только server-side контракт пагинации.
+    - [x] Live tail: broadcaster.Publish → SSE subscriber получает фрейм с `events-row` разметкой. Client-side htmx-ext-sse не проверяется по той же причине.
+    - [x] Saved queries: apply KQL → save с именем → chip появляется → click по chip перезагружает KQL.
+    - [x] Share: generate через `POST /api/ws/{id}/share` → anonymous TSV fetch содержит данные; expired link → 410, lazy-delete; второй fetch → 404. Модалка share тестится вручную через MCP.
+    - [ ] Admin workspaces: create → появился в listing → delete → `.db` снесён. _(отложено — админку пока не тестируем)_
+    - [ ] Admin API keys: create показывает plaintext один раз → ключ валидирует ingestion → delete инвалидирует кеш. _(отложено)_
 - [x] **Storage-state auth.** Фикстура логинится один раз, сохраняет cookie через `context.StorageStateAsync` → `StorageStatePath`, каждый тест получает authenticated context. Без этого login на каждый test-method → медленнее + флейкит. Тесты login flow явно берут `authenticated: false`.
 - [x] **Disable per-assembly parallelization + single UI fixture.** `[assembly: CollectionBehavior(DisableTestParallelization = true)]` + `ICollectionFixture<WebAppFixture>` для UI-классов. Множественные Kestrel+Chromium пары гонялись на старте. Compat-тесты остаются per-class (каждый свой `KestrelAppHost`) — у них разные ApiKeys/Workspace, шаринг добавил бы сложности без выигрыша.
 - [x] **Block external CDN in test contexts.** `<script src="https://unpkg.com/htmx...">` в `_Layout.cshtml` — blocking tag. DNS до unpkg.com внутри headless Chromium иногда висел 15-30с, останавливая DOM-парсер до этого скрипта (симптом: dump страницы обрывается на первом script, body пустой). `context.RouteAsync("**/unpkg.com/**", fulfill empty)` отбивает внешние запросы на уровне Playwright. Тесты не проверяют клиентский htmx; когда появятся live-tail/htmx тесты — переключить конкретные роуты на локальные копии htmx.

@@ -18,6 +18,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 	public string BaseUrl => _host.BaseUrl;
 	public IBrowser Browser => _browser ?? throw new InvalidOperationException("Fixture not initialized");
 	public ILogStore LogStore => _host.Services.GetRequiredService<ILogStore>();
+	public IServiceProvider Services => _host.Services;
 
 	// Pre-authenticated storage state (cookie) captured once per fixture via a single login.
 	// Each test's NewAuthenticatedContextAsync() loads it, skipping the redirect+form roundtrip —

@@ -6,7 +6,14 @@
 }
 @if (Model.NextCursor is not null)
 {
-	<tr hx-get="@Url.Page("/Workspace", new {
+	<tr data-testid="events-sentinel"
+		data-next-href="@Url.Page("/Workspace", new {
+			id = Model.Workspace.Value,
+			kql = Model.RawKql,
+			saved = Model.ActiveSavedName,
+			cursor = Model.NextCursor,
+		})"
+		hx-get="@Url.Page("/Workspace", new {
 			id = Model.Workspace.Value,
 			kql = Model.RawKql,
 			saved = Model.ActiveSavedName,
