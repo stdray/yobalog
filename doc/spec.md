@@ -63,7 +63,7 @@
 ## 5. Сборка фронта
 - **Стек:** TypeScript + Tailwind + DaisyUI, бандлер — bun (встроенный bundler, TS из коробки, нативный Windows-бинарник).
 - **Зависимости:** `package.json` рядом с `.csproj`, devDependencies: `tailwindcss`, `daisyui`, `typescript`, `@biomejs/biome`, `concurrently`. Сам bun — бинарник, не в `package.json`.
-- **Dev:** `run_dev.ps1` в корне репо запускает два окна: `bun run dev` (через `concurrently` — bun shell не умеет `&`) + `dotnet watch --project src/YobaLog.Web`. CSS/JS — статика из `wwwroot`, браузер подхватывает без рестарта приложения. Debug-MSBuild бунду не зовёт (watcher'ы и dotnet-watch иначе бьются за `wwwroot/`).
+- **Dev:** `./build.sh --target=Dev` (или `pwsh ./build.ps1 -Target Dev`) запускает `bun run dev` (через `concurrently` — ts + css watchers) и `dotnet watch --project src/YobaLog.Web` в одной консоли. Cake ловит Ctrl+C и убивает оба process tree через `Process.Kill(entireProcessTree:true)`. CSS/JS — статика из `wwwroot`, браузер подхватывает без рестарта приложения. Debug-MSBuild бунду не зовёт (watcher'ы и dotnet-watch иначе бьются за `wwwroot/`).
 - **Release:** MSBuild target `BeforeTargets="Build"` с `Condition="'$(Configuration)' == 'Release'"` — `bun install --frozen-lockfile && bun run build` (`build` = `typecheck` + минифицированные js/css). CI через `dotnet publish -c Release` собирает всё разом.
 
 ## 6. Хранилище: $system как global DB + per-workspace

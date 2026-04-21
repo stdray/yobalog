@@ -233,6 +233,51 @@ Task("DockerPush")
 	DockerPush(targetImage);
 });
 
+// Single-window dev loop: bun watchers (ts + css via concurrently) and dotnet watch stream to
+// the same terminal. Ctrl+C kills both process trees. Replaces the two-window run_dev.ps1.
+// Uses System.Diagnostics.Process directly — Cake's IProcess lacks HasExited / tree-kill.
+Task("Dev")
+	.Does(() =>
+{
+	var webDir = MakeAbsolute(Directory("./src/YobaLog.Web")).FullPath;
+
+	var frontend = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("bun", "run dev")
+	{
+		WorkingDirectory = webDir,
+		UseShellExecute = false,
+	});
+	var backend = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("dotnet", "watch --project src/YobaLog.Web")
+	{
+		UseShellExecute = false,
+	});
+
+	if (frontend == null || backend == null)
+		throw new CakeException("Failed to start dev processes (bun / dotnet).");
+
+	void KillAll()
+	{
+		try { if (!frontend.HasExited) frontend.Kill(entireProcessTree: true); } catch { }
+		try { if (!backend.HasExited) backend.Kill(entireProcessTree: true); } catch { }
+	}
+
+	Console.CancelKeyPress += (_, e) =>
+	{
+		e.Cancel = true;
+		KillAll();
+	};
+
+	Information("dev loop started (bun watchers + dotnet watch). Ctrl+C to stop.");
+
+	// Poll until either child exits, then tear down the other. entireProcessTree=true covers
+	// concurrently's ts/css sub-buns and dotnet watch's app child.
+	while (!frontend.HasExited && !backend.HasExited)
+	{
+		System.Threading.Thread.Sleep(500);
+	}
+
+	KillAll();
+});
+
 Task("Default")
 	.IsDependentOn("DockerPush");
 
