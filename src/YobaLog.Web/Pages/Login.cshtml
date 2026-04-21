@@ -13,20 +13,24 @@
 	<link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
 </head>
 <body class="min-h-full flex items-center justify-center">
-	<form method="post" class="card bg-base-200 border border-base-300 w-96 p-6 shadow">
+	<form method="post" id="login-form" autocomplete="on" class="card bg-base-200 border border-base-300 w-96 p-6 shadow">
 		<h1 class="text-xl font-semibold mb-4">Sign in to YobaLog</h1>
 		@if (!string.IsNullOrEmpty(Model.Error))
 		{
 			<div data-testid="login-error" class="alert alert-error mb-3 py-2 text-sm">@Model.Error</div>
 		}
-		<label class="form-control mb-3">
-			<span class="label-text text-xs opacity-70">Username</span>
-			<input type="text" name="Username" autocomplete="username" autofocus value="@Model.Username" data-testid="login-username" class="input input-sm input-bordered" />
-		</label>
-		<label class="form-control mb-4">
-			<span class="label-text text-xs opacity-70">Password</span>
-			<input type="password" name="Password" autocomplete="current-password" data-testid="login-password" class="input input-sm input-bordered" />
-		</label>
+		<div class="form-control mb-3">
+			<label for="login-username" class="label-text text-xs opacity-70">Username</label>
+			<input type="text" id="login-username" name="Username" autocomplete="username"
+				required value="@Model.Username" data-testid="login-username"
+				class="input input-sm input-bordered" />
+		</div>
+		<div class="form-control mb-4">
+			<label for="login-password" class="label-text text-xs opacity-70">Password</label>
+			<input type="password" id="login-password" name="Password" autocomplete="current-password"
+				required data-testid="login-password"
+				class="input input-sm input-bordered" />
+		</div>
 		<input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
 		<button type="submit" data-testid="login-submit" class="btn btn-sm btn-primary w-full">Sign in</button>
 	</form>
