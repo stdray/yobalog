@@ -3,8 +3,9 @@
 	<PropertyGroup>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
-		<!-- CA1001: xUnit's IAsyncLifetime is the disposal pattern here; the analyzer only detects IDisposable. -->
-		<NoWarn>$(NoWarn);CA1001;CA1707;CA1848;CA1861;CA1873;CA2007</NoWarn>
+		<!-- CA1001: xUnit's IAsyncLifetime is the disposal pattern here; the analyzer only detects IDisposable.
+		     CA1711: xUnit `[CollectionDefinition]` requires a marker class; the "Collection" suffix is idiomatic. -->
+		<NoWarn>$(NoWarn);CA1001;CA1707;CA1711;CA1848;CA1861;CA1873;CA2007</NoWarn>
 	</PropertyGroup>
 
 	<!-- Ship the web project's wwwroot path to tests via assembly metadata so KestrelAppHost can
@@ -16,9 +17,10 @@
 
 	<ItemGroup>
 		<PackageReference Include="coverlet.collector" />
-		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" />
 		<PackageReference Include="Microsoft.Playwright" />
+		<PackageReference Include="Serilog" />
+		<PackageReference Include="Serilog.Sinks.Seq" />
 		<PackageReference Include="xunit" />
 		<PackageReference Include="xunit.runner.visualstudio" />
 		<PackageReference Include="FluentAssertions" />

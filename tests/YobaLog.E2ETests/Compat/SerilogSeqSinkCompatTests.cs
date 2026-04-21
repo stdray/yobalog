@@ -1,73 +1,37 @@
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
 using YobaLog.Core.Storage;
 using LogEvent = YobaLog.Core.LogEvent;
 
-namespace YobaLog.Tests.Compat;
+namespace YobaLog.E2ETests.Compat;
 
-/// <summary>
-/// End-to-end check that Serilog + Serilog.Sinks.Seq (the canonical Seq client in the .NET world —
-/// Seq.Extensions.Logging is a thin wrapper on top) reaches /compat/seq/api/events/raw cleanly,
-/// the CLEF lines it emits parse, and the resulting events land in storage with the expected fields.
-/// </summary>
+// End-to-end: Serilog + Serilog.Sinks.Seq (canonical .NET Seq client — Seq.Extensions.Logging is a
+// thin wrapper on top) hits /compat/seq/api/events/raw, emitted CLEF parses, events land in storage
+// with the expected fields. Runs against a real Kestrel port via KestrelAppHost — same bootstrap as
+// WinstonSeqCompatTests and the UI suite.
 public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 {
-	readonly string _tempDir;
-	readonly WebApplicationFactory<Program> _factory;
 	static readonly WorkspaceId Ws = WorkspaceId.Parse("compat-serilog");
+	readonly KestrelAppHost _host = new();
 
-	public SerilogSeqSinkCompatTests()
-	{
-		_tempDir = Path.Combine(Path.GetTempPath(), "yobalog-serilogcompat-" + Guid.NewGuid().ToString("N")[..8]);
-		Directory.CreateDirectory(_tempDir);
+	public async Task InitializeAsync() =>
+		await _host.StartAsync(s =>
+		{
+			s["ApiKeys:Keys:0:Token"] = "compat-serilog-key";
+			s["ApiKeys:Keys:0:Workspace"] = Ws.Value;
+		});
 
-		_factory = new WebApplicationFactory<Program>()
-			.WithWebHostBuilder(b =>
-			{
-				b.UseEnvironment("Testing");
-				b.ConfigureAppConfiguration((_, cfg) =>
-				{
-					cfg.AddInMemoryCollection(new Dictionary<string, string?>
-					{
-						["SqliteLogStore:DataDirectory"] = _tempDir,
-						["ApiKeys:Keys:0:Token"] = "compat-serilog-key",
-						["ApiKeys:Keys:0:Workspace"] = Ws.Value,
-					});
-				});
-			});
-	}
-
-	public Task InitializeAsync()
-	{
-		_ = _factory.Services;
-		_ = _factory.CreateClient();
-		return Task.CompletedTask;
-	}
-
-	public async Task DisposeAsync()
-	{
-		await _factory.DisposeAsync();
-		try { Directory.Delete(_tempDir, recursive: true); }
-		catch { /* best effort */ }
-	}
+	public async Task DisposeAsync() => await _host.DisposeAsync();
 
 	[Fact]
 	public async Task Serilog_SeqSink_DeliversStructuredEventsThroughRawEndpoint()
 	{
-		// Serilog.Sinks.Seq exposes a messageHandler parameter — we feed it TestServer's in-memory
-		// handler so no real port is needed. The library still emits proper CLEF over HTTP.
-		var handler = _factory.Server.CreateHandler();
-
 		var logger = new LoggerConfiguration()
 			.MinimumLevel.Verbose()
 			.WriteTo.Seq(
-				serverUrl: _factory.Server.BaseAddress + "compat/seq",
+				serverUrl: _host.BaseUrl.TrimEnd('/') + "/compat/seq",
 				apiKey: "compat-serilog-key",
-				messageHandler: handler,
 				restrictedToMinimumLevel: LogEventLevel.Verbose,
 				batchPostingLimit: 10,
 				period: TimeSpan.FromMilliseconds(50))
@@ -86,7 +50,7 @@ public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 
 		await WaitForEventsAsync(expected: 3);
 
-		var store = (ILogStore)_factory.Services.GetRequiredService(typeof(ILogStore));
+		var store = _host.Services.GetRequiredService<ILogStore>();
 		var events = new List<LogEvent>();
 		await foreach (var e in store.QueryAsync(Ws, new LogQuery(PageSize: 10), CancellationToken.None))
 			events.Add(e);
@@ -99,7 +63,7 @@ public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 			.And.Contain(LogLevel.Warning)
 			.And.Contain(LogLevel.Error);
 
-		// Templates are preserved (Serilog sends @mt, our parser falls back to template when @m is absent).
+		// Templates preserved (Serilog sends @mt; parser falls back to template when @m absent).
 		events.Should().Contain(e => e.MessageTemplate.Contains("hello from", StringComparison.Ordinal));
 		events.Should().Contain(e => e.MessageTemplate.Contains("disk", StringComparison.Ordinal));
 
@@ -120,12 +84,10 @@ public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 	[Fact]
 	public async Task Serilog_SeqSink_WrongApiKey_NoEventsLanded()
 	{
-		var handler = _factory.Server.CreateHandler();
 		var logger = new LoggerConfiguration()
 			.WriteTo.Seq(
-				serverUrl: _factory.Server.BaseAddress + "compat/seq",
+				serverUrl: _host.BaseUrl.TrimEnd('/') + "/compat/seq",
 				apiKey: "wrong-key",
-				messageHandler: handler,
 				batchPostingLimit: 1,
 				period: TimeSpan.FromMilliseconds(50))
 			.CreateLogger();
@@ -134,14 +96,14 @@ public sealed class SerilogSeqSinkCompatTests : IAsyncLifetime
 		await logger.DisposeAsync();
 		await Task.Delay(300);
 
-		var store = (ILogStore)_factory.Services.GetRequiredService(typeof(ILogStore));
+		var store = _host.Services.GetRequiredService<ILogStore>();
 		var count = await store.CountAsync(Ws, new LogQuery(PageSize: 1), CancellationToken.None);
 		count.Should().Be(0);
 	}
 
 	async Task WaitForEventsAsync(long expected)
 	{
-		var store = (ILogStore)_factory.Services.GetRequiredService(typeof(ILogStore));
+		var store = _host.Services.GetRequiredService<ILogStore>();
 		var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
 		while (DateTimeOffset.UtcNow < deadline)
 		{

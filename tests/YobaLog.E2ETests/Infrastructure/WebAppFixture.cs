@@ -49,24 +49,32 @@ public sealed class WebAppFixture : IAsyncLifetime
 		await seedPage.GetByTestId("login-username").FillAsync(AdminUsername);
 		await seedPage.GetByTestId("login-password").FillAsync(AdminPassword);
 		await seedPage.GetByTestId("login-submit").ClickAsync();
-		// Wait for the post-login redirect to actually land on / before probing — without an
-		// explicit URL wait the next Expect sometimes races the POST and times out. DOMContentLoaded
-		// ensures the redirect response has been parsed (body may still be loading images/CSS).
-		await seedPage.WaitForURLAsync(
-			url => !url.Contains("/Login", StringComparison.Ordinal),
-			new() { Timeout = 15_000, WaitUntil = WaitUntilState.DOMContentLoaded });
-		await Expect(seedPage.GetByTestId("workspace-list"))
-			.ToBeVisibleAsync(new() { Timeout = 15_000 });
+		await Expect(seedPage.GetByTestId("workspace-list")).ToBeVisibleAsync();
 		await seedCtx.StorageStateAsync(new BrowserContextStorageStateOptions { Path = _storageStatePath });
 	}
 
-	public async Task<IBrowserContext> NewContextAsync(bool authenticated = true) =>
-		await Browser.NewContextAsync(new BrowserNewContextOptions
+	public async Task<IBrowserContext> NewContextAsync(bool authenticated = true)
+	{
+		var ctx = await Browser.NewContextAsync(new BrowserNewContextOptions
 		{
 			BaseURL = BaseUrl,
 			IgnoreHTTPSErrors = true,
 			StorageStatePath = authenticated && !string.IsNullOrEmpty(_storageStatePath) ? _storageStatePath : null,
 		});
+		// Block external CDN fetches (htmx from unpkg.com). `<script src="https://unpkg.com/...">`
+		// is a blocking tag and our tests were hanging DOM parsing on flaky DNS/CDN latency inside
+		// headless Chromium (classic symptom: page stuck on first-script, body never appears).
+		// The tests exercise server-side rendering + basic DOM, not htmx client behavior, so empty
+		// responses are fine. When live-tail/htmx tests land, flip specific routes to serve local
+		// copies of htmx instead.
+		await ctx.RouteAsync("**/unpkg.com/**", route => route.FulfillAsync(new RouteFulfillOptions
+		{
+			Status = 200,
+			ContentType = "application/javascript",
+			Body = "",
+		}));
+		return ctx;
+	}
 
 	public async Task DisposeAsync()
 	{

@@ -1,6 +1,7 @@
 namespace YobaLog.E2ETests;
 
-public sealed class LoginTests : IClassFixture<WebAppFixture>, IAsyncLifetime
+[Collection(nameof(UiCollection))]
+public sealed class LoginTests : IAsyncLifetime
 {
 	readonly WebAppFixture _app;
 	IBrowserContext? _ctx;

@@ -2,7 +2,8 @@ using static YobaLog.E2ETests.Infrastructure.SeedHelper;
 
 namespace YobaLog.E2ETests;
 
-public sealed class WorkspaceKqlTests : IClassFixture<WebAppFixture>, IAsyncLifetime
+[Collection(nameof(UiCollection))]
+public sealed class WorkspaceKqlTests : IAsyncLifetime
 {
 	readonly WebAppFixture _app;
 	IBrowserContext? _ctx;

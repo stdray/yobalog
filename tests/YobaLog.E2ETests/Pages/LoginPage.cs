@@ -13,10 +13,6 @@ public sealed class LoginPage(IPage page)
 		await page.GetByTestId("login-username").FillAsync(username);
 		await page.GetByTestId("login-password").FillAsync(password);
 		await page.GetByTestId("login-submit").ClickAsync();
-		// ClickAsync on a submit button auto-waits for navigation in Playwright. Don't use
-		// WaitForLoadStateAsync(NetworkIdle) — htmx keep-alive connections never settle and the
-		// wait times out at 30s. Rely on the caller's Expect(...) auto-retry to absorb any residual
-		// latency of the redirect.
 	}
 
 	public Task AssertErrorVisibleAsync() =>
