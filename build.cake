@@ -3,7 +3,7 @@
 
 var target = Argument("target", "Default");
 var configuration = Argument("configuration", "Release");
-var dockerImage = Argument("dockerImage", "yobalog-web");
+var dockerImage = Argument("dockerImage", "yobalog");
 var dockerTagArgument = Argument("dockerTag", string.Empty);
 var dockerPushEnabled = Argument("dockerPush", false);
 var ghcrRepositoryArgument = Argument("ghcrRepository", string.Empty);
