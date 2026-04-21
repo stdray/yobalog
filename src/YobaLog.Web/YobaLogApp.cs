@@ -139,6 +139,7 @@ public static class YobaLogApp
 			[FromQuery(Name = "ws")] string? ws,
 			KqlCompletionService completions,
 			ILogStore store,
+			IRazorPartialRenderer renderer,
 			CancellationToken ct) =>
 		{
 			var q = query ?? "";
@@ -154,11 +155,11 @@ public static class YobaLogApp
 					.Take(KqlCompletionService.MaxItems)
 					.Select(k => new KqlCompletionItem("Property", k, k, ""))
 					.ToList();
-				return Results.Extensions.CompletionsHtml(new KqlCompletionsResponse(editStart, prefix.Length, items));
+				return Results.Extensions.CompletionsHtml(new KqlCompletionsResponse(editStart, prefix.Length, items), renderer);
 			}
 
 			var result = completions.Complete(q, p);
-			return Results.Extensions.CompletionsHtml(result);
+			return Results.Extensions.CompletionsHtml(result, renderer);
 		});
 
 		app.MapGet("/api/ws/{id}/tail", (

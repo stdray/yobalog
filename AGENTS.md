@@ -61,3 +61,13 @@ When editing: spec changes go to `spec.md`, progress updates to `plan.md`, and a
   ```
   git config core.hooksPath .githooks
   ```
+
+## Commit convention (synchronised with yobaconf)
+
+Both repos follow Conventional Commits for consistency.
+
+- Subject: type(scope): short description, ≤ 72 chars, imperative, no period.
+    - Types in use: feat, fix, refactor, test, style, docs, chore, build.
+    - Scopes (indicative): core, web, kql, admin, e2e, css, schema, bootstrap, docs, deps.
+- Body (markdown): bolded section headers when a commit touches multiple concerns. Explain why + tricky bits, not what the diff already shows. End with test-totals footer when tests were run: Totals: N unit + M E2E = X green, R/R stable runs. Co-Authored-By footer when AI-assisted.
+- ASCII-only in commit bodies.
