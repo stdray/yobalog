@@ -1,3 +1,5 @@
+using Kusto.Language;
+
 namespace YobaLog.Core.Tracing;
 
 // Aggregate view of a trace for the listing page — one row per TraceId.
@@ -12,11 +14,16 @@ public sealed record TraceSummary(
 	int SpanCount,
 	SpanStatusCode WorstStatus);
 
-// Cursor for newer-first pagination over traces. Composite (StartUnixNs, TraceId)
-// — StartUnixNs alone isn't unique (multiple traces can start in the same nanosecond
-// under load). Cursor encoded as opaque string by the page model; the store just
-// needs the raw values.
+// Parameters for listing-page queries. Two axes beyond pagination:
+//   - Filter: optional `spans | where …` KustoCode. Applied to individual spans
+//     before GROUP BY — a trace appears if AT LEAST ONE of its spans matches.
+//     Matches KQL-over-events UX on the workspace page.
+//   - SinceStartUnixNs: returns only traces that started strictly after the given
+//     unix-ns. Used by the incremental auto-refresh flow (htmx polls with the
+//     topmost row's StartUnixNs and gets only the new ones prepended).
 public sealed record TracesQuery(
 	int PageSize = 50,
 	long? CursorStartUnixNs = null,
-	string? CursorTraceId = null);
+	string? CursorTraceId = null,
+	long? SinceStartUnixNs = null,
+	KustoCode? Filter = null);

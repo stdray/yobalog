@@ -1,0 +1,45 @@
+@using System.Globalization
+@using YobaLog.Core.Tracing
+@model IReadOnlyList<TraceSummary>
+@{
+	static string StatusBadge(SpanStatusCode status) => status switch
+	{
+		SpanStatusCode.Error => "badge-error",
+		SpanStatusCode.Ok => "badge-success",
+		_ => "badge-ghost",
+	};
+
+	static string FormatDuration(TimeSpan d)
+	{
+		if (d.TotalSeconds >= 1) return $"{d.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture)}s";
+		if (d.TotalMilliseconds >= 1) return $"{d.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture)}ms";
+		var us = d.Ticks / 10.0;
+		if (us >= 1) return $"{us.ToString("F0", CultureInfo.InvariantCulture)}μs";
+		return $"{d.Ticks * 100}ns";
+	}
+
+	static long StartUnixNs(DateTimeOffset t) =>
+		t.ToUnixTimeMilliseconds() * 1_000_000L + (t.UtcTicks % TimeSpan.TicksPerMillisecond) * 100L;
+
+	string? ws = ViewContext.RouteData.Values["id"] as string ?? ViewContext.HttpContext.Request.RouteValues["id"] as string;
+}
+
+@foreach (var t in Model)
+{
+	<tr class="hover" data-testid="trace-row"
+		data-trace-id="@t.TraceId"
+		data-start-unix-ns="@StartUnixNs(t.StartTime)">
+		<td class="font-mono text-xs">
+			<a href="/trace/@t.TraceId?ws=@ws"
+				class="link link-hover" data-testid="trace-link">@t.TraceId.Substring(0, 16)…</a>
+		</td>
+		<td class="font-mono text-xs" data-testid="trace-root-name">@t.RootName</td>
+		<td class="font-mono opacity-70 text-xs whitespace-nowrap">
+			<time class="local-time" datetime="@t.StartTime.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)"
+				title="UTC: @t.StartTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)">@t.StartTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)</time>
+		</td>
+		<td class="font-mono text-right text-xs">@FormatDuration(t.Duration)</td>
+		<td class="font-mono text-right text-xs">@t.SpanCount</td>
+		<td><span class="badge @StatusBadge(t.WorstStatus) badge-sm">@t.WorstStatus</span></td>
+	</tr>
+}

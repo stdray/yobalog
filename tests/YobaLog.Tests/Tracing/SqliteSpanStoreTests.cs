@@ -267,4 +267,51 @@ public sealed class SqliteSpanStoreTests : IAsyncLifetime
 		var traces = await _store.ListRecentTracesAsync(Ws, new TracesQuery(), CancellationToken.None);
 		traces.Should().BeEmpty();
 	}
+
+	[Fact]
+	public async Task ListRecentTracesAsync_KqlFilter_Narrows_Result()
+	{
+		var t0 = new DateTimeOffset(2026, 4, 22, 10, 0, 0, TimeSpan.Zero);
+		await _store.AppendBatchAsync(Ws,
+			[
+				MakeSpan("a0000000aaaaaaaa", "trace-a".PadRight(32, 'f'), t0, name: "GET /users"),
+				MakeSpan("b0000000bbbbbbbb", "trace-b".PadRight(32, 'f'), t0.AddSeconds(1), name: "POST /login"),
+				MakeSpan("c0000000cccccccc", "trace-c".PadRight(32, 'f'), t0.AddSeconds(2), name: "GET /error"),
+			], CancellationToken.None);
+
+		// Filter: `spans | where Name contains 'error'` — only trace-c should match.
+		var filter = Kusto.Language.KustoCode.Parse("spans | where Name contains 'error'");
+		var traces = await _store.ListRecentTracesAsync(Ws,
+			new TracesQuery(Filter: filter), CancellationToken.None);
+
+		traces.Should().HaveCount(1);
+		traces[0].RootName.Should().Be("GET /error");
+	}
+
+	[Fact]
+	public async Task ListRecentTracesAsync_SinceStartUnixNs_Returns_Only_Newer()
+	{
+		var t0 = new DateTimeOffset(2026, 4, 22, 10, 0, 0, TimeSpan.Zero);
+		await _store.AppendBatchAsync(Ws,
+			[
+				MakeSpan("o0000000oldoldol", "trace-old".PadRight(32, 'f'), t0, name: "old"),
+			], CancellationToken.None);
+
+		var oldStartNs = t0.ToUnixTimeMilliseconds() * 1_000_000L;
+
+		// Poll-flow: client just rendered `trace-old` at the top (its StartUnixNs = oldStartNs).
+		// Now two new traces arrive. The poll should return only the two newer.
+		await _store.AppendBatchAsync(Ws,
+			[
+				MakeSpan("n0000000newer100", "trace-new1".PadRight(32, 'f'), t0.AddSeconds(5), name: "new1"),
+				MakeSpan("n0000000newer200", "trace-new2".PadRight(32, 'f'), t0.AddSeconds(10), name: "new2"),
+			], CancellationToken.None);
+
+		var newer = await _store.ListRecentTracesAsync(Ws,
+			new TracesQuery(SinceStartUnixNs: oldStartNs), CancellationToken.None);
+
+		newer.Select(t => t.RootName).Should().BeEquivalentTo(["new1", "new2"]);
+		// Newest first — order preserved.
+		newer[0].RootName.Should().Be("new2");
+	}
 }

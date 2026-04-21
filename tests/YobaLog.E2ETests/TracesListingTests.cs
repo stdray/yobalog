@@ -115,4 +115,78 @@ public sealed class TracesListingTests
 		await page.GetByTestId("workspace-traces-link").ClickAsync();
 		await page.WaitForURLAsync($"**/ws/{ws}/traces");
 	}
+
+	[Fact]
+	public async Task Kql_Filter_Narrows_Visible_Rows()
+	{
+		var ws = FreshWorkspace("traces-kql");
+		await _app.SeedAsync(ws);
+		var spans = _app.Services.GetRequiredService<ISpanStore>();
+		var wsId = WorkspaceId.Parse(ws);
+		await spans.CreateWorkspaceAsync(wsId, CancellationToken.None);
+
+		var t0 = new DateTimeOffset(2026, 4, 22, 10, 0, 0, TimeSpan.Zero);
+		await spans.AppendBatchAsync(wsId,
+			[
+				MakeSpan("a0000000aaaaaaaa", "trace-a".PadRight(32, 'f'), "GET /users", t0, TimeSpan.FromMilliseconds(50)),
+				MakeSpan("b0000000bbbbbbbb", "trace-b".PadRight(32, 'f'), "POST /login", t0.AddSeconds(1), TimeSpan.FromMilliseconds(80)),
+				MakeSpan("c0000000cccccccc", "trace-c".PadRight(32, 'f'), "GET /error", t0.AddSeconds(2), TimeSpan.FromMilliseconds(20)),
+			], CancellationToken.None);
+
+		await using var ctx = await _app.NewContextAsync();
+		var page = await ctx.NewPageAsync();
+
+		await page.GotoAsync($"/ws/{ws}/traces");
+		await Expect(page.GetByTestId("trace-row")).ToHaveCountAsync(3);
+
+		// Type a span-level filter and apply — only the /error trace survives.
+		await page.GetByTestId("traces-kql").FillAsync("spans | where Name contains 'error'");
+		await page.GetByTestId("traces-apply").ClickAsync();
+		await Expect(page.GetByTestId("trace-row")).ToHaveCountAsync(1);
+		await Expect(page.GetByTestId("trace-root-name")).ToHaveTextAsync("GET /error");
+	}
+
+	[Fact]
+	public async Task Kql_Parse_Error_Shows_Alert()
+	{
+		var ws = FreshWorkspace("traces-kql-bad");
+		await _app.SeedAsync(ws);
+		var spans = _app.Services.GetRequiredService<ISpanStore>();
+		await spans.CreateWorkspaceAsync(WorkspaceId.Parse(ws), CancellationToken.None);
+
+		await using var ctx = await _app.NewContextAsync();
+		var page = await ctx.NewPageAsync();
+
+		// `events` is not the right table — KqlSpansTransformer requires `spans`.
+		await page.GotoAsync($"/ws/{ws}/traces?kql=events | take 10");
+		await Expect(page.GetByTestId("traces-kql-error")).ToBeVisibleAsync();
+	}
+
+	[Fact]
+	public async Task Tbody_Has_Poll_Attributes_For_Auto_Refresh()
+	{
+		// The every-5s incremental refresh uses htmx attributes on #traces-body. Rather
+		// than waiting 6+s in E2E (flaky + slow), assert the markup is wired correctly —
+		// htmx itself is well-tested upstream.
+		var ws = FreshWorkspace("traces-poll");
+		await _app.SeedAsync(ws);
+		var spans = _app.Services.GetRequiredService<ISpanStore>();
+		var wsId = WorkspaceId.Parse(ws);
+		await spans.CreateWorkspaceAsync(wsId, CancellationToken.None);
+		await spans.AppendBatchAsync(wsId,
+			[MakeSpan("p0000000poll0001", "trace-p".PadRight(32, 'f'), "GET /poll", DateTimeOffset.UtcNow, TimeSpan.FromMilliseconds(10))],
+			CancellationToken.None);
+
+		await using var ctx = await _app.NewContextAsync();
+		var page = await ctx.NewPageAsync();
+		await page.GotoAsync($"/ws/{ws}/traces");
+
+		var tbody = page.Locator("#traces-body");
+		await Expect(tbody).ToHaveAttributeAsync("hx-trigger", "every 5s");
+		await Expect(tbody).ToHaveAttributeAsync("hx-swap", "afterbegin");
+		await Expect(tbody).ToHaveAttributeAsync("hx-get", $"/ws/{ws}/traces");
+
+		// Row carries StartUnixNs so the JS `hx-vals` snippet can pick the topmost value.
+		await Expect(page.GetByTestId("trace-row").Nth(0)).ToHaveAttributeAsync("data-start-unix-ns", new System.Text.RegularExpressions.Regex("^[0-9]+$"));
+	}
 }

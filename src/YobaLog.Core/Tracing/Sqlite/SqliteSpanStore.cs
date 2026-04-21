@@ -134,12 +134,18 @@ public sealed class SqliteSpanStore : ISpanStore
 
 		await using var db = Open(workspaceId);
 
+		// Optional span-level filter via KQL (e.g. `spans | where Name contains "error"`).
+		// A trace surfaces in the list if AT LEAST ONE of its spans matches the filter —
+		// natural "show traces containing errors" semantics. `KqlSpansTransformer.Apply`
+		// returns an IQueryable that linq2db can still GroupBy on.
+		var spans = db.GetTable<SpanRecord>().AsQueryable();
+		if (query.Filter is not null)
+			spans = KqlSpansTransformer.Apply(spans, query.Filter);
+
 		// Aggregate per TraceId: earliest start, latest end, count, worst status code.
 		// Cursor: keep only traces whose (StartUnixNs, TraceId) is strictly less than the
 		// cursor (newer-first ordering: descending by StartUnixNs, then descending by TraceId
 		// as a stable tiebreaker for ties at the nanosecond).
-		var spans = db.GetTable<SpanRecord>().AsQueryable();
-
 		var aggregates = spans
 			.GroupBy(s => s.TraceId)
 			.Select(g => new
@@ -156,6 +162,14 @@ public sealed class SqliteSpanStore : ISpanStore
 			aggregates = aggregates.Where(a =>
 				a.StartUnixNs < cursorStart
 				|| (a.StartUnixNs == cursorStart && string.Compare(a.TraceId, cursorId, StringComparison.Ordinal) < 0));
+		}
+
+		if (query.SinceStartUnixNs is long sinceNs)
+		{
+			// Incremental-refresh path: return only traces that started strictly after the
+			// client's most-recent top row. Client cursor is the StartUnixNs of the topmost
+			// visible <tr>; server returns only newer ones for hx-swap="afterbegin".
+			aggregates = aggregates.Where(a => a.StartUnixNs > sinceNs);
 		}
 
 		var pageRows = await aggregates

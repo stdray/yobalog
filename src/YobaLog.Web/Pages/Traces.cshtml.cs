@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
+using Kusto.Language;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
@@ -19,9 +20,18 @@ public sealed class TracesModel : PageModel
 	public WorkspaceId Workspace { get; private set; }
 	public ImmutableArray<TraceSummary> Traces { get; private set; } = [];
 	public string? NextCursor { get; private set; }
+	public string? KqlError { get; private set; }
 
 	[BindProperty(SupportsGet = true)]
 	public string? Cursor { get; set; }
+
+	[BindProperty(SupportsGet = true, Name = "kql")]
+	public string? Kql { get; set; }
+
+	// Poll cursor for incremental refresh — client-set via hx-vals from the topmost row's
+	// `data-start-unix-ns`. Present only on htmx fragment requests; omitted on full page loads.
+	[BindProperty(SupportsGet = true)]
+	public long? Since { get; set; }
 
 	public const int PageSize = 50;
 
@@ -31,14 +41,46 @@ public sealed class TracesModel : PageModel
 			return NotFound();
 		Workspace = ws;
 
+		KustoCode? filter = null;
+		if (!string.IsNullOrWhiteSpace(Kql))
+		{
+			try
+			{
+				filter = KustoCode.Parse(Kql);
+				var parseErrors = filter.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
+				if (parseErrors.Count > 0)
+				{
+					KqlError = "KQL parse error: " + string.Join("; ", parseErrors.Select(d => d.Message));
+					filter = null;
+				}
+			}
+			catch (Exception ex)
+			{
+				KqlError = ex.Message;
+			}
+		}
+
 		var (cursorStart, cursorTraceId) = DecodeCursor(Cursor);
 
-		// Pull PageSize+1 to detect whether there's a next page without a separate count query.
-		var page = await _spans.ListRecentTracesAsync(ws,
-			new TracesQuery(PageSize: PageSize + 1, CursorStartUnixNs: cursorStart, CursorTraceId: cursorTraceId),
-			ct);
+		// Two flows:
+		//   Full page — Cursor pagination (page-by-page "Older →" navigation), no `since`.
+		//   HX fragment — `since` set from the client's topmost row; return only newer traces.
+		var query = Since is long sinceNs
+			? new TracesQuery(PageSize: PageSize, SinceStartUnixNs: sinceNs, Filter: filter)
+			: new TracesQuery(PageSize: PageSize + 1, CursorStartUnixNs: cursorStart, CursorTraceId: cursorTraceId, Filter: filter);
 
-		if (page.Count > PageSize)
+		IReadOnlyList<TraceSummary> page;
+		try
+		{
+			page = await _spans.ListRecentTracesAsync(ws, query, ct);
+		}
+		catch (YobaLog.Core.Kql.UnsupportedKqlException ex)
+		{
+			KqlError = ex.Message;
+			page = [];
+		}
+
+		if (Since is null && page.Count > PageSize)
 		{
 			var trimmed = page.Take(PageSize).ToList();
 			Traces = [.. trimmed];
@@ -49,6 +91,11 @@ public sealed class TracesModel : PageModel
 		{
 			Traces = [.. page];
 		}
+
+		// HX-Request header present on htmx-issued requests (including the every-5s poll) —
+		// respond with just the row fragment so hx-swap="afterbegin" can prepend.
+		if (Request.Headers.ContainsKey("HX-Request"))
+			return Partial("_TracesRows", (IReadOnlyList<TraceSummary>)Traces);
 
 		return Page();
 	}
