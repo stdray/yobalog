@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-04-21 — Build pipeline: Cake + GitVersion; Docker = chiseled + smoke-test; deploy = manual `deploy` tag
+
+**Решение:** сборочный pipeline синхронизирован с yobaconf (commit `9f99b84`) — теперь один шаблон на оба репо, расширяться будут вместе:
+- **GitVersion** (`GitVersion.yml`, `next-version: 0.3.0`) — ContinuousDelivery mode, конфиг из yobapub. Версия прокидывается в MSBuild `Version` / `InformationalVersion` + в Docker build-args (`APP_VERSION`, `GIT_SHORT_SHA`, `GIT_COMMIT_DATE`). `0.3.0` отражает прогресс: Phase A.0 / A / B / C / D закрыты, активно B (Phase E live-tail polish) + рюшечки.
+- **Cake** (`build.cake` + `build.sh` + `build.ps1` + `.config/dotnet-tools.json`) — orchestration в C# DSL. Tasks: Clean → Restore → Version → Build → Test → Docker → DockerSmoke → DockerPush. Дополнительный task `E2ETest` для Playwright-тестов — отдельный от `Test` чтобы не качать Chromium (~200MB) на каждый build main. Локально `./build.sh --target=Test` = unit, `--target=E2ETest` = browser, `--target=Docker` = образ.
+- **Docker runtime** — `mcr.microsoft.com/dotnet/nightly/runtime-deps:10.0-noble-chiseled`. ~15MB base, нет shell. Self-contained publish `linux-x64`. Dockerfile двухстадийный: SDK + bun installer → chiseled runtime. yobalog'овский `data/` volume (`VOLUME ["/app/data"]`) для per-workspace `.logs.db` + `.meta.db`. Риск "chiseled упал на runtime, не попасть внутрь" закрывается **DockerSmoke** task: `docker run -d` + `curl /Login` (не `/` как у yobaconf — у нас корень под auth). 30s timeout.
+- **Deploy** — **только по ручному тегу `deploy`** (`git tag deploy && git push origin deploy`). Main-push: build + test + e2e + Docker build + push в ghcr.io, но **без** SSH-деплоя. Тег `deploy` = явный act of will. SSH-job на VPS монтирует `/opt/yobalog/data:/app/data`, задаёт `Admin__Username`/`Admin__Password` из secrets (config-admin fallback пока DB-users пусты).
+
+**Причина:**
+- **Синхронизация с yobaconf:** оба репо — .NET 10 Razor Pages, одинаковые build-steps, одинаковый chiseled-runtime. Расхождение в pipeline = double maintenance при любом изменении build-tool'а. Решение: зеркалить, отмечать в decision-log каждую sync-точку.
+- **E2ETest отдельный task:** `test` job (unit) ~30с на CI; `e2e` job (Playwright) ~3-5 мин с установкой Chromium. Параллельное выполнение — `publish` ждёт обоих, зато main-build разблокируется за время быстрейшего. Trace-zip'ы аплоадятся на failure → дебаг флейков без локального повтора.
+- **DockerSmoke на `/Login`, не `/`:** yobalog требует аутентификации на корне (fallback policy). `/Login` — единственный `[AllowAnonymous]` маршрут, который гарантированно отдаёт 200 без токена. Альтернатива "смотреть на 302" хрупкая — `curl -f` будет fail'иться на редиректах, `-L` следует за ними → снова 302 → infinite.
+
+**Отклонения от yobaconf pipeline:**
+- Dockerfile объявляет `VOLUME ["/app/data"]` — yobaconf хранит master key в env, мы пишем `.db` файлы.
+- Cake `E2ETest` task — у yobaconf пока нет E2E-тестов.
+- DockerSmoke endpoint = `/Login` (anonymous), у yobaconf — `/`.
+- Deploy secrets включают `YOBALOG_ADMIN_USERNAME`/`PASSWORD` для config-admin bootstrap; yobaconf использует master key.
+
+**Откатили:**
+- "Объединить Test + E2ETest в один Cake task" — каждый main-push тянул бы Chromium на 5 минут.
+- "DockerSmoke на `/`" — корень за auth, fall-back redirects к /Login, curl путается.
+- "Gate publish только на test" — e2e-regressions доехали бы до ghcr без проверки браузерного слоя.
+
+## 2026-04-21 — UI-тесты: `Microsoft.Playwright` + `data-testid` обязателен, text/role-name/CSS-селекторы запрещены
+
 ## 2026-04-21 — UI-тесты: `Microsoft.Playwright` + `data-testid` обязателен, text/role-name/CSS-селекторы запрещены
 
 **Решение:** Playwright MCP остаётся для интерактивной smoke-проверки при разработке; CI-регрессии — отдельный проект `tests/YobaLog.UiTests/` на `Microsoft.Playwright` (.NET SDK), chromium headless. Элементы, которые трогают тесты, обязаны иметь `data-testid="<kebab-slug>"` в Razor-разметке. Локаторы в тестах — только `page.GetByTestId(...)`; `GetByText`, `GetByRole(Name=...)`, `GetByPlaceholder` и CSS-класс-селекторы (`.btn-primary`, `.alert-error`) запрещены на UI chrome. `HasText=...` разрешён только внутри testid-scoped локатора и только для проверки data-контента (event message, saved query name).

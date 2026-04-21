@@ -2,6 +2,13 @@
 
 Guidance for coding agents working in this repository.
 
+## Build entry points
+
+- **Local:** `./build.sh --target=Test` (bash) or `pwsh ./build.ps1 -Target Test` (PowerShell). Bootstrap restores Cake + GitVersion tools, then runs the Cake task.
+- **Cake tasks:** Clean → Restore → Version (GitVersion) → Build → Test → Docker → DockerSmoke → DockerPush. Additional task `E2ETest` runs the Playwright E2E project separately (it needs `pwsh bin/.../playwright.ps1 install chromium` first; ~200MB download kept off the fast lane). Locally most useful: `--target=Test` (unit only, no Docker), `--target=E2ETest` (browser-backed), `--target=Docker` (builds image), `--target=DockerPush --dockerPush=true` (requires `GHCR_USERNAME` + `GHCR_TOKEN` env or prior `docker login`).
+- **CI:** `test` and `e2e` jobs run in parallel on every push/PR; both must pass before `publish` (Docker build + smoke + push to ghcr.io) runs on main pushes and the `deploy` tag. `e2e` uploads `tests/YobaLog.E2ETests/bin/**/artifacts/*.zip` on failure so Playwright traces are inspectable without re-running locally.
+- **Deploy:** **manual tag `deploy` only**. `git tag deploy && git push origin deploy --force` (force needed because the tag gets re-used). Main-push publishes the image but does NOT SSH-deploy — prevents accidental prod updates on every merge. Deploy job needs secrets `DEPLOY_HOST`, `DEPLOY_USERNAME`, `DEPLOY_PASSWORD`, `GHCR_DEPLOY_USERNAME`, `GHCR_DEPLOY_TOKEN`, `YOBALOG_ADMIN_USERNAME`, `YOBALOG_ADMIN_PASSWORD`.
+
 ## Status: pre-code, spec-stage
 
 There is no code yet — only design docs under `doc/`. No `.csproj`, no `package.json`, no build/test/lint commands. The first implementation step is the Phase A skeleton described in `doc/plan.md`.

@@ -29,6 +29,10 @@ TestResults/
 # BenchmarkDotNet artifacts
 BenchmarkDotNet.Artifacts/
 
+# Cake build tooling
+tools/
+.cake/
+
 # NuGet
 *.nupkg
 *.snupkg
