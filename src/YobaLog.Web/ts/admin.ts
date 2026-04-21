@@ -150,9 +150,10 @@ document.addEventListener("click", (event) => {
 	const right = value.substring(editStart + editLength);
 	// Pure insertion (editLength === 0) adjacent to a non-separator produces things
 	// like 'eventswhere' or 'count()by'. Prepend a space unless the char before the
-	// cursor is already whitespace, an opening paren, or start-of-input.
+	// cursor is already whitespace, an opening paren, a dot (property-key completion right
+	// after `Properties.`), or start-of-input.
 	const prevChar = left.slice(-1);
-	const needsLeadingSpace = editLength === 0 && prevChar !== "" && !/[\s(]/.test(prevChar);
+	const needsLeadingSpace = editLength === 0 && prevChar !== "" && !/[\s(.]/.test(prevChar);
 	const prefix = needsLeadingSpace ? ` ${before}` : before;
 	textarea.value = left + prefix + after + right;
 
