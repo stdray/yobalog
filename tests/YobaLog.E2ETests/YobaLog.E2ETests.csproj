@@ -32,6 +32,12 @@
 		<PackageReference Include="xunit" />
 		<PackageReference Include="xunit.runner.visualstudio" />
 		<PackageReference Include="AwesomeAssertions" />
+		<!-- OTel .NET SDK for Phase F compat tests. Exercises the full client-side stack
+		     against our /v1/logs endpoint — if a future OTel release changes wire quirks,
+		     this test fails before users do. -->
+		<PackageReference Include="OpenTelemetry" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+		<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
 	</ItemGroup>
 
 	<ItemGroup>

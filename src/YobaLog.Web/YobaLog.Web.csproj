@@ -4,6 +4,23 @@
 		<ProjectReference Include="..\YobaLog.Core\YobaLog.Core.csproj" />
 	</ItemGroup>
 
+	<!-- OTLP Logs proto types (Phase F). Referenced here, not in Core. Decision-log 2026-04-21
+	     Rule 1: proto DTOs are wire-boundary only (mirror of CLEF's JsonElement exception) and
+	     must not leak into ILogStore / ISpanStore contracts. Keeping Google.Protobuf + Grpc.Tools
+	     out of Core enforces that at the project-reference level.
+	     `OpenTelemetry.Proto` NuGet does not exist (confirmed 2026-04-21) — Proto/ contains the
+	     four vendored .proto files from opentelemetry-proto v1.5.0; Grpc.Tools compiles them to
+	     C# classes during MSBuild. GrpcServices=None skips service/stub generation — we only
+	     need message types. -->
+	<ItemGroup>
+		<PackageReference Include="Google.Protobuf" />
+		<PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Protobuf Include="Proto\**\*.proto" ProtoRoot="Proto" GrpcServices="None" />
+	</ItemGroup>
+
 	<!-- Frontend is Release-only from MSBuild. Debug relies on the Cake `Dev` target (or
 	     a manual `bun run dev`) so dotnet watch doesn't fight the bun watcher for wwwroot/
 	     output, and Rider's long-lived Web process doesn't block the bun-build output-copy step. -->

@@ -2,6 +2,7 @@ using System.Text.Json;
 using YobaLog.Core;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Ingestion;
+using YobaLog.Web.Ingestion;
 
 namespace YobaLog.Web;
 
@@ -68,6 +69,39 @@ static class IngestionHandlers
 			await pipeline.IngestAsync(scope.Value, candidates, ct);
 
 		return Results.Created(ctx.Request.Path.Value, new IngestResponse(candidates.Count, errorCount));
+	}
+
+	// OTLP Logs ingestion: HTTP/Protobuf body parse → same CompositeApiKeyStore auth + same
+	// IIngestionPipeline as CLEF. Decision-log 2026-04-21 (Phase F) for the mapping table.
+	// Wire-format decoding lives in OtlpLogsParser; proto DTOs never escape this function.
+	public static async Task<IResult> OtlpLogs(
+		HttpContext ctx,
+		IApiKeyStore apiKeys,
+		IIngestionPipeline pipeline,
+		CancellationToken ct)
+	{
+		var scope = await ResolveScopeAsync(ctx, apiKeys, ct);
+		if (scope is null)
+			return Results.Unauthorized();
+
+		// Buffer the whole body before handing it to the proto parser. OTLP batches are
+		// capped client-side (typical 512KB-2MB export window) so fully-buffered decode is
+		// fine — protobuf has no streaming-parse affordance for repeated fields anyway.
+		using var ms = new MemoryStream();
+		await ctx.Request.Body.CopyToAsync(ms, ct);
+
+		var result = OtlpLogsParser.Parse(ms.GetBuffer().AsSpan(0, (int)ms.Length));
+		if (result.IsMalformed)
+			return Results.BadRequest("malformed OTLP protobuf");
+
+		if (result.Candidates.Count > 0)
+			await pipeline.IngestAsync(scope.Value, result.Candidates, ct);
+
+		// OTLP spec says collectors respond 200 with ExportLogsServiceResponse. The standard
+		// body is {"partialSuccess": {"rejectedLogRecords": N, "errorMessage": "..."}}} but
+		// both otel-dotnet and otel-python accept any 2xx with empty/JSON body as "delivered".
+		// We keep Created/202 semantics symmetric with CLEF rather than inventing a new shape.
+		return Results.Created(ctx.Request.Path.Value, new IngestResponse(result.Candidates.Count, result.Errors));
 	}
 
 	static async Task<WorkspaceId?> ResolveScopeAsync(HttpContext ctx, IApiKeyStore apiKeys, CancellationToken ct)

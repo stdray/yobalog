@@ -8,19 +8,10 @@
 - **Endpoints:**
     - `POST /api/v1/ingest/clef` — канонический версионированный путь. Принимает CLEF NDJSON (`application/vnd.serilog.clef`) и Seq Events-envelope (`application/json`, `{"Events":[…]}`; внутри либо CLEF, либо legacy Raw — нормализуется в CLEF).
     - `POST /compat/seq/api/events/raw` — приёмник для Seq-клиентов (Serilog.Sinks.Seq, seq-logging, seqlog). Клиенты строят endpoint как `<base-url>/api/events/raw` (просто конкатенация строки), поэтому пользователь прописывает в своём Serilog/winston-конфиге base URL `https://yobalog.example.com/compat/seq` — клиент дописывает хвост сам. Тот же handler, что и canonical. UI API-ключа даст кнопку «Copy Seq URL» с готовым base URL.
-    - Будущие форматы — два независимых вектора: **нативные** (`POST /api/v1/ingest/<fmt>` — например, `gelf`, `otlp`) + **совместимые с внешними вендорами** (`POST /compat/<tech>/...` — `hec` для Splunk HEC, `statsd` и т.п.; точный путь под каждый — как требует клиент). Auth и pipeline-dispatch шарятся через `IngestionHandlers.ResolveScopeAsync` + `IIngestionPipeline.IngestAsync`.
-<!-- OTel proposal (Phase F, decision-log 2026-04-21 draft): добавить третий вектор — OTLP —
-     зеркалящий Seq-овский surface, чтобы существующие OTel-экспортёры, смотрящие в Seq,
-     работали без изменений: `POST /ingest/otlp/v1/logs` (HTTP/Protobuf, заголовок
-     `X-Seq-ApiKey`). Опциональный alias `POST /v1/logs` для OTel-клиентов, которые жёстко
-     прописывают стандартный путь. gRPC и HTTP/JSON отложены в Phase F+1 / скипнуты
-     соответственно. Metrics — жёстко out of scope (yobalog = logs + traces; metrics живут в
-     Prometheus/Grafana). Traces: `POST /ingest/otlp/v1/traces` → Phase H, отдельная схема
-     (см. proposal в §3). -->
-<!-- OTel proposal (Phase F): метрики OTLP (counters / gauges / histograms) — явный non-goal.
-     Не ложатся в log/trace-store, дублировали бы Prometheus/Grafana. Зафиксировать в спеке
-     отдельной строкой чтобы не дрейфовать. -->
-- **Явный non-goal:** OTLP Metrics — yobalog хранит логи (и опционально, позже, трейсы). Метрики — территория Prometheus/Grafana. [Черновик; finalize после ревью OTel-решения.]
+    - `POST /ingest/otlp/v1/logs` — OTLP Logs ingest (HTTP/Protobuf), зеркалит Seq-овский surface. Авторизация через `X-Seq-ApiKey` (header или `?apiKey=`). Маппинг OTLP LogRecord → CLEF задокументирован в `decision-log.md` 2026-04-21. Любой OTel-enabled .NET/Go/Python/JS app с exporter'ом, смотрящим в Seq, переезжает сменой только URL base.
+    - `POST /v1/logs` — тот же handler, что `/ingest/otlp/v1/logs`, под OTel-стандартным путём. Клиенты с `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://<host>/v1/logs` работают из коробки. gRPC и HTTP/JSON отложены в Phase F+1 / скипнуты соответственно; traces — Phase H отдельной схемой (см. §3).
+    - Будущие форматы — два независимых вектора: **нативные** (`POST /api/v1/ingest/<fmt>` — например, `gelf`) + **совместимые с внешними вендорами** (`POST /compat/<tech>/...` — `hec` для Splunk HEC, `statsd` и т.п.; точный путь под каждый — как требует клиент). Auth и pipeline-dispatch шарятся через `IngestionHandlers.ResolveScopeAsync` + `IIngestionPipeline.IngestAsync`.
+- **Явный non-goal:** OTLP Metrics. yobalog хранит логи (и опционально, позже, трейсы). Метрики (counters / gauges / histograms) — территория Prometheus/Grafana, совсем другая storage-форма (time-series) и query-surface. Non-goal зафиксирован строкой чтобы не дрейфовать при первом запросе "а давайте ещё метрики".
 - **Хранение:**
     - Стартовый backend — **SQLite + FTS5** через `linq2db`. Один файл `.db` на каждое хранилище (Workspace).
     - Обоснование: inverted index на `Message` через FTS5 — из коробки, без собственной реализации (главный UX-gap против Seq закрыт бесплатно); `linq2db` даёт общий путь трансляции KQL→SQL, тот же, что пригодится для DuckDB.
@@ -38,20 +29,9 @@
 - **.NET:** Serilog + Serilog.Sinks.Seq. Проверено integration-тестом `SerilogSeqSinkCompatTests`.
 - **TS/JS:** Winston + `@datalust/winston-seq` (и Pino через аналогичные sink'ы). Проверено `WinstonSeqCompatTests` под bun.
 - **Python:** `logging` + `seqlog`. Пока не покрыто тестом.
-<!-- OTel proposal (Phase F): добавить OpenTelemetry SDK как first-class таргет по языкам.
-     Любой app с `OpenTelemetry.Exporter.OpenTelemetryProtocol` (или эквивалентом в Go /
-     Python / Java / JS), HTTP/Protobuf + `X-Seq-ApiKey` + endpoint
-     `https://<host>/ingest/otlp/v1/logs` — пишет в yobalog без адаптерного кода. Стек по
-     языкам:
-     - .NET: `builder.Logging.AddOpenTelemetry(l => l.AddOtlpExporter(o => o.Endpoint = ...))`.
-     - Go / Python / JS: стандартный OTel SDK с env `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
-     Phase F compat-тесты повторяют паттерн `WinstonSeqCompatTests`: спавним внешний
-     OTel-enabled процесс, ассертим state store. Один тест на major-язык (минимум .NET +
-     Python). -->
-- **OpenTelemetry (черновик, Phase F):** любой OTel-enabled app, нацелив exporter на
-  `https://<host>/ingest/otlp/v1/logs` (HTTP/Protobuf), пишет в yobalog через `X-Seq-ApiKey` —
-  тот же surface что у Seq-овского OTLP endpoint'а, т.е. существующие OTel→Seq связки
-  переезжают сменой только URL base.
+- **OpenTelemetry.** Любой OTel-enabled app (HTTP/Protobuf exporter) пишет в yobalog через endpoint `https://<host>/v1/logs` (или зеркало `/ingest/otlp/v1/logs`) + `X-Seq-ApiKey`. Стек по языкам:
+    - .NET: `builder.Logging.AddOpenTelemetry(l => l.AddOtlpExporter(o => o.Endpoint = ...; o.Headers = "X-Seq-ApiKey=...";))`. Проверено `OtlpDotnetCompatTests`.
+    - Go / Python / JS: стандартный OTel SDK с env `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` + `OTEL_EXPORTER_OTLP_HEADERS=X-Seq-ApiKey=...`. Python-compat тест пока не покрыт (отложено).
 
 ## 3. Функциональные возможности
 - **Query Engine:** KQL — официальный диалект, не собственный "KQL-подобный". Парсер = `Microsoft.Azure.Kusto.Language` (NuGet от MS, тот же, что в Azure Data Explorer / Log Analytics) через обёртку [`kusto-loco`](https://github.com/NeilMacMullen/kusto-loco) (MIT). AST = Kusto AST; свой AST не пишем. Unsupported-операторы режутся на стадии трансляции с понятной ошибкой ("operator X not supported in yobalog"). Трансляция Kusto AST → backend-query: `Expression Trees` через `linq2db` (SQLite+FTS5 на старте, позже DuckDB). Full-text поиск по `Message` транслируется в FTS5 MATCH на SQLite. Агрегации (`summarize`, `count`, `by`) — часть KQL из коробки.

@@ -157,6 +157,14 @@ public static class YobaLogApp
 		// Adding a new format = one more MapPost with a format-specific handler; nothing else moves.
 		app.MapPost("/api/v1/ingest/clef", IngestionHandlers.CleF).AllowAnonymous();
 
+		// OTLP Logs (HTTP/Protobuf). Two aliases for the same handler:
+		//   /ingest/otlp/v1/logs — mirrors Seq's path, zero-friction for Seq→OTLP migrations.
+		//   /v1/logs            — OTel standard, lets clients hardcoding OTEL_EXPORTER_OTLP_ENDPOINT
+		//                         = "https://host" + default suffix "v1/logs" just work.
+		// Decision-log 2026-04-21 Rule 2. gRPC/HTTP+JSON deferred to Phase F+1.
+		app.MapPost("/ingest/otlp/v1/logs", IngestionHandlers.OtlpLogs).AllowAnonymous();
+		app.MapPost("/v1/logs", IngestionHandlers.OtlpLogs).AllowAnonymous();
+
 		// Compatibility surface for third-party clients. Each vendor gets its own slot under
 		// /compat/<tech>/ so a future HEC / statsd / GELF receiver doesn't share the seq
 		// prefix. Seq clients (Serilog.Sinks.Seq, seq-logging, seqlog) hardcode the trailing
