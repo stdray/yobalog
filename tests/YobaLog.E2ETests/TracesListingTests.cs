@@ -79,6 +79,11 @@ public sealed class TracesListingTests
 		await page.GetByTestId("trace-link").Nth(0).ClickAsync();
 		await page.WaitForURLAsync($"**/trace/{traceB}**");
 		await Expect(page.GetByTestId("trace-id")).ToHaveTextAsync(traceB);
+
+		// Breadcrumb "traces" takes us back to the listing (not to /ws/{id} — that's what the
+		// workspace-name crumb does).
+		await page.GetByTestId("trace-back-traces").ClickAsync();
+		await page.WaitForURLAsync($"**/ws/{ws}/traces");
 	}
 
 	[Fact]
