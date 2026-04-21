@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.Admin;
+using YobaLog.Core.Observability;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
@@ -62,7 +63,11 @@ public sealed class RetentionService : BackgroundService
 
 	public async Task RunPassAsync(DateTimeOffset now, CancellationToken ct)
 	{
+		using var activity = Tracing.Retention.StartActivity("retention.pass");
+
 		var all = await _workspaces.ListAsync(ct).ConfigureAwait(false);
+		activity?.SetTag("workspace.count", all.Count);
+
 		foreach (var info in all)
 		{
 			if (info.Id.IsSystem) continue;

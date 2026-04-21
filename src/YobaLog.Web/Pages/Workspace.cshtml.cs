@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
 using YobaLog.Core.Kql;
+using YobaLog.Core.Observability;
 using YobaLog.Core.Retention;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
@@ -138,6 +139,10 @@ public sealed class WorkspaceModel : PageModel
 
 		try
 		{
+			using var activity = ws.IsSystem ? null : Tracing.Query.StartActivity("query.kql");
+			activity?.SetTag("workspace", ws.Value);
+			activity?.SetTag("shape_changed", IsShapeChanged);
+
 			if (IsShapeChanged)
 			{
 				KqlResult = await _store.QueryKqlResultAsync(ws, code, ct);
@@ -149,6 +154,7 @@ public sealed class WorkspaceModel : PageModel
 				await foreach (var e in _store.QueryKqlAsync(ws, code, ct))
 					Events.Add(e);
 			}
+			activity?.SetTag("row.count", IsShapeChanged ? KqlRows.Count : Events.Count);
 		}
 		catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
 		{

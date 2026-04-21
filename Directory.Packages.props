@@ -18,12 +18,15 @@
 		<PackageVersion Include="Grpc.Tools" Version="2.72.0" />
 	</ItemGroup>
 
-	<!-- Phase F compat tests host an external .NET process that exports via the standard
-	     OTel SDK. Versions aligned with OTel .NET 1.15.x line (decision-log 2026-04-21). -->
+	<!-- OpenTelemetry .NET 1.15.x — shared by Phase F compat tests (use the OTLP exporter
+	     against yobalog's own endpoint) and Phase G self-emission (Web uses the core + hosting
+	     + instrumentation packages to emit span batches into $system). Decision-log 2026-04-21. -->
 	<ItemGroup>
 		<PackageVersion Include="OpenTelemetry" Version="1.15.1" />
 		<PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.1" />
 		<PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.1" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.12.0" />
+		<PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.12.0" />
 	</ItemGroup>
 
 	<ItemGroup>

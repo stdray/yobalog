@@ -126,15 +126,10 @@
 - **Queue-full политика:** `DropWrite` — при переполнении внутреннего буфера новые self-события молча отбрасываются, чтобы не блокировать user ingest под нагрузкой.
 - **Что туда пишется:** результаты retention-проходов, ingestion-ошибки (malformed CLEF, rate-limit rejects), query-статистика (медленные запросы, full scan'ы), аудит админских действий.
 - **Admin UI:** системный workspace скрыт из admin-списка (`/admin/workspaces`) как non-deletable, но доступен через обычный viewer `/ws/$system` и KQL. Retention-политика отдельная, более консервативная (`SystemRetainDays`).
-<!-- OTel proposal (Phase G): self-emission повторяет паттерн `SystemLoggerProvider`. Custom
-     `BaseExporter<Activity>` маппит завершённые Activity → `LogEventCandidate` с
-     `Properties.Kind="span"`, пишет в `$system` через `ILogStore.AppendBatchAsync` напрямую
-     (минует `IIngestionPipeline` по тому же reasoning — иначе pipeline-собственные спаны
-     рекурсят). Защита от рекурсии — именованные `ActivitySource`'ы (`YobaLog.Ingestion`,
-     `YobaLog.Query`, `YobaLog.Retention`, `YobaLog.Storage.Sqlite`); экспортёр слушает
-     только их, не `Microsoft.AspNetCore.*`. Queue-full → DropWrite как у логов.
-     Hot-path: spans только на boundary батчей (ingestion-батч, KQL-запрос, SQLite bulk-
-     copy, retention-проход), никогда per-event. -->
+- **OTel self-emission (Phase G).** Операции yobalog'а эмитят OpenTelemetry-спаны через четыре именованных `ActivitySource`'а: `YobaLog.Ingestion` (IngestAsync), `YobaLog.Query` (KQL request), `YobaLog.Retention` (sweep pass), `YobaLog.Storage.Sqlite` (AppendBatch / QueryKql / DeleteOlderThan / DeleteKql). Spans эмитятся **только на границе батчей** — per-event инструментация запрещена (BDN-budget: 5-20% overhead при 100k ev/s). `$system` workspace пропускается — storage-спаны с `workspaceId.IsSystem` не создаются (иначе экспортёр рекурсит сам в себя при записи своих спанов).
+- **Exporter:** custom `BaseExporter<Activity>` → `LogEventCandidate` с `Properties.Kind="span"` + flatten `Name` / `Source` / `StartUnixNs` / `DurationNs` / `ParentSpanId` / `StatusCode` / tags. Пишет в `$system` через `ILogStore.AppendBatchAsync` напрямую (минует `IIngestionPipeline` по тому же reasoning, что `SystemLoggerProvider` — иначе спаны самого pipeline'а рекурсили бы).
+- **ASP.NET Core auto-instrumentation** покрывает все HTTP endpoint'ы из коробки; явно skip'ается `/health` + `/version` через `AspNetCoreInstrumentationOptions.Filter` чтобы load-balancer пинги не раздули `$system`.
+- **Gate на emission:** `!IsEnvironment("Testing")`. Unit и UI-тесты не платят `ActivityListener` tax; тесты, которые специально хотят ассертить emission (regression на конкретные source-имена) заводят локальный `ActivityListener` в фикстуре и опционально маршрутизируют завершённые Activity через `SystemSpanExporter.Export` напрямую (`SelfEmissionTests` — канонический пример).
 
 ## 9. Локализация
 - **Стартовый язык:** английский ASCII. Русский — отложен, но каркас предусматривает. CI-проверка (`grep -P '[^\x00-\x7F]'`) валит билд на не-ASCII в `ts/`, `Pages/`, Web-root `.cs`, пока scaffold не появится — чтобы случайный русский литерал не проскочил (бывало).

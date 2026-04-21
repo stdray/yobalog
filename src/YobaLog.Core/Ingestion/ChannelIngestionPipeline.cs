@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using YobaLog.Core.Observability;
 using YobaLog.Core.Storage;
 
 namespace YobaLog.Core.Ingestion;
@@ -35,6 +36,10 @@ public sealed class ChannelIngestionPipeline : IIngestionPipeline, IHostedServic
 	{
 		if (batch.Count == 0)
 			return;
+
+		using var activity = workspaceId.IsSystem ? null : Tracing.Ingestion.StartActivity("ingest.enqueue");
+		activity?.SetTag("workspace", workspaceId.Value);
+		activity?.SetTag("batch.size", batch.Count);
 
 		var wc = _channels.GetOrAdd(workspaceId, StartChannel);
 		foreach (var candidate in batch)

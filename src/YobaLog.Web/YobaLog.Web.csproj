@@ -21,6 +21,16 @@
 		<Protobuf Include="Proto\**\*.proto" ProtoRoot="Proto" GrpcServices="None" />
 	</ItemGroup>
 
+	<!-- OpenTelemetry self-emission (Phase G). Gated on !IsEnvironment("Testing") in
+	     YobaLogApp so unit + E2E suites don't pay the ActivityListener tax — tests that
+	     need to assert emission opt in via local ActivityListener in the fixture. -->
+	<ItemGroup>
+		<PackageReference Include="OpenTelemetry" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+	</ItemGroup>
+
 	<!-- Frontend is Release-only from MSBuild. Debug relies on the Cake `Dev` target (or
 	     a manual `bun run dev`) so dotnet watch doesn't fight the bun watcher for wwwroot/
 	     output, and Rider's long-lived Web process doesn't block the bun-build output-copy step. -->

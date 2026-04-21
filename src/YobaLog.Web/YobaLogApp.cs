@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 using YobaLog.Core;
 using YobaLog.Core.Admin;
 using YobaLog.Core.Admin.Sqlite;
@@ -13,6 +15,7 @@ using YobaLog.Core.Auth;
 using YobaLog.Core.Auth.Sqlite;
 using YobaLog.Core.Ingestion;
 using YobaLog.Core.Kql;
+using YobaLog.Core.Observability;
 using YobaLog.Core.Retention;
 using YobaLog.Core.Retention.Sqlite;
 using YobaLog.Core.SavedQueries;
@@ -22,6 +25,7 @@ using YobaLog.Core.Sharing;
 using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Web.Observability;
 
 namespace YobaLog.Web;
 
@@ -85,6 +89,31 @@ public static class YobaLogApp
 		builder.Services.AddHostedService(sp => sp.GetRequiredService<ChannelIngestionPipeline>());
 		builder.Services.AddHostedService<RetentionService>();
 		builder.Services.AddHostedService<SystemLogFlusher>();
+
+		// OpenTelemetry self-emission (Phase G). Gated on !Testing env so the UI and compat
+		// suites don't pay the ActivityListener tax — tests that specifically want to assert
+		// emission spin up their own local ActivityListener via ActivitySource.AddActivityListener
+		// inside the fixture. Decision-log 2026-04-21 Rule 4.
+		if (!builder.Environment.IsEnvironment("Testing"))
+		{
+			builder.Services.AddSingleton<SystemSpanExporter>();
+			builder.Services.AddOpenTelemetry()
+				.WithTracing(tracing => tracing
+					.AddSource(
+						Tracing.IngestionSourceName,
+						Tracing.QuerySourceName,
+						Tracing.RetentionSourceName,
+						Tracing.StorageSqliteSourceName)
+					.AddAspNetCoreInstrumentation(opts =>
+					{
+						// Skip load-balancer / health-probe noise from filling $system.
+						opts.Filter = ctx =>
+							ctx.Request.Path != "/health" && ctx.Request.Path != "/version";
+					})
+					.AddHttpClientInstrumentation()
+					.AddProcessor(sp => new SimpleActivityExportProcessor(
+						sp.GetRequiredService<SystemSpanExporter>())));
+		}
 
 		builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
 			.AddCookie(o =>

@@ -9,6 +9,7 @@ using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.Kql;
+using YobaLog.Core.Observability;
 
 namespace YobaLog.Core.Storage.Sqlite;
 
@@ -27,6 +28,9 @@ public sealed class SqliteLogStore : ILogStore
 		KustoCode kql,
 		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
 	{
+		using var activity = workspaceId.IsSystem ? null : Tracing.StorageSqlite.StartActivity("storage.query.kql");
+		activity?.SetTag("workspace", workspaceId.Value);
+
 		await using var db = Open(workspaceId);
 		var source = db.GetTable<EventRecord>().AsQueryable();
 		var translated = KqlTransformer.Apply(source, kql);
@@ -135,6 +139,13 @@ public sealed class SqliteLogStore : ILogStore
 		if (batch.Count == 0)
 			return;
 
+		// $system writes skip instrumentation: this method is what the span exporter calls
+		// when flushing Phase G output — tracing $system appends would recurse the export
+		// queue through itself.
+		using var activity = workspaceId.IsSystem ? null : Tracing.StorageSqlite.StartActivity("storage.append.batch");
+		activity?.SetTag("workspace", workspaceId.Value);
+		activity?.SetTag("batch.size", batch.Count);
+
 		await using var db = Open(workspaceId);
 		await db.GetTable<EventRecord>()
 			.BulkCopyAsync(batch.Select(EventRecord.FromCandidate), ct)
@@ -166,20 +177,31 @@ public sealed class SqliteLogStore : ILogStore
 		DateTimeOffset cutoff,
 		CancellationToken ct)
 	{
+		using var activity = workspaceId.IsSystem ? null : Tracing.StorageSqlite.StartActivity("storage.delete.older_than");
+		activity?.SetTag("workspace", workspaceId.Value);
+		activity?.SetTag("cutoff", cutoff.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+
 		var cutoffMs = cutoff.ToUnixTimeMilliseconds();
 		await using var db = Open(workspaceId);
-		return await db.GetTable<EventRecord>()
+		var deleted = await db.GetTable<EventRecord>()
 			.Where(e => e.TimestampMs < cutoffMs)
 			.DeleteAsync(ct)
 			.ConfigureAwait(false);
+		activity?.SetTag("deleted", deleted);
+		return deleted;
 	}
 
 	public async ValueTask<long> DeleteKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct)
 	{
+		using var activity = workspaceId.IsSystem ? null : Tracing.StorageSqlite.StartActivity("storage.delete.kql");
+		activity?.SetTag("workspace", workspaceId.Value);
+
 		await using var db = Open(workspaceId);
 		var source = db.GetTable<EventRecord>();
 		var filtered = KqlTransformer.Apply(source.AsQueryable(), kql);
-		return await filtered.DeleteAsync(ct).ConfigureAwait(false);
+		var deleted = await filtered.DeleteAsync(ct).ConfigureAwait(false);
+		activity?.SetTag("deleted", deleted);
+		return deleted;
 	}
 
 	public async ValueTask DeclareIndexAsync(
