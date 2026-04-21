@@ -122,6 +122,87 @@ public sealed class SqliteSpanStore : ISpanStore
 		return [.. records.Select(r => r.ToSpan())];
 	}
 
+	public async ValueTask<IReadOnlyList<TraceSummary>> ListRecentTracesAsync(
+		WorkspaceId workspaceId,
+		TracesQuery query,
+		CancellationToken ct)
+	{
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.list.traces");
+		activity?.SetTag("storage.kind", "traces");
+		activity?.SetTag("workspace", workspaceId.Value);
+		activity?.SetTag("page.size", query.PageSize);
+
+		await using var db = Open(workspaceId);
+
+		// Aggregate per TraceId: earliest start, latest end, count, worst status code.
+		// Cursor: keep only traces whose (StartUnixNs, TraceId) is strictly less than the
+		// cursor (newer-first ordering: descending by StartUnixNs, then descending by TraceId
+		// as a stable tiebreaker for ties at the nanosecond).
+		var spans = db.GetTable<SpanRecord>().AsQueryable();
+
+		var aggregates = spans
+			.GroupBy(s => s.TraceId)
+			.Select(g => new
+			{
+				TraceId = g.Key,
+				StartUnixNs = g.Min(s => s.StartUnixNs),
+				EndUnixNs = g.Max(s => s.EndUnixNs),
+				SpanCount = g.Count(),
+				WorstStatus = g.Max(s => s.StatusCode),
+			});
+
+		if (query.CursorStartUnixNs is long cursorStart && query.CursorTraceId is string cursorId)
+		{
+			aggregates = aggregates.Where(a =>
+				a.StartUnixNs < cursorStart
+				|| (a.StartUnixNs == cursorStart && string.Compare(a.TraceId, cursorId, StringComparison.Ordinal) < 0));
+		}
+
+		var pageRows = await aggregates
+			.OrderByDescending(a => a.StartUnixNs)
+			.ThenByDescending(a => a.TraceId)
+			.Take(query.PageSize)
+			.ToListAsync(ct)
+			.ConfigureAwait(false);
+
+		if (pageRows.Count == 0)
+			return [];
+
+		// Resolve root-span name for each TraceId in one round trip. ParentSpanId IS NULL =
+		// the root span of this trace (or the earliest span if no clear root, e.g. detached
+		// child branch). Take the root by min(StartUnixNs) within the trace as the tiebreaker.
+		var traceIds = pageRows.Select(r => r.TraceId).ToList();
+		var rootByTraceId = await db.GetTable<SpanRecord>()
+			.Where(s => traceIds.Contains(s.TraceId))
+			.GroupBy(s => s.TraceId)
+			.Select(g => new
+			{
+				TraceId = g.Key,
+				RootName = g.OrderBy(s => s.ParentSpanId == null ? 0 : 1)
+					.ThenBy(s => s.StartUnixNs)
+					.Select(s => s.Name)
+					.First(),
+			})
+			.ToDictionaryAsync(r => r.TraceId, r => r.RootName, ct)
+			.ConfigureAwait(false);
+
+		activity?.SetTag("result.count", pageRows.Count);
+		return [.. pageRows.Select(r => new TraceSummary(
+			TraceId: r.TraceId,
+			RootName: rootByTraceId.TryGetValue(r.TraceId, out var name) ? name : "(unknown)",
+			StartTime: FromUnixNanos(r.StartUnixNs),
+			Duration: FromUnixNanos(r.EndUnixNs) - FromUnixNanos(r.StartUnixNs),
+			SpanCount: r.SpanCount,
+			WorstStatus: (SpanStatusCode)r.WorstStatus))];
+	}
+
+	static DateTimeOffset FromUnixNanos(long unixNs)
+	{
+		var ms = unixNs / 1_000_000L;
+		var subMs = unixNs % 1_000_000L;
+		return DateTimeOffset.FromUnixTimeMilliseconds(ms).AddTicks(subMs / 100L);
+	}
+
 	public async IAsyncEnumerable<Span> QueryKqlAsync(
 		WorkspaceId workspaceId,
 		KustoCode kql,

@@ -30,6 +30,9 @@
 				data-kql="@Model.UserKql"
 				title="Share query as TSV">Share</button>
 		}
+		<a asp-page="/Traces" asp-route-id="@Model.Workspace.Value"
+			class="btn btn-ghost btn-xs" data-testid="workspace-traces-link"
+			title="Browse OTel traces for this workspace">Traces</a>
 		<a asp-page="/Admin/WorkspaceApiKeys" asp-route-id="@Model.Workspace.Value"
 			class="btn btn-ghost btn-xs" title="Manage API keys for this workspace">Keys</a>
 	</div>

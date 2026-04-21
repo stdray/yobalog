@@ -178,6 +178,8 @@ public sealed class SystemSpanExporterTests : IDisposable
 		public ValueTask DropWorkspaceAsync(WorkspaceId workspaceId, CancellationToken ct) => ValueTask.CompletedTask;
 		public ValueTask<IReadOnlyList<Span>> GetByTraceIdAsync(WorkspaceId workspaceId, string traceId, CancellationToken ct) =>
 			new(Array.Empty<Span>());
+		public ValueTask<IReadOnlyList<TraceSummary>> ListRecentTracesAsync(WorkspaceId workspaceId, TracesQuery query, CancellationToken ct) =>
+			new(Array.Empty<TraceSummary>());
 		public IAsyncEnumerable<Span> QueryKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>
 			EmptyAsync();
 		public Task<KqlResult> QueryKqlResultAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct) =>

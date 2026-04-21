@@ -34,6 +34,15 @@ public interface ISpanStore
 		string traceId,
 		CancellationToken ct);
 
+	// Listing-page hot path: aggregate one row per trace_id, newest first. SQL GROUP BY
+	// over the Spans table — at the volumes we expect (10k–100k spans) this is fast enough
+	// without a precomputed summary table. If volume grows past that, the right move is a
+	// trigger-maintained `TraceSummaries` table; not today.
+	ValueTask<IReadOnlyList<TraceSummary>> ListRecentTracesAsync(
+		WorkspaceId workspaceId,
+		TracesQuery query,
+		CancellationToken ct);
+
 	IAsyncEnumerable<Span> QueryKqlAsync(
 		WorkspaceId workspaceId,
 		KustoCode kql,

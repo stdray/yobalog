@@ -196,4 +196,75 @@ public sealed class SqliteSpanStoreTests : IAsyncLifetime
 		await _store.DropWorkspaceAsync(ws, CancellationToken.None);
 		File.Exists(path).Should().BeFalse();
 	}
+
+	[Fact]
+	public async Task ListRecentTracesAsync_Aggregates_OneRow_Per_TraceId_NewestFirst()
+	{
+		var t0 = new DateTimeOffset(2026, 4, 22, 10, 0, 0, TimeSpan.Zero);
+
+		// Trace A: 2 spans, root + child, total 200ms
+		await _store.AppendBatchAsync(Ws,
+			[
+				MakeSpan("a000000000000001", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", t0, name: "GET /api/a", duration: TimeSpan.FromMilliseconds(200)),
+				MakeSpan("a000000000000002", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", t0.AddMilliseconds(50), name: "db.a", parentSpanId: "a000000000000001", duration: TimeSpan.FromMilliseconds(80)),
+			], CancellationToken.None);
+
+		// Trace B: 1 span, error
+		await _store.AppendBatchAsync(Ws,
+			[MakeSpan("b000000000000001", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1", t0.AddMilliseconds(500), name: "POST /api/b", status: SpanStatusCode.Error)],
+			CancellationToken.None);
+
+		// Trace C: 1 span, OK, latest
+		await _store.AppendBatchAsync(Ws,
+			[MakeSpan("c000000000000001", "ccccccccccccccccccccccccccccccc1", t0.AddSeconds(2), name: "GET /api/c", status: SpanStatusCode.Ok)],
+			CancellationToken.None);
+
+		var traces = await _store.ListRecentTracesAsync(Ws, new TracesQuery(PageSize: 10), CancellationToken.None);
+		traces.Should().HaveCount(3);
+
+		// Newest first: C → B → A.
+		traces[0].TraceId.Should().Be("ccccccccccccccccccccccccccccccc1");
+		traces[0].RootName.Should().Be("GET /api/c");
+		traces[0].WorstStatus.Should().Be(SpanStatusCode.Ok);
+
+		traces[1].TraceId.Should().Be("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1");
+		traces[1].WorstStatus.Should().Be(SpanStatusCode.Error);
+
+		traces[2].TraceId.Should().Be("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1");
+		traces[2].RootName.Should().Be("GET /api/a"); // root has ParentSpanId == null
+		traces[2].SpanCount.Should().Be(2);
+		traces[2].Duration.TotalMilliseconds.Should().BeApproximately(200, 5); // tolerance for ns→ms rounding
+	}
+
+	[Fact]
+	public async Task ListRecentTracesAsync_CursorPagination_Skips_Already_Seen()
+	{
+		var t0 = new DateTimeOffset(2026, 4, 22, 10, 0, 0, TimeSpan.Zero);
+		for (var i = 0; i < 5; i++)
+		{
+			var traceId = $"trace{i}".PadRight(32, 'f');
+			await _store.AppendBatchAsync(Ws,
+				[MakeSpan($"span{i}".PadRight(16, '0'), traceId, t0.AddSeconds(i), name: $"op-{i}")],
+				CancellationToken.None);
+		}
+
+		// First page: 2 newest (op-4, op-3).
+		var page1 = await _store.ListRecentTracesAsync(Ws, new TracesQuery(PageSize: 2), CancellationToken.None);
+		page1.Select(t => t.RootName).Should().ContainInOrder("op-4", "op-3");
+
+		// Cursor from last row of page 1 → next page starts AFTER op-3.
+		var lastOfPage1 = page1[^1];
+		var lastStartNs = lastOfPage1.StartTime.ToUnixTimeMilliseconds() * 1_000_000L;
+		var page2 = await _store.ListRecentTracesAsync(Ws,
+			new TracesQuery(PageSize: 2, CursorStartUnixNs: lastStartNs, CursorTraceId: lastOfPage1.TraceId),
+			CancellationToken.None);
+		page2.Select(t => t.RootName).Should().ContainInOrder("op-2", "op-1");
+	}
+
+	[Fact]
+	public async Task ListRecentTracesAsync_EmptyStore_ReturnsEmpty()
+	{
+		var traces = await _store.ListRecentTracesAsync(Ws, new TracesQuery(), CancellationToken.None);
+		traces.Should().BeEmpty();
+	}
 }

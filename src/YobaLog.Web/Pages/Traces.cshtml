@@ -1,0 +1,83 @@
+@page "/ws/{id}/traces"
+@using System.Globalization
+@using YobaLog.Core.Tracing
+@model YobaLog.Web.Pages.TracesModel
+@{
+	ViewData["Title"] = $"Traces — {Model.Workspace.Value}";
+
+	static string StatusBadge(SpanStatusCode status) => status switch
+	{
+		SpanStatusCode.Error => "badge-error",
+		SpanStatusCode.Ok => "badge-success",
+		_ => "badge-ghost",
+	};
+
+	static string FormatDuration(TimeSpan d)
+	{
+		if (d.TotalSeconds >= 1) return $"{d.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture)}s";
+		if (d.TotalMilliseconds >= 1) return $"{d.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture)}ms";
+		var us = d.Ticks / 10.0;
+		if (us >= 1) return $"{us.ToString("F0", CultureInfo.InvariantCulture)}μs";
+		return $"{d.Ticks * 100}ns";
+	}
+}
+
+<div class="mb-4 flex flex-wrap items-center gap-3">
+	<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="text-sm opacity-60 hover:opacity-100">← @Model.Workspace.Value</a>
+	<h1 class="font-mono font-semibold text-xl">Traces</h1>
+	<span class="badge badge-ghost text-xs" data-testid="traces-count">@Model.Traces.Length traces</span>
+</div>
+
+@if (Model.Traces.IsEmpty)
+{
+	<div class="alert alert-info" data-testid="traces-empty">
+		No traces yet in <code class="font-mono">@Model.Workspace.Value</code>.
+		Spans land here when an OTel client posts to <code>/v1/traces</code> or when the local
+		<code>SystemSpanExporter</code> emits batch-boundary spans against this workspace.
+	</div>
+}
+else
+{
+	<div class="bg-base-200 border border-base-300 overflow-hidden rounded-box" data-testid="traces-list">
+		<table class="table table-sm w-full">
+			<thead>
+				<tr class="bg-base-300 text-xs">
+					<th>Trace ID</th>
+					<th>Root span</th>
+					<th>Started</th>
+					<th class="text-right">Duration</th>
+					<th class="text-right">Spans</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var t in Model.Traces)
+				{
+					<tr class="hover" data-testid="trace-row" data-trace-id="@t.TraceId">
+						<td class="font-mono text-xs">
+							<a asp-page="/Trace" asp-route-id="@t.TraceId"
+								asp-route-ws="@Model.Workspace.Value"
+								class="link link-hover" data-testid="trace-link">@t.TraceId.Substring(0, 16)…</a>
+						</td>
+						<td class="font-mono text-xs" data-testid="trace-root-name">@t.RootName</td>
+						<td class="font-mono opacity-70 text-xs whitespace-nowrap">
+							<time class="local-time" datetime="@t.StartTime.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)"
+								title="UTC: @t.StartTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)">@t.StartTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)</time>
+						</td>
+						<td class="font-mono text-right text-xs">@FormatDuration(t.Duration)</td>
+						<td class="font-mono text-right text-xs">@t.SpanCount</td>
+						<td><span class="badge @StatusBadge(t.WorstStatus) badge-sm">@t.WorstStatus</span></td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+
+	@if (Model.NextCursor is not null)
+	{
+		<div class="mt-4 text-center">
+			<a asp-page="/Traces" asp-route-id="@Model.Workspace.Value" asp-route-cursor="@Model.NextCursor"
+				class="btn btn-ghost btn-sm" data-testid="traces-next">Older →</a>
+		</div>
+	}
+}
