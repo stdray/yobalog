@@ -11,8 +11,10 @@ using YobaLog.Web.Observability;
 namespace YobaLog.E2ETests;
 
 // End-to-end Phase H.1 self-emission: ingesting events into a user workspace produces
-// spans on the YobaLog.Ingestion / YobaLog.Storage.Sqlite sources; feeding them through
+// spans on the YobaLog.Ingestion / YobaLog.Storage sources; feeding them through
 // SystemSpanExporter lands Span records in $system.traces.db (via ISpanStore).
+// Storage source carries `storage.kind` tag (logs|traces) instead of being split into
+// separate sources per backend.
 //
 // Decision-log 2026-04-21 Rule 4: KestrelAppHost runs under Testing env (AddOpenTelemetry
 // off), tests opt in via local ActivityListener that routes completed Activities through
@@ -79,12 +81,13 @@ public sealed class SelfEmissionTests : IAsyncLifetime
 		var spansStore = _host.Services.GetRequiredService<ISpanStore>();
 		var count = await spansStore.CountAsync(WorkspaceId.System, CancellationToken.None);
 		count.Should().BeGreaterThanOrEqualTo(2,
-			"ingest triggers at least YobaLog.Ingestion + YobaLog.Storage.Sqlite spans");
+			"ingest triggers at least YobaLog.Ingestion + YobaLog.Storage spans");
 
-		// Both expected sources must have fired.
+		// Both expected sources must have fired. After the Storage-source consolidation,
+		// log + trace storage spans share `YobaLog.Storage` and disambiguate via tag.
 		var sources = _seenSources.ToHashSet(StringComparer.Ordinal);
 		sources.Should().Contain("YobaLog.Ingestion");
-		sources.Should().Contain("YobaLog.Storage.Sqlite");
+		sources.Should().Contain("YobaLog.Storage");
 
 		// Pick any observed TraceId and round-trip through the waterfall hot path.
 		var sampledTraceId = _seenTraceIds.First();
@@ -97,6 +100,16 @@ public sealed class SelfEmissionTests : IAsyncLifetime
 			s.Name.Should().NotBeNullOrEmpty();
 			s.Attributes.Should().ContainKey("source");
 		});
+
+		// Storage spans must carry `storage.kind` tag distinguishing logs vs traces stores.
+		var storageSpans = spans.Where(s => s.Attributes.TryGetValue("source", out var src)
+			&& src.GetString() == "YobaLog.Storage").ToList();
+		if (storageSpans.Count > 0)
+		{
+			storageSpans.Should().AllSatisfy(s =>
+				s.Attributes.Should().ContainKey("storage.kind",
+					"every Storage-source span tags whether it touched logs or traces"));
+		}
 	}
 
 	[Fact]

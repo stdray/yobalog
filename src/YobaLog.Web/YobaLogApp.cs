@@ -106,8 +106,7 @@ public static class YobaLogApp
 						ActivitySources.IngestionSourceName,
 						ActivitySources.QuerySourceName,
 						ActivitySources.RetentionSourceName,
-						ActivitySources.StorageSqliteSourceName,
-						ActivitySources.StorageTracesSourceName)
+						ActivitySources.StorageSourceName)
 					.AddAspNetCoreInstrumentation(opts =>
 					{
 						// Skip load-balancer / health-probe noise from filling $system.
@@ -115,6 +114,18 @@ public static class YobaLogApp
 							ctx.Request.Path != "/health" && ctx.Request.Path != "/version";
 					})
 					.AddHttpClientInstrumentation()
+					// SimpleActivityExportProcessor (synchronous, no batching) is acceptable here
+					// **only because yobalog hosts the trace store itself** — SystemSpanExporter
+					// writes directly to the in-process ISpanStore on $system.traces.db. There's
+					// no network hop, no off-process collector, no need to batch for throughput.
+					// Sync export also avoids reentrancy with the Channels-based ingestion
+					// pipeline that would otherwise queue spans-for-export inside a batch the
+					// pipeline is currently flushing.
+					//
+					// For any OTHER process (yobaconf, animemov-bot, etc.) the right choice is
+					// `BatchActivityExportProcessor` + `OtlpExporter` shipping spans over the
+					// wire to yobalog's /v1/traces endpoint. Don't copy this Simple-processor
+					// pattern unprocessed — it's a self-host special case.
 					.AddProcessor(sp => new SimpleActivityExportProcessor(
 						sp.GetRequiredService<SystemSpanExporter>())));
 		}

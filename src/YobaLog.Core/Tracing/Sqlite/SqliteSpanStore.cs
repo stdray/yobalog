@@ -86,7 +86,8 @@ public sealed class SqliteSpanStore : ISpanStore
 		// $system writes skip instrumentation — same recursion-safety rule as SqliteLogStore:
 		// the span exporter writes to $system.traces.db, so tracing that write would fire
 		// another span which would be queued for export which would ... (etc).
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageTraces.StartActivity("traces.append.batch");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.append.batch");
+		activity?.SetTag("storage.kind", "traces");
 		activity?.SetTag("workspace", workspaceId.Value);
 		activity?.SetTag("batch.size", batch.Count);
 
@@ -104,7 +105,8 @@ public sealed class SqliteSpanStore : ISpanStore
 		string traceId,
 		CancellationToken ct)
 	{
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageTraces.StartActivity("traces.get.by_trace_id");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.get.by_trace_id");
+		activity?.SetTag("storage.kind", "traces");
 		activity?.SetTag("workspace", workspaceId.Value);
 		activity?.SetTag("trace_id", traceId);
 
@@ -127,7 +129,8 @@ public sealed class SqliteSpanStore : ISpanStore
 	{
 		ArgumentNullException.ThrowIfNull(kql);
 
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageTraces.StartActivity("traces.query.kql");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.query.kql");
+		activity?.SetTag("storage.kind", "traces");
 		activity?.SetTag("workspace", workspaceId.Value);
 
 		await using var db = Open(workspaceId);
@@ -162,7 +165,8 @@ public sealed class SqliteSpanStore : ISpanStore
 		DateTimeOffset cutoff,
 		CancellationToken ct)
 	{
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageTraces.StartActivity("traces.delete.older_than");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.delete.older_than");
+		activity?.SetTag("storage.kind", "traces");
 		activity?.SetTag("workspace", workspaceId.Value);
 		activity?.SetTag("cutoff", cutoff.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
 

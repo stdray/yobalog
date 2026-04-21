@@ -28,7 +28,8 @@ public sealed class SqliteLogStore : ILogStore
 		KustoCode kql,
 		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
 	{
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageSqlite.StartActivity("storage.query.kql");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.query.kql");
+		activity?.SetTag("storage.kind", "logs");
 		activity?.SetTag("workspace", workspaceId.Value);
 
 		await using var db = Open(workspaceId);
@@ -142,7 +143,8 @@ public sealed class SqliteLogStore : ILogStore
 		// $system writes skip instrumentation: this method is what the span exporter calls
 		// when flushing Phase G output — tracing $system appends would recurse the export
 		// queue through itself.
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageSqlite.StartActivity("storage.append.batch");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.append.batch");
+		activity?.SetTag("storage.kind", "logs");
 		activity?.SetTag("workspace", workspaceId.Value);
 		activity?.SetTag("batch.size", batch.Count);
 
@@ -177,7 +179,8 @@ public sealed class SqliteLogStore : ILogStore
 		DateTimeOffset cutoff,
 		CancellationToken ct)
 	{
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageSqlite.StartActivity("storage.delete.older_than");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.delete.older_than");
+		activity?.SetTag("storage.kind", "logs");
 		activity?.SetTag("workspace", workspaceId.Value);
 		activity?.SetTag("cutoff", cutoff.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
 
@@ -193,7 +196,8 @@ public sealed class SqliteLogStore : ILogStore
 
 	public async ValueTask<long> DeleteKqlAsync(WorkspaceId workspaceId, KustoCode kql, CancellationToken ct)
 	{
-		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageSqlite.StartActivity("storage.delete.kql");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Storage.StartActivity("storage.delete.kql");
+		activity?.SetTag("storage.kind", "logs");
 		activity?.SetTag("workspace", workspaceId.Value);
 
 		await using var db = Open(workspaceId);
