@@ -1,52 +1,11 @@
-# Caddyfile fragment for YobaLog.
-#
-# This file is NOT consumed directly by Caddy — it's a reference fragment to
-# paste into the central host Caddyfile (managed out-of-repo, likely in an
-# infra-repo alongside fragments from yobapub, yobaconf, and other HTTPS-
-# exposed services). Keeping a copy here means whoever redeploys YobaLog
-# can see the full HTTPS surface in one place instead of SSH-ing to grep
-# /etc/caddy/Caddyfile.
-#
-# Host-side port convention (grows as services are added — keep this
-# comment block synchronised with the central Caddyfile and sibling
-# fragments in yobaconf and yobapub):
-#   127.0.0.1:8080  yobapub.3po.su       (existing, pre-Caddy era)
-#   127.0.0.1:8081  yobaconf.3po.su
-#   127.0.0.1:8082  yobalog.3po.su       (this service)
-#
-# Each service's CI (`.github/workflows/ci.yml` deploy job) pins its host
-# port via `-p 127.0.0.1:PORT:8080`. The port belongs to the project and
-# must not clash on the shared host.
-
 yobalog.3po.su {
 	reverse_proxy 127.0.0.1:8082 {
-		# SSE support: YobaLog's live-tail endpoint `/api/ws/{id}/tail`
-		# streams Server-Sent Events. Caddy buffers reverse-proxy response
-		# bodies by default (throughput optimisation) — that breaks SSE:
-		# the browser sees nothing until the buffer fills. `flush_interval
-		# -1` disables buffering so every flush from upstream hits the
-		# client immediately. Safe site-wide: fully-buffered responses
-		# flush once at end-of-response regardless.
 		flush_interval -1
 	}
 
-	# Caddy auto-provisions a Let's Encrypt cert on the first HTTPS request.
-	# Renewal is automatic (cron-less); cert files live under Caddy's data dir.
-	# Forward the real scheme to ASP.NET so UseHttpsRedirection + HSTS + cookie
-	# Secure-flag detection all see https. Caddy sets X-Forwarded-* automatically,
-	# but YobaLog must be configured to trust the loopback proxy
-	# (`ForwardedHeaders` middleware with KnownProxies = [127.0.0.1]) — see
-	# Phase A deploy bullet in doc/plan.md.
-
-	# Compression at the edge. YobaLog's ingestion endpoints often see CLEF
-	# NDJSON — gzip on the response path is cheap; request bodies clients may
-	# already be compressing (Serilog.Sinks.Seq supports gzip).
 	encode gzip zstd
 
 	log {
-		# Caddy access log as JSON — parseable by YobaLog itself eventually
-		# (via a tiny shipper or, post-Phase-F, through its own OTLP endpoint).
-		# Until then it rotates locally under /var/log/caddy/.
 		output file /var/log/caddy/yobalog.access.log {
 			roll_size 50mb
 			roll_keep 5
