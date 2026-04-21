@@ -169,7 +169,7 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             set -euo pipefail
-            IMAGE="ghcr.io/${{ github.repository }}/yobalog-web:${{ needs.publish.outputs.dockerTag }}"
+            IMAGE="ghcr.io/${{ github.repository }}:${{ needs.publish.outputs.dockerTag }}"
             CONTAINER_NAME="yobalog-web"
             # DEPLOY_USERNAME is in the `docker` group → no sudo for docker commands.
             # /opt/yobalog/data is pre-created during host bootstrap with chown 1654:1654
