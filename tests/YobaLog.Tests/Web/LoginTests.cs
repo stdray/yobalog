@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -52,6 +53,33 @@ public sealed class LoginTests : IAsyncLifetime
 		AllowAutoRedirect = false,
 	};
 
+	// Antiforgery is enforced on the Login POST now that the admin section has mutating forms.
+	// Tests that POST /Login need to GET it first to capture the token + cookie.
+	static async Task<(HttpClient Client, FormUrlEncodedContent Form)> PreparePostAsync(
+		WebApplicationFactory<Program> factory,
+		IReadOnlyDictionary<string, string> fields)
+	{
+		// WebApplicationFactory's TestServer uses an in-memory handler that already manages cookies
+		// via CookieContainer on the default client, and CreateClient's options let us disable
+		// redirects so the post-login 302 is observable.
+		var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+		{
+			AllowAutoRedirect = false,
+			HandleCookies = true,
+		});
+		using var getResp = await client.GetAsync("/Login");
+		var html = await getResp.Content.ReadAsStringAsync();
+		var tokenMatch = Regex.Match(html, @"name=""__RequestVerificationToken""\s+[^>]*value=""([^""]+)""");
+		if (!tokenMatch.Success)
+			throw new InvalidOperationException("could not find __RequestVerificationToken on /Login");
+
+		var body = new Dictionary<string, string>(fields)
+		{
+			["__RequestVerificationToken"] = tokenMatch.Groups[1].Value,
+		};
+		return (client, new FormUrlEncodedContent(body));
+	}
+
 	[Fact]
 	public async Task UnauthIndex_Redirects_ToLogin()
 	{
@@ -65,22 +93,107 @@ public sealed class LoginTests : IAsyncLifetime
 	[Fact]
 	public async Task WrongPassword_StaysOnLogin()
 	{
-		using var client = _factory.CreateClient();
-		using var resp = await client.PostAsync(
-			"/Login",
-			new FormUrlEncodedContent(new Dictionary<string, string>
-			{
-				["Username"] = "admin",
-				["Password"] = "wrong",
-			}));
-
-		resp.StatusCode.Should().Be(HttpStatusCode.OK);
-		var body = await resp.Content.ReadAsStringAsync();
-		body.Should().Contain("Invalid username or password");
+		var (client, form) = await PreparePostAsync(_factory, new Dictionary<string, string>
+		{
+			["Username"] = "admin",
+			["Password"] = "wrong",
+		});
+		using (client)
+		using (form)
+		{
+			using var resp = await client.PostAsync("/Login", form);
+			resp.StatusCode.Should().Be(HttpStatusCode.OK);
+			var body = await resp.Content.ReadAsStringAsync();
+			body.Should().Contain("Invalid username or password");
+		}
 	}
 
 	[Fact]
 	public async Task CorrectCredentials_SetsCookie_AndRedirects()
+	{
+		var (client, form) = await PreparePostAsync(_factory, new Dictionary<string, string>
+		{
+			["Username"] = "admin",
+			["Password"] = "s3cret",
+		});
+		using (client)
+		using (form)
+		{
+			using var resp = await client.PostAsync("/Login", form);
+			resp.StatusCode.Should().Be(HttpStatusCode.Redirect);
+			resp.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
+			cookies!.Should().Contain(c => c.Contains(".AspNetCore.Cookies", StringComparison.Ordinal));
+		}
+	}
+
+	[Fact]
+	public async Task HashedPassword_AllowsLogin()
+	{
+		var hash = AdminPasswordHasher.Hash("hashed-secret");
+		await using var hashFactory = new WebApplicationFactory<Program>()
+			.WithWebHostBuilder(b =>
+			{
+				b.UseEnvironment("Testing");
+				b.ConfigureAppConfiguration((_, cfg) =>
+				{
+					cfg.AddInMemoryCollection(new Dictionary<string, string?>
+					{
+						["SqliteLogStore:DataDirectory"] = _tempDir,
+						["Admin:Username"] = "admin",
+						["Admin:PasswordHash"] = hash,
+					});
+				});
+			});
+
+		var (client, form) = await PreparePostAsync(hashFactory, new Dictionary<string, string>
+		{
+			["Username"] = "admin",
+			["Password"] = "hashed-secret",
+		});
+		using (client)
+		using (form)
+		{
+			using var resp = await client.PostAsync("/Login", form);
+			resp.StatusCode.Should().Be(HttpStatusCode.Redirect);
+			resp.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
+			cookies!.Should().Contain(c => c.Contains(".AspNetCore.Cookies", StringComparison.Ordinal));
+		}
+	}
+
+	[Fact]
+	public async Task HashedPassword_WrongInput_Rejects()
+	{
+		var hash = AdminPasswordHasher.Hash("hashed-secret");
+		await using var hashFactory = new WebApplicationFactory<Program>()
+			.WithWebHostBuilder(b =>
+			{
+				b.UseEnvironment("Testing");
+				b.ConfigureAppConfiguration((_, cfg) =>
+				{
+					cfg.AddInMemoryCollection(new Dictionary<string, string?>
+					{
+						["SqliteLogStore:DataDirectory"] = _tempDir,
+						["Admin:Username"] = "admin",
+						["Admin:PasswordHash"] = hash,
+					});
+				});
+			});
+
+		var (client, form) = await PreparePostAsync(hashFactory, new Dictionary<string, string>
+		{
+			["Username"] = "admin",
+			["Password"] = "different",
+		});
+		using (client)
+		using (form)
+		{
+			using var resp = await client.PostAsync("/Login", form);
+			(await resp.Content.ReadAsStringAsync()).Should().Contain("Invalid username or password");
+		}
+	}
+
+	[Fact]
+	public async Task MissingAntiforgeryToken_IsRejected()
 	{
 		using var client = _factory.CreateClient(NoRedirect());
 		using var resp = await client.PostAsync(
@@ -91,76 +204,8 @@ public sealed class LoginTests : IAsyncLifetime
 				["Password"] = "s3cret",
 			}));
 
-		resp.StatusCode.Should().Be(HttpStatusCode.Redirect);
-		resp.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
-		cookies!.Should().Contain(c => c.Contains(".AspNetCore.Cookies", StringComparison.Ordinal));
-	}
-
-	[Fact]
-	public async Task HashedPassword_AllowsLogin()
-	{
-		var hash = AdminPasswordHasher.Hash("hashed-secret");
-		using var hashFactory = new WebApplicationFactory<Program>()
-			.WithWebHostBuilder(b =>
-			{
-				b.UseEnvironment("Testing");
-				b.ConfigureAppConfiguration((_, cfg) =>
-				{
-					cfg.AddInMemoryCollection(new Dictionary<string, string?>
-					{
-						["SqliteLogStore:DataDirectory"] = _tempDir,
-						["Admin:Username"] = "admin",
-						["Admin:PasswordHash"] = hash,
-					});
-				});
-			});
-
-		using var client = hashFactory.CreateClient(NoRedirect());
-		using var resp = await client.PostAsync(
-			"/Login",
-			new FormUrlEncodedContent(new Dictionary<string, string>
-			{
-				["Username"] = "admin",
-				["Password"] = "hashed-secret",
-			}));
-
-		resp.StatusCode.Should().Be(HttpStatusCode.Redirect);
-		resp.Headers.TryGetValues("Set-Cookie", out var cookies).Should().BeTrue();
-		cookies!.Should().Contain(c => c.Contains(".AspNetCore.Cookies", StringComparison.Ordinal));
-
-		await hashFactory.DisposeAsync();
-	}
-
-	[Fact]
-	public async Task HashedPassword_WrongInput_Rejects()
-	{
-		var hash = AdminPasswordHasher.Hash("hashed-secret");
-		using var hashFactory = new WebApplicationFactory<Program>()
-			.WithWebHostBuilder(b =>
-			{
-				b.UseEnvironment("Testing");
-				b.ConfigureAppConfiguration((_, cfg) =>
-				{
-					cfg.AddInMemoryCollection(new Dictionary<string, string?>
-					{
-						["SqliteLogStore:DataDirectory"] = _tempDir,
-						["Admin:Username"] = "admin",
-						["Admin:PasswordHash"] = hash,
-					});
-				});
-			});
-
-		using var client = hashFactory.CreateClient();
-		using var resp = await client.PostAsync(
-			"/Login",
-			new FormUrlEncodedContent(new Dictionary<string, string>
-			{
-				["Username"] = "admin",
-				["Password"] = "different",
-			}));
-
-		(await resp.Content.ReadAsStringAsync()).Should().Contain("Invalid username or password");
-		await hashFactory.DisposeAsync();
+		// ASP.NET Core returns 400 Bad Request when the antiforgery validation fails.
+		resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 	}
 
 	[Fact]

@@ -7,19 +7,21 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
+using YobaLog.Core.Admin;
 using YobaLog.Core.Auth;
 
 namespace YobaLog.Web.Pages;
 
 [AllowAnonymous]
-[IgnoreAntiforgeryToken]
 public sealed class LoginModel : PageModel
 {
 	readonly AdminAuthOptions _options;
+	readonly IUserStore _userStore;
 
-	public LoginModel(IOptions<AdminAuthOptions> options)
+	public LoginModel(IOptions<AdminAuthOptions> options, IUserStore userStore)
 	{
 		_options = options.Value;
+		_userStore = userStore;
 	}
 
 	[BindProperty] public string Username { get; set; } = "";
@@ -30,9 +32,9 @@ public sealed class LoginModel : PageModel
 
 	public void OnGet() { }
 
-	public async Task<IActionResult> OnPostAsync()
+	public async Task<IActionResult> OnPostAsync(CancellationToken ct)
 	{
-		if (!MatchesAdmin(Username, Password))
+		if (!await AuthenticateAsync(Username, Password, ct).ConfigureAwait(false))
 		{
 			Error = "Invalid username or password";
 			return Page();
@@ -50,7 +52,22 @@ public sealed class LoginModel : PageModel
 			: RedirectToPage("/Index");
 	}
 
-	bool MatchesAdmin(string username, string password)
+	// DB users take precedence when the store has any. Config-admin is a bootstrap/recovery
+	// path — works when the DB is empty so there's always a way in. Once the first DB user is
+	// created, the config credentials stop being honored (creator can delete themselves from
+	// the DB to revert to config if needed).
+	async Task<bool> AuthenticateAsync(string username, string password, CancellationToken ct)
+	{
+		if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+			return false;
+
+		var users = await _userStore.ListAsync(ct).ConfigureAwait(false);
+		return users.Count == 0
+			? MatchesConfigAdmin(username, password)
+			: await _userStore.VerifyAsync(username, password, ct).ConfigureAwait(false);
+	}
+
+	bool MatchesConfigAdmin(string username, string password)
 	{
 		if (!FixedTimeEquals(username, _options.Username))
 			return false;

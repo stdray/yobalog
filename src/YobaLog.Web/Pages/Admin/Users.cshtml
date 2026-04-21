@@ -1,0 +1,82 @@
+@page "/admin/users"
+@model YobaLog.Web.Pages.Admin.UsersModel
+@{
+	ViewData["Title"] = "Admin — Users";
+}
+
+<div class="flex flex-wrap gap-3 items-center mb-4">
+	<a asp-page="/Index" class="hover:opacity-100 opacity-60 text-sm">← workspaces</a>
+	<h1 class="font-semibold text-2xl">Admin — Users</h1>
+</div>
+
+@if (Model.FlashMessage is not null)
+{
+	<div class="alert alert-success mb-4 text-sm">@Model.FlashMessage</div>
+}
+@if (Model.ErrorMessage is not null)
+{
+	<div class="alert alert-error mb-4 text-sm">@Model.ErrorMessage</div>
+}
+
+<form method="post" asp-page-handler="create" class="flex flex-wrap gap-2 items-center mb-4">
+	<input type="text" name="username" required
+		placeholder="username"
+		data-testid="admin-user-name"
+		class="input input-bordered input-sm w-64" />
+	<input type="password" name="password" required
+		placeholder="password"
+		data-testid="admin-user-password"
+		class="input input-bordered input-sm w-64" />
+	<button type="submit" data-testid="admin-user-create" class="btn btn-primary btn-sm">Create user</button>
+	<span class="opacity-60 text-xs">Hashed via PBKDF2-HMAC-SHA256 (600k iter). Plaintext never stored.</span>
+</form>
+
+@if (Model.Users.Count == 0)
+{
+	<div class="alert text-sm" data-testid="admin-users-empty">
+		No DB users yet. Login uses the <code>Admin</code> config section as a fallback until the first user is created.
+	</div>
+}
+else
+{
+	<div class="bg-base-200 border border-base-300 overflow-x-auto rounded-box">
+		<table class="table table-sm">
+			<thead>
+				<tr>
+					<th>Username</th>
+					<th class="w-48">Created (UTC)</th>
+					<th>Change password</th>
+					<th class="w-32"></th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var u in Model.Users)
+				{
+					<tr data-testid="admin-user-row" data-user-name="@u.Username">
+						<td class="font-mono">@u.Username</td>
+						<td class="font-mono opacity-70 text-xs">
+							<time class="local-time" datetime="@EventRowViewModel.IsoUtc(u.CreatedAt)" title="UTC: @EventRowViewModel.IsoUtc(u.CreatedAt)">@EventRowViewModel.IsoUtc(u.CreatedAt)</time>
+						</td>
+						<td>
+							<form method="post" asp-page-handler="changePassword" class="flex gap-1 items-center">
+								<input type="hidden" name="username" value="@u.Username" />
+								<input type="password" name="newPassword" required
+									placeholder="new password"
+									data-testid="admin-user-newpass"
+									class="input input-bordered input-xs w-48" />
+								<button type="submit" data-testid="admin-user-rotate" class="btn btn-ghost btn-xs">Update</button>
+							</form>
+						</td>
+						<td>
+							<form method="post" asp-page-handler="delete">
+								<input type="hidden" name="username" value="@u.Username" />
+								<button type="submit" data-testid="admin-user-delete" class="btn btn-ghost btn-xs text-error"
+									onclick="return confirm('Delete user @u.Username? They will no longer be able to sign in.');">Delete</button>
+							</form>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}

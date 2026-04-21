@@ -25,7 +25,7 @@ public sealed class ShareLinkTests
 			Event(LogLevel.Error, "share-tsv-visible"),
 			Event(LogLevel.Information, "share-tsv-other"));
 
-		using var http = await AuthenticatedClientAsync();
+		using var http = await HttpAuthHelper.AuthenticatedClientAsync(_app);
 		using var createResp = await http.PostAsJsonAsync($"/api/ws/{ws}/share", new
 		{
 			Kql = "events",
@@ -71,19 +71,6 @@ public sealed class ShareLinkTests
 		// Lazy-delete side effect: a second GET should 404.
 		using var resp2 = await anon.GetAsync($"/share/{wsSlug}/{link.Id}.tsv");
 		resp2.StatusCode.Should().Be(HttpStatusCode.NotFound);
-	}
-
-	async Task<HttpClient> AuthenticatedClientAsync()
-	{
-		var handler = new HttpClientHandler { UseCookies = true };
-		var http = new HttpClient(handler) { BaseAddress = new Uri(_app.BaseUrl) };
-		using var resp = await http.PostAsync("/Login", new FormUrlEncodedContent(new Dictionary<string, string>
-		{
-			["Username"] = WebAppFixture.AdminUsername,
-			["Password"] = WebAppFixture.AdminPassword,
-		}));
-		resp.IsSuccessStatusCode.Should().BeTrue();
-		return http;
 	}
 
 	sealed record ShareResponse(string Url, DateTimeOffset ExpiresAt);

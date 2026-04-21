@@ -11,8 +11,17 @@ static class SqliteAdminSchema
 		);
 		""";
 
+	public const string CreateUsers = """
+		CREATE TABLE IF NOT EXISTS Users (
+			Username     TEXT PRIMARY KEY,
+			PasswordHash TEXT NOT NULL,
+			CreatedAtMs  INTEGER NOT NULL
+		);
+		""";
+
 	public static readonly IReadOnlyList<string> AllStatements =
 	[
 		CreateWorkspaces,
+		CreateUsers,
 	];
 }

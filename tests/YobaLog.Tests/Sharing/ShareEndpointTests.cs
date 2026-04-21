@@ -66,12 +66,21 @@ public sealed class ShareEndpointTests : IAsyncLifetime
 			AllowAutoRedirect = false,
 			HandleCookies = true,
 		});
+		// Antiforgery is enforced on /Login — GET first, parse the form token, then POST with it.
+		using var form = await client.GetAsync("/Login");
+		var html = await form.Content.ReadAsStringAsync();
+		var tokenMatch = System.Text.RegularExpressions.Regex.Match(
+			html, @"name=""__RequestVerificationToken""\s+[^>]*value=""([^""]+)""");
+		if (!tokenMatch.Success)
+			throw new InvalidOperationException("could not find __RequestVerificationToken on /Login");
+
 		using var login = await client.PostAsync(
 			"/Login",
 			new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["Username"] = "admin",
 				["Password"] = "pw",
+				["__RequestVerificationToken"] = tokenMatch.Groups[1].Value,
 			}));
 		login.StatusCode.Should().Be(HttpStatusCode.Redirect);
 		return client;

@@ -23,15 +23,8 @@ public sealed class LiveTailTests
 		var ws = WorkspaceId.Parse("demo");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
-		// Tail endpoint is authenticated — acquire cookie first via /Login.
-		using var handler = new HttpClientHandler { UseCookies = true };
-		using var http = new HttpClient(handler) { BaseAddress = new Uri(_app.BaseUrl) };
-		using var loginResp = await http.PostAsync("/Login", new FormUrlEncodedContent(new Dictionary<string, string>
-		{
-			["Username"] = WebAppFixture.AdminUsername,
-			["Password"] = WebAppFixture.AdminPassword,
-		}), cts.Token);
-		loginResp.IsSuccessStatusCode.Should().BeTrue();
+		// Tail endpoint is authenticated — HttpAuthHelper handles the antiforgery-token dance.
+		using var http = await HttpAuthHelper.AuthenticatedClientAsync(_app);
 		http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
 		using var req = new HttpRequestMessage(HttpMethod.Get, $"/api/ws/{ws.Value}/tail?kql=events");

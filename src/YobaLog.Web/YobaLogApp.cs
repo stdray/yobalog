@@ -43,6 +43,7 @@ public static class YobaLogApp
 		builder.Services.AddSingleton<IFieldMaskingPolicyStore, SqliteFieldMaskingPolicyStore>();
 		builder.Services.AddSingleton<IShareLinkStore, SqliteShareLinkStore>();
 		builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
+		builder.Services.AddSingleton<IUserStore, SqliteUserStore>();
 
 		// Two-tier api-key stack: ConfigApiKeyStore (appsettings, admin backdoor — no UI)
 		// and SqliteApiKeyStore (per-workspace `.meta.db`, managed via /ws/{id}/admin/api-keys).
