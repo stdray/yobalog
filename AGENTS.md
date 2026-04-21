@@ -21,6 +21,7 @@ The design is split across three files; keep them that way:
 - **`doc/spec.md`** — the specification. §1–§9 cover backend, integrations, query engine, UI, frontend build, storage layout, query-layer invariants, self-observability, and localization. §10 is the `ILogStore` contract. No progress, no checkboxes, no task tracking.
 - **`doc/plan.md`** — phases A–E, dual-executor test strategy, pre-Phase-A test coverage, and open questions. This is where checkboxes and progress live.
 - **`doc/decision-log.md`** — every architectural decision with date / decision / reason / what was rolled back. **Newest entries go on top.** When you make or propose an architectural change, add an entry here; don't bury the reasoning in a commit message.
+- **`doc/tech-debt.md`** — живой реестр техдолга. Полные аудиты оформляются секциями `## Аудит N — YYYY-MM-DD`, закрытые пункты зачёркиваются с ссылкой на commit. Новые долги, замеченные при работе — дописываются в соответствующую секцию сразу, не копятся в голове.
 
 When editing: spec changes go to `spec.md`, progress updates to `plan.md`, and any decision that changes direction gets a new `decision-log.md` entry.
 
