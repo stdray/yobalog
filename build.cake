@@ -142,16 +142,22 @@ Task("Docker")
 	DockerBuild(buildSettings, ".");
 });
 
-// Smoke-test the chiseled runtime: launch container, wait for HTTP 200 on /Login (unauth root
-// redirects there, chiseled has no shell for docker-exec debugging so failures only surface at
-// runtime). 30s total timeout. yobalog differs from yobaconf in that `/` requires auth → the
-// smoke endpoint is /Login which is anonymous.
+// Smoke-test the chiseled runtime: launch container, wait for HTTP 200 on /health + /version
+// under both GET and HEAD. Chiseled has no shell for docker-exec debugging so failures only
+// surface at runtime. 30s total boot window, then explicit verb-coverage probes.
+//
+// Why HEAD too: MapGet registers GET-only → HEAD misses the endpoint → UseAuthorization falls
+// through to the fallback policy (RequireAuthenticatedUser) → cookie challenge → 302 /Login.
+// That's exactly what bit the first prod deploy (tech-debt §5a). GET-only smoke never caught
+// it because `curl` without `-I` is GET. Now HEAD is asserted too — future regressions fail
+// in CI before they ship.
 Task("DockerSmoke")
 	.IsDependentOn("Docker")
 	.Does(() =>
 {
 	var imageWithTag = $"{dockerImage}:{computedDockerTag}";
 	var containerName = $"yobalog-smoke-{Guid.NewGuid():N}".Substring(0, 30);
+	var devNull = IsRunningOnWindows() ? "NUL" : "/dev/null";
 
 	Information("Starting smoke-test container {0}", containerName);
 	var runExit = StartProcess("docker", new ProcessSettings
@@ -163,6 +169,8 @@ Task("DockerSmoke")
 
 	try
 	{
+		// Phase 1: wait up to 30s for the container to start responding to GET /health.
+		// `-f` fails on 4xx/5xx; network errors during boot drive the retry loop.
 		var healthy = false;
 		for (var i = 1; i <= 30; i++)
 		{
@@ -172,17 +180,13 @@ Task("DockerSmoke")
 				// 127.0.0.1 not localhost — Docker Desktop's port forwarding on Windows binds IPv4
 				// only, curl resolving localhost → ::1 times out on every probe and blows the 30s
 				// budget. `-f` drops on any 4xx/5xx; `-s` silent; skip `-L` (no redirect to follow
-				// on /Login — it's anonymous + 200 when unauthenticated). `--max-time 2` bounds
-				// each probe so a mid-boot hang doesn't eat the whole loop. `-o NUL` on Windows;
-				// Cake's RedirectStandardOutput uses ProcessStartInfo under the hood and Windows
-				// `curl.exe` doesn't know `/dev/null`.
-				Arguments = IsRunningOnWindows()
-					? "-fsS --max-time 2 -o NUL http://127.0.0.1:8080/health"
-					: "-fsS --max-time 2 -o /dev/null http://127.0.0.1:8080/health",
+				// on /health — it's anonymous + 200). `--max-time 2` bounds each probe so a
+				// mid-boot hang doesn't eat the whole loop.
+				Arguments = $"-fsS --max-time 2 -o {devNull} http://127.0.0.1:8080/health",
 			});
 			if (curlExit == 0)
 			{
-				Information("Smoke test passed after {0}s", i);
+				Information("Container responded to GET /health after {0}s", i);
 				healthy = true;
 				break;
 			}
@@ -191,7 +195,31 @@ Task("DockerSmoke")
 		if (!healthy)
 		{
 			StartProcess("docker", $"logs {containerName}");
-			throw new CakeException("Container did not respond with 200 on /Login within 30s");
+			throw new CakeException("Container did not respond with 200 on GET /health within 30s");
+		}
+
+		// Phase 2: verb coverage. Each anonymous endpoint must return exactly 200 on both
+		// GET and HEAD. `-f` catches 4xx/5xx but not 3xx (redirects), so we explicitly read
+		// the status code via `-w` and compare. A 302 on HEAD means the route didn't match
+		// and fallback authz kicked in — the regression we're guarding against.
+		foreach (var verb in new[] { "GET", "HEAD" })
+		foreach (var path in new[] { "/health", "/version" })
+		{
+			var stdoutLines = new List<string>();
+			var proc = StartAndReturnProcess("curl", new ProcessSettings
+			{
+				Arguments = $"-sS --max-time 2 -X {verb} -o {devNull} -w %{{http_code}} http://127.0.0.1:8080{path}",
+				RedirectStandardOutput = true,
+			});
+			proc.WaitForExit();
+			stdoutLines.AddRange(proc.GetStandardOutput());
+			var status = string.Concat(stdoutLines).Trim();
+			if (status != "200")
+			{
+				StartProcess("docker", $"logs {containerName}");
+				throw new CakeException($"Verb-coverage probe failed: {verb} {path} returned HTTP {status} (expected 200)");
+			}
+			Information("Verb-coverage OK: {0} {1} → 200", verb, path);
 		}
 	}
 	finally
