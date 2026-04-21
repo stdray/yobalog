@@ -88,6 +88,20 @@ Task("E2ETest")
 	.IsDependentOn("Build")
 	.Does(() =>
 {
+	// Auto-install Playwright browsers. Fast-path on re-runs (already cached in
+	// ~/.cache/ms-playwright). `--with-deps` pulls system libs on Linux; no-op on
+	// Windows/macOS where those come from the Playwright download itself.
+	var installer = GetFiles("tests/YobaLog.E2ETests/bin/**/playwright.ps1").FirstOrDefault();
+	if (installer is null)
+		throw new CakeException("playwright.ps1 not found — Build target did not produce it");
+	var withDeps = IsRunningOnUnix() ? "--with-deps" : "";
+	var installExit = StartProcess("pwsh", new ProcessSettings
+	{
+		Arguments = $"{installer.FullPath} install chromium {withDeps}".Trim(),
+	});
+	if (installExit != 0)
+		throw new CakeException($"playwright install failed with exit code {installExit}");
+
 	DotNetTest(e2eTestProject, new DotNetTestSettings
 	{
 		Configuration = configuration,
@@ -189,6 +203,7 @@ Task("DockerSmoke")
 
 Task("DockerPush")
 	.IsDependentOn("DockerSmoke")
+	.IsDependentOn("E2ETest")
 	.WithCriteria(() => dockerPushEnabled)
 	.Does(() =>
 {
