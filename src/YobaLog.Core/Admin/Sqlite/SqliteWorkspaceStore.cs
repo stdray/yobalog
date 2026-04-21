@@ -3,6 +3,8 @@ using LinqToDB.Data;
 using LinqToDB.DataProvider.SQLite;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.Auth;
+using YobaLog.Core.SavedQueries;
+using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 
@@ -13,12 +15,24 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 	readonly SqliteLogStoreOptions _options;
 	readonly ILogStore _logStore;
 	readonly IApiKeyAdmin _apiKeyAdmin;
+	readonly ISavedQueryStore _savedQueries;
+	readonly IFieldMaskingPolicyStore _maskingPolicies;
+	readonly IShareLinkStore _shareLinks;
 
-	public SqliteWorkspaceStore(IOptions<SqliteLogStoreOptions> options, ILogStore logStore, IApiKeyAdmin apiKeyAdmin)
+	public SqliteWorkspaceStore(
+		IOptions<SqliteLogStoreOptions> options,
+		ILogStore logStore,
+		IApiKeyAdmin apiKeyAdmin,
+		ISavedQueryStore savedQueries,
+		IFieldMaskingPolicyStore maskingPolicies,
+		IShareLinkStore shareLinks)
 	{
 		_options = options.Value;
 		_logStore = logStore;
 		_apiKeyAdmin = apiKeyAdmin;
+		_savedQueries = savedQueries;
+		_maskingPolicies = maskingPolicies;
+		_shareLinks = shareLinks;
 	}
 
 	string AdminDbPath => Path.Combine(_options.DataDirectory, $"{WorkspaceId.System.Value}.meta.db");
@@ -67,6 +81,13 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 		}
 
 		await _logStore.CreateWorkspaceAsync(id, new WorkspaceSchema(), ct).ConfigureAwait(false);
+		// All meta tables live in `<ws>.meta.db` — init all four stores so the first UI navigation
+		// to the new workspace doesn't explode on a missing SavedQueries / Sharing / Masking table.
+		// Mirrors WorkspaceBootstrapper.InitMetaAsync; the overlap is intentional since the
+		// bootstrapper handles $system + restart-idempotency, and CreateAsync handles runtime creates.
+		await _savedQueries.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
+		await _maskingPolicies.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
+		await _shareLinks.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
 		await _apiKeyAdmin.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
 		return new WorkspaceInfo(id, now);
 	}
