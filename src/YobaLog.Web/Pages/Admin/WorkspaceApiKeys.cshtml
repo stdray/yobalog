@@ -20,6 +20,7 @@
 		<div class="join max-w-xl w-full">
 			<input type="text" readonly
 				value="@Model.RevealedToken"
+				data-testid="api-key-revealed"
 				class="font-mono input input-bordered input-sm join-item text-xs w-full" />
 			<button type="button" class="btn btn-sm join-item"
 				data-copy="@Model.RevealedToken">Copy</button>
@@ -39,8 +40,9 @@ else if (Model.FlashMessage is not null)
 	class="flex flex-wrap gap-2 items-center mb-4">
 	<input type="text" name="title" maxlength="80"
 		placeholder="title (optional, e.g. 'prod-api')"
+		data-testid="api-key-title"
 		class="input input-bordered input-sm w-72" />
-	<button type="submit" class="btn btn-primary btn-sm">Create key</button>
+	<button type="submit" data-testid="api-key-create" class="btn btn-primary btn-sm">Create key</button>
 	<span class="opacity-60 text-xs">Plaintext shown once, after that only sha256 + 6-char prefix is kept.</span>
 </form>
 
@@ -63,7 +65,7 @@ else
 			<tbody>
 				@foreach (var k in Model.Keys)
 				{
-					<tr>
+					<tr data-testid="api-key-row" data-key-prefix="@k.Prefix">
 						<td class="font-mono">@k.Prefix<span class="opacity-40">…</span></td>
 						<td>@(k.Title ?? "")</td>
 						<td class="font-mono opacity-70 text-xs">
@@ -72,7 +74,7 @@ else
 						<td>
 							<form method="post" asp-page-handler="delete" asp-route-id="@Model.Workspace.Value">
 								<input type="hidden" name="keyId" value="@k.Id" />
-								<button type="submit" class="btn btn-ghost btn-xs text-error"
+								<button type="submit" data-testid="api-key-delete" class="btn btn-ghost btn-xs text-error"
 									onclick="return confirm('Delete key @k.Prefix… ? Clients using it will stop being able to ingest.');">Delete</button>
 							</form>
 						</td>

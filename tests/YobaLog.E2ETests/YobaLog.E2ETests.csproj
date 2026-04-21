@@ -15,6 +15,14 @@
 		<AssemblyMetadata Include="YobaLogWebProjectDir" Value="$(MSBuildThisFileDirectory)..\..\src\YobaLog.Web" />
 	</ItemGroup>
 
+	<!-- Local htmx + sse-ext copies served via Playwright route.FulfillAsync in place of unpkg.com.
+	     Downloaded from the same versions the production Layout pins — update both if the _Layout
+	     script tags bump. -->
+	<ItemGroup>
+		<Content Include="Fixtures\htmx\htmx.min.js" CopyToOutputDirectory="PreserveNewest" />
+		<Content Include="Fixtures\htmx\htmx-ext-sse.js" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<PackageReference Include="coverlet.collector" />
 		<PackageReference Include="Microsoft.NET.Test.Sdk" />
