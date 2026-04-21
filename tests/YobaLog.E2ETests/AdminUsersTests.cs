@@ -11,10 +11,15 @@ namespace YobaLog.E2ETests;
 public sealed class AdminUsersTests : IAsyncLifetime
 {
 	readonly WebAppFixture _app;
+	readonly ITestOutputHelper _output;
 	IBrowserContext? _ctx;
 	IPage? _page;
 
-	public AdminUsersTests(WebAppFixture app) => _app = app;
+	public AdminUsersTests(WebAppFixture app, ITestOutputHelper output)
+	{
+		_app = app;
+		_output = output;
+	}
 
 	public async Task InitializeAsync()
 	{
@@ -31,7 +36,11 @@ public sealed class AdminUsersTests : IAsyncLifetime
 		foreach (var u in users)
 			await store.DeleteAsync(u.Username, CancellationToken.None);
 
-		if (_ctx is not null) await _ctx.CloseAsync();
+		if (_ctx is not null)
+		{
+			await TraceArtifact.StopAndSaveAsync(_ctx, _output);
+			await _ctx.CloseAsync();
+		}
 	}
 
 	[Fact]

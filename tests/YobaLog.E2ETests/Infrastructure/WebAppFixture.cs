@@ -44,7 +44,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
 		// One-time login → persist cookies to disk for reuse by every test context.
 		_storageStatePath = Path.Combine(Path.GetTempPath(), "yobalog-ui-state-" + Guid.NewGuid().ToString("N")[..8] + ".json");
-		await using var seedCtx = await NewContextAsync(authenticated: false);
+		await using var seedCtx = await NewContextAsync(authenticated: false, trace: false);
 		var seedPage = await seedCtx.NewPageAsync();
 		await seedPage.GotoAsync("/Login");
 		await seedPage.GetByTestId("login-username").FillAsync(AdminUsername);
@@ -54,7 +54,12 @@ public sealed class WebAppFixture : IAsyncLifetime
 		await seedCtx.StorageStateAsync(new BrowserContextStorageStateOptions { Path = _storageStatePath });
 	}
 
-	public async Task<IBrowserContext> NewContextAsync(bool authenticated = true)
+	public Task<IBrowserContext> NewContextAsync(bool authenticated = true) =>
+		NewContextAsync(authenticated, trace: true);
+
+	// `trace: false` skips tracing startup — used by the fixture's own seed-login context, which
+	// closes before any test class can consume the trace (would just be discarded work).
+	public async Task<IBrowserContext> NewContextAsync(bool authenticated, bool trace)
 	{
 		var ctx = await Browser.NewContextAsync(new BrowserNewContextOptions
 		{
@@ -68,6 +73,8 @@ public sealed class WebAppFixture : IAsyncLifetime
 		// the same versions the Layout references. Bump both files if the Layout bumps.
 		await ctx.RouteAsync("**/unpkg.com/htmx.org**", route => FulfillJs(route, HtmxJsPath));
 		await ctx.RouteAsync("**/unpkg.com/htmx-ext-sse**", route => FulfillJs(route, HtmxSseJsPath));
+		if (trace)
+			await TraceArtifact.StartAsync(ctx);
 		return ctx;
 	}
 

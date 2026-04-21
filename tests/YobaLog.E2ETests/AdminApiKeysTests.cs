@@ -7,10 +7,15 @@ namespace YobaLog.E2ETests;
 public sealed class AdminApiKeysTests : IAsyncLifetime
 {
 	readonly WebAppFixture _app;
+	readonly ITestOutputHelper _output;
 	IBrowserContext? _ctx;
 	IPage? _page;
 
-	public AdminApiKeysTests(WebAppFixture app) => _app = app;
+	public AdminApiKeysTests(WebAppFixture app, ITestOutputHelper output)
+	{
+		_app = app;
+		_output = output;
+	}
 
 	public async Task InitializeAsync()
 	{
@@ -20,7 +25,11 @@ public sealed class AdminApiKeysTests : IAsyncLifetime
 
 	public async Task DisposeAsync()
 	{
-		if (_ctx is not null) await _ctx.CloseAsync();
+		if (_ctx is not null)
+		{
+			await TraceArtifact.StopAndSaveAsync(_ctx, _output);
+			await _ctx.CloseAsync();
+		}
 	}
 
 	[Fact]

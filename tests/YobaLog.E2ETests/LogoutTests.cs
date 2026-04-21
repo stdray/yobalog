@@ -4,10 +4,15 @@ namespace YobaLog.E2ETests;
 public sealed class LogoutTests : IAsyncLifetime
 {
 	readonly WebAppFixture _app;
+	readonly ITestOutputHelper _output;
 	IBrowserContext? _ctx;
 	IPage? _page;
 
-	public LogoutTests(WebAppFixture app) => _app = app;
+	public LogoutTests(WebAppFixture app, ITestOutputHelper output)
+	{
+		_app = app;
+		_output = output;
+	}
 
 	public async Task InitializeAsync()
 	{
@@ -17,7 +22,11 @@ public sealed class LogoutTests : IAsyncLifetime
 
 	public async Task DisposeAsync()
 	{
-		if (_ctx is not null) await _ctx.CloseAsync();
+		if (_ctx is not null)
+		{
+			await TraceArtifact.StopAndSaveAsync(_ctx, _output);
+			await _ctx.CloseAsync();
+		}
 	}
 
 	[Fact]

@@ -14,6 +14,7 @@ namespace YobaLog.E2ETests;
 public sealed class AdminRetentionTests : IAsyncLifetime
 {
 	readonly WebAppFixture _app;
+	readonly ITestOutputHelper _output;
 	IBrowserContext? _ctx;
 	IPage? _page;
 
@@ -22,7 +23,11 @@ public sealed class AdminRetentionTests : IAsyncLifetime
 	WorkspaceId _ws;
 	const string SavedName = "retention-target";
 
-	public AdminRetentionTests(WebAppFixture app) => _app = app;
+	public AdminRetentionTests(WebAppFixture app, ITestOutputHelper output)
+	{
+		_app = app;
+		_output = output;
+	}
 
 	public async Task InitializeAsync()
 	{
@@ -45,7 +50,11 @@ public sealed class AdminRetentionTests : IAsyncLifetime
 			await store.DeleteAsync(_ws, p.SavedQuery, CancellationToken.None);
 		// Drop the workspace so /admin/workspaces listing + dropdown stay clean for the next test.
 		await _app.Services.GetRequiredService<IWorkspaceStore>().DeleteAsync(_ws, CancellationToken.None);
-		if (_ctx is not null) await _ctx.CloseAsync();
+		if (_ctx is not null)
+		{
+			await TraceArtifact.StopAndSaveAsync(_ctx, _output);
+			await _ctx.CloseAsync();
+		}
 	}
 
 	[Fact]

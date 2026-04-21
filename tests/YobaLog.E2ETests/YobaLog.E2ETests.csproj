@@ -36,6 +36,7 @@
 
 	<ItemGroup>
 		<Using Include="Xunit" />
+		<Using Include="Xunit.Abstractions" />
 		<Using Include="FluentAssertions" />
 		<Using Include="YobaLog.Core" />
 		<Using Include="Microsoft.Playwright" />
