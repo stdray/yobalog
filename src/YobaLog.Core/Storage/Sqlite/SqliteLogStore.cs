@@ -15,7 +15,6 @@ namespace YobaLog.Core.Storage.Sqlite;
 public sealed class SqliteLogStore : ILogStore
 {
 	readonly SqliteLogStoreOptions _options;
-	readonly KqlTransformer _kql = new();
 	readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
 
 	public SqliteLogStore(IOptions<SqliteLogStoreOptions> options)
@@ -30,7 +29,7 @@ public sealed class SqliteLogStore : ILogStore
 	{
 		await using var db = Open(workspaceId);
 		var source = db.GetTable<EventRecord>().AsQueryable();
-		var translated = _kql.Apply(source, kql);
+		var translated = KqlTransformer.Apply(source, kql);
 
 		await foreach (var r in translated.AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
 			yield return ToLogEvent(r);
@@ -74,7 +73,7 @@ public sealed class SqliteLogStore : ILogStore
 	{
 		await using var db = Open(workspaceId);
 		var source = db.GetTable<EventRecord>().AsQueryable();
-		var result = _kql.Execute(source, kql);
+		var result = KqlTransformer.Execute(source, kql);
 		var rows = new List<object?[]>();
 		await foreach (var row in result.Rows.WithCancellation(ct).ConfigureAwait(false))
 		{
@@ -179,7 +178,7 @@ public sealed class SqliteLogStore : ILogStore
 	{
 		await using var db = Open(workspaceId);
 		var source = db.GetTable<EventRecord>();
-		var filtered = _kql.Apply(source.AsQueryable(), kql);
+		var filtered = KqlTransformer.Apply(source.AsQueryable(), kql);
 		return await filtered.DeleteAsync(ct).ConfigureAwait(false);
 	}
 

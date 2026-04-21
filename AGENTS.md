@@ -10,10 +10,6 @@ Guidance for coding agents working in this repository.
 - **CI:** `test` and `e2e` jobs run in parallel on every push/PR; both must pass before `publish` (Docker build + smoke + push to ghcr.io) runs on main pushes and the `deploy` tag. `e2e` uploads `tests/YobaLog.E2ETests/bin/**/artifacts/*.zip` on failure so Playwright traces are inspectable without re-running locally.
 - **Deploy:** **manual tag `deploy` only**. `git tag deploy && git push origin deploy --force` (force needed because the tag gets re-used). Main-push publishes the image but does NOT SSH-deploy — prevents accidental prod updates on every merge. Deploy job needs secrets `DEPLOY_HOST`, `DEPLOY_USERNAME`, `DEPLOY_PASSWORD`, `GHCR_DEPLOY_USERNAME`, `GHCR_DEPLOY_TOKEN`, `YOBALOG_ADMIN_USERNAME`, `YOBALOG_ADMIN_PASSWORD`.
 
-## Status: pre-code, spec-stage
-
-There is no code yet — only design docs under `doc/`. No `.csproj`, no `package.json`, no build/test/lint commands. The first implementation step is the Phase A skeleton described in `doc/plan.md`.
-
 ## Documents — what goes where
 
 The design is split across three files; keep them that way:
@@ -25,12 +21,12 @@ The design is split across three files; keep them that way:
 
 When editing: spec changes go to `spec.md`, progress updates to `plan.md`, and any decision that changes direction gets a new `decision-log.md` entry.
 
-## Target stack (planned, not yet scaffolded)
+## Target stack
 
-- .NET 10 monolith, Razor Pages SSR + htmx (+ jQuery, optional Alpine.js).
+- .NET 10 monolith, Razor Pages SSR + htmx, vanilla TypeScript.
 - SQLite + FTS5 via `linq2db` as the first `ILogStore` backend. DuckDB later (blocked on linq2db#5451).
 - KQL as the query language: parser = `Microsoft.Azure.Kusto.Language`, in-memory reference executor = `kusto-loco` (`KustoQueryContext`). No custom parser, no custom AST.
-- Frontend build: TypeScript + Tailwind via `bun` (not npm+node). `package.json` lives next to `.csproj`; Release builds invoke `bun run build` from an MSBuild target.
+- Frontend build: TypeScript + Tailwind + DaisyUI via `bun` (not npm+node). `package.json` lives next to `.csproj`; Release builds invoke `bun run build` from an MSBuild target.
 
 ## Hard invariants (easy to violate — read before coding)
 

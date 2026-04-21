@@ -6,8 +6,6 @@ namespace YobaLog.Tests.Kql;
 
 public sealed class KqlResultTests
 {
-	readonly KqlTransformer _transformer = new();
-
 	static readonly EventRecord[] Rows =
 	[
 		new() { Id = 1, TimestampMs = 100, Level = (int)LogLevel.Information, Message = "hello", TraceId = "t1" },
@@ -28,7 +26,7 @@ public sealed class KqlResultTests
 	public async Task Execute_Where_ReturnsFilteredRowsAsObjectArray()
 	{
 		var ast = KustoCode.Parse("events | where Level == 4");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		var rows = new List<object?[]>();
 		await foreach (var r in result.Rows)
@@ -43,7 +41,7 @@ public sealed class KqlResultTests
 	public async Task Execute_TimestampColumn_IsDateTimeOffset()
 	{
 		var ast = KustoCode.Parse("events | where Id == 1");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		await foreach (var r in result.Rows)
 		{
@@ -56,7 +54,7 @@ public sealed class KqlResultTests
 	public void Execute_Unsupported_ThrowsEagerly()
 	{
 		var ast = KustoCode.Parse("events | distinct Level");
-		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		var act = () => KqlTransformer.Execute(Rows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>();
 	}
 
@@ -64,7 +62,7 @@ public sealed class KqlResultTests
 	public async Task Project_NarrowsColumns()
 	{
 		var ast = KustoCode.Parse("events | project Id, Message");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("Id", "Message");
 		result.Columns.Should().HaveCount(2);
@@ -84,7 +82,7 @@ public sealed class KqlResultTests
 	public async Task Project_AliasRenamesColumn()
 	{
 		var ast = KustoCode.Parse("events | project EventId = Id, Text = Message");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("EventId", "Text");
 
@@ -98,7 +96,7 @@ public sealed class KqlResultTests
 	public async Task Where_Then_Project_FilterFirstInSql()
 	{
 		var ast = KustoCode.Parse("events | where Level == 4 | project Id, Message");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("Id", "Message");
 		var rows = new List<object?[]>();
@@ -111,7 +109,7 @@ public sealed class KqlResultTests
 	public void Project_UnknownColumn_Throws()
 	{
 		var ast = KustoCode.Parse("events | project Bogus");
-		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		var act = () => KqlTransformer.Execute(Rows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Bogus*");
 	}
 
@@ -119,7 +117,7 @@ public sealed class KqlResultTests
 	public void Project_ComputedExpression_ThrowsUnsupported()
 	{
 		var ast = KustoCode.Parse("events | project Doubled = Id + Id");
-		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		var act = () => KqlTransformer.Execute(Rows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>();
 	}
 
@@ -127,7 +125,7 @@ public sealed class KqlResultTests
 	public async Task Count_ReturnsScalar()
 	{
 		var ast = KustoCode.Parse("events | count");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		result.Columns.Should().HaveCount(1);
 		result.Columns[0].Name.Should().Be("Count");
@@ -143,7 +141,7 @@ public sealed class KqlResultTests
 	public async Task Where_Then_Count_FiltersFirst()
 	{
 		var ast = KustoCode.Parse("events | where Level == 4 | count");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		var rows = new List<object?[]>();
 		await foreach (var r in result.Rows) rows.Add(r);
@@ -163,7 +161,7 @@ public sealed class KqlResultTests
 	public async Task Summarize_CountByColumn_GroupsCorrectly()
 	{
 		var ast = KustoCode.Parse("events | summarize count() by Level");
-		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(SummarizeRows.AsQueryable(), ast);
 
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("Level", "count_");
 
@@ -183,7 +181,7 @@ public sealed class KqlResultTests
 	public async Task Summarize_CountWithAlias_UsesGivenName()
 	{
 		var ast = KustoCode.Parse("events | summarize n = count() by Level");
-		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(SummarizeRows.AsQueryable(), ast);
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("Level", "n");
 
 		var rows = new List<object?[]>();
@@ -195,7 +193,7 @@ public sealed class KqlResultTests
 	public async Task Summarize_CountByMultipleColumns()
 	{
 		var ast = KustoCode.Parse("events | summarize count() by Level, TraceId");
-		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(SummarizeRows.AsQueryable(), ast);
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("Level", "TraceId", "count_");
 
 		var rows = new List<(int Level, string? TraceId, long Count)>();
@@ -212,7 +210,7 @@ public sealed class KqlResultTests
 	public async Task Summarize_CountWithoutBy_SingleRow()
 	{
 		var ast = KustoCode.Parse("events | summarize count()");
-		var result = _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(SummarizeRows.AsQueryable(), ast);
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("count_");
 
 		var rows = new List<object?[]>();
@@ -225,7 +223,7 @@ public sealed class KqlResultTests
 	public void Summarize_UnsupportedAggregate_Throws()
 	{
 		var ast = KustoCode.Parse("events | summarize avg(Level)");
-		var act = () => _transformer.Execute(SummarizeRows.AsQueryable(), ast);
+		var act = () => KqlTransformer.Execute(SummarizeRows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*avg*");
 	}
 
@@ -233,7 +231,7 @@ public sealed class KqlResultTests
 	public async Task Extend_AppendsAliasColumn()
 	{
 		var ast = KustoCode.Parse("events | extend Copy = Level");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		result.Columns.Should().HaveCount(KqlTransformer.EventRecordColumns.Count + 1);
 		result.Columns[^1].Name.Should().Be("Copy");
@@ -249,7 +247,7 @@ public sealed class KqlResultTests
 	public async Task Extend_Then_Project_Works()
 	{
 		var ast = KustoCode.Parse("events | extend Copy = Level | project Id, Copy");
-		var result = _transformer.Execute(Rows.AsQueryable(), ast);
+		var result = KqlTransformer.Execute(Rows.AsQueryable(), ast);
 
 		result.Columns.Select(c => c.Name).Should().ContainInOrder("Id", "Copy");
 		var rows = new List<object?[]>();
@@ -261,7 +259,7 @@ public sealed class KqlResultTests
 	public void Extend_UnknownColumn_Throws()
 	{
 		var ast = KustoCode.Parse("events | extend X = Nope");
-		var act = () => _transformer.Execute(Rows.AsQueryable(), ast);
+		var act = () => KqlTransformer.Execute(Rows.AsQueryable(), ast);
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Nope*");
 	}
 }

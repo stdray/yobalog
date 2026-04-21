@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using YobaLog.Core.Auth;
+using YobaLog.Core.Admin;
 using YobaLog.Core.Retention;
 using YobaLog.Core.Retention.Sqlite;
 using YobaLog.Core.SavedQueries;
@@ -20,7 +20,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 	readonly SqliteSavedQueryStore _savedQueries;
 	readonly SqliteShareLinkStore _shareLinks;
 	readonly SqliteRetentionPolicyStore _policyStore;
-	readonly ConfigApiKeyStore _apiKeys;
+	readonly InMemoryWorkspaceStore _workspaces;
 	static readonly WorkspaceId UserWs = WorkspaceId.Parse("retention-test");
 
 	public RetentionServiceTests()
@@ -32,10 +32,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		_savedQueries = new SqliteSavedQueryStore(storeOpts);
 		_shareLinks = new SqliteShareLinkStore(storeOpts);
 		_policyStore = new SqliteRetentionPolicyStore(storeOpts);
-		_apiKeys = new ConfigApiKeyStore(Options.Create(new ApiKeyOptions
-		{
-			Keys = [new ApiKeyConfig { Token = "k", Workspace = UserWs.Value }],
-		}));
+		_workspaces = new InMemoryWorkspaceStore(UserWs);
 	}
 
 	public async Task InitializeAsync()
@@ -61,12 +58,12 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		int defaultDays = 7,
 		int systemDays = 30,
 		IReadOnlyList<RetentionPolicy>? policies = null,
-		IApiKeyStore? apiKeys = null) =>
+		IWorkspaceStore? workspaces = null) =>
 		new(
 			_store,
 			_savedQueries,
 			_shareLinks,
-			apiKeys ?? _apiKeys,
+			workspaces ?? _workspaces,
 			_policyStore,
 			Options.Create(new RetentionOptions
 			{
@@ -251,4 +248,60 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 
 		(await _store.CountAsync(UserWs, new LogQuery(PageSize: 1), CancellationToken.None)).Should().Be(0);
 	}
+
+	[Fact]
+	public async Task AdminCreatedWorkspace_WithoutApiKeys_IsSweptByRetention()
+	{
+		// Regression for tech-debt #4: before the fix, RetentionService iterated
+		// IApiKeyStore.ConfiguredWorkspaces, so a workspace created via /admin without
+		// any API keys was invisible to the sweep and its .logs.db grew forever.
+		var keylessWs = WorkspaceId.Parse("keyless-ws");
+		await _store.CreateWorkspaceAsync(keylessWs, new WorkspaceSchema(), CancellationToken.None);
+		await _savedQueries.InitializeWorkspaceAsync(keylessWs, CancellationToken.None);
+
+		var now = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+		await _store.AppendBatchAsync(keylessWs,
+			[Candidate(now.AddDays(-30), msg: "stale")],
+			CancellationToken.None);
+
+		var workspaces = new InMemoryWorkspaceStore(keylessWs);
+		await CreateService(defaultDays: 7, workspaces: workspaces).RunPassAsync(now, CancellationToken.None);
+
+		(await _store.CountAsync(keylessWs, new LogQuery(PageSize: 1), CancellationToken.None)).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task SystemWorkspace_IsNotListedByStore_ButStillSwept()
+	{
+		// Defensive: even if a buggy IWorkspaceStore returns $system in ListAsync,
+		// RunPassAsync filters it out (IsSystem) and sweeps it via SweepSystemAsync.
+		// Here we validate the normal path — store lists only user ws, $system swept via its own branch.
+		var now = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+		await _store.AppendBatchAsync(WorkspaceId.System,
+			[Candidate(now.AddDays(-40), msg: "way-old")],
+			CancellationToken.None);
+
+		await CreateService(defaultDays: 7, systemDays: 30).RunPassAsync(now, CancellationToken.None);
+
+		(await _store.CountAsync(WorkspaceId.System, new LogQuery(PageSize: 1), CancellationToken.None)).Should().Be(0);
+	}
+}
+
+sealed class InMemoryWorkspaceStore(params WorkspaceId[] ids) : IWorkspaceStore
+{
+	readonly IReadOnlyList<WorkspaceInfo> _infos =
+		[.. ids.Select(id => new WorkspaceInfo(id, DateTimeOffset.UtcNow))];
+
+	public ValueTask InitializeAsync(CancellationToken ct) => ValueTask.CompletedTask;
+
+	public ValueTask<IReadOnlyList<WorkspaceInfo>> ListAsync(CancellationToken ct) => new(_infos);
+
+	public ValueTask<WorkspaceInfo?> GetAsync(WorkspaceId id, CancellationToken ct) =>
+		new(_infos.FirstOrDefault(w => w.Id == id));
+
+	public ValueTask<WorkspaceInfo> CreateAsync(WorkspaceId id, CancellationToken ct) =>
+		throw new NotSupportedException();
+
+	public ValueTask<bool> DeleteAsync(WorkspaceId id, CancellationToken ct) =>
+		throw new NotSupportedException();
 }

@@ -14,7 +14,7 @@
 
 ### 🟠 Латентные баги (реальные defects без bug-report'ов)
 
-4. **`RetentionService` не видит admin-created workspaces без API-ключей.** `src/YobaLog.Core/Retention/RetentionService.cs:65` итерирует `_apiKeys.ConfiguredWorkspaces`. После Phase D можно создать workspace через `/admin/workspaces` без добавления ключей → retention на нём никогда не сработает → `.logs.db` растёт навсегда. Fix: инжектить `IWorkspaceStore`, итерировать `ListAsync`. 5-10 строк + один тест. **Приоритет: high.**
+4. ~~**`RetentionService` не видит admin-created workspaces без API-ключей.** `src/YobaLog.Core/Retention/RetentionService.cs:65` итерирует `_apiKeys.ConfiguredWorkspaces`. После Phase D можно создать workspace через `/admin/workspaces` без добавления ключей → retention на нём никогда не сработает → `.logs.db` растёт навсегда. Fix: инжектить `IWorkspaceStore`, итерировать `ListAsync`. 5-10 строк + один тест. **Приоритет: high.**~~ — closed 2026-04-21 (`refactor(debt): close top priorities from audit`). Regression-тест `AdminCreatedWorkspace_WithoutApiKeys_IsSweptByRetention` добавлен.
 5. **Timestamp в dual-executor.** `plan.md:44`. `kusto-loco` странно обрабатывает `datetime()`-литерал; production-путь корректен, reference-case закомментирован. Риск — регрессия production-transformer'а на datetime-литералах не поймается dual-executor'ом. Workaround-custom-literal implementation или downgrade на голый `Kusto.Language`.
 
 ### 🟡 Заявленное неполное покрытие (отложено до багов)
@@ -32,9 +32,9 @@
 
 ### ⚪ Code hygiene / stale rationale
 
-13. **`#pragma warning disable CA1822` "instance-scoped for future DI"** в `src/YobaLog.Core/Kql/KqlTransformer.cs:12` и `src/YobaLog.Core/Kql/KqlCompletionService.cs:5`. Комментарий от Phase B (март); Phase D закрыта, DI у этих классов так и не появился. Либо инжектить реальные options, либо сделать методы static и снять pragma.
+13. ~~**`#pragma warning disable CA1822` "instance-scoped for future DI"** в `src/YobaLog.Core/Kql/KqlTransformer.cs:12` и `src/YobaLog.Core/Kql/KqlCompletionService.cs:5`. Комментарий от Phase B (март); Phase D закрыта, DI у этих классов так и не появился. Либо инжектить реальные options, либо сделать методы static и снять pragma.~~ — closed 2026-04-21 (`refactor(debt): close top priorities from audit`). Оба класса → `static class`, pragma'ы сняты, `AddSingleton<KqlCompletionService>()` убран.
 14. **Большие файлы.** `KqlTransformer.cs` 637 строк, `admin.ts` 448 строк. Обе — growing jointly-responsible. Не критично, но кандидаты на split: `KqlTransformer` → `Apply` (event-shape) и `Execute` (shape-changing) в разных файлах; `admin.ts` → модули `kql-completion.ts` / `live-tail.ts` / `share-modal.ts` / `filter-chips.ts`. Порог — когда следующая фича заставит лезть в один из файлов.
-15. **Дублирование NoWarn в test-csproj'ах.** `CA1707;CA1848;CA1861;CA1873;CA2007` повторяются в `YobaLog.Tests.csproj`, `YobaLog.E2ETests.csproj`, `YobaLog.Benchmarks.csproj`. Поднять в `Directory.Build.props` под `<When Condition="'$(IsTestProject)' == 'true'">`, оставить в каждом csproj только расширения.
+15. ~~**Дублирование NoWarn в test-csproj'ах.** `CA1707;CA1848;CA1861;CA1873;CA2007` повторяются в `YobaLog.Tests.csproj`, `YobaLog.E2ETests.csproj`, `YobaLog.Benchmarks.csproj`. Поднять в `Directory.Build.props` под `<When Condition="'$(IsTestProject)' == 'true'">`, оставить в каждом csproj только расширения.~~ — closed 2026-04-21 (`refactor(debt): close top priorities from audit`). Общий список переехал в `Directory.Build.targets` под `'$(IsTestProject)' == 'true'` (props грузится раньше csproj'а → IsTestProject ещё пуст; targets — позже). `YobaLog.Benchmarks.csproj` не IsTestProject, сохраняет свой список. `YobaLog.E2ETests.csproj` держит только расширения (`CA1001;CA1711`), `YobaLog.Tests.csproj` — пусто.
 
 ### 🧪 Brittleness тест-инфраструктуры (скрытые зависимости от деталей)
 
@@ -48,8 +48,8 @@
 
 ### 📄 Устаревшие docs / конфигурация
 
-23. **`AGENTS.md` line 13**: *"Status: pre-code, spec-stage"*, *"There is no code yet"*. Абсолютно устарело (Phase A.0–D закрыты, 367 тестов зелёных).
-24. **`AGENTS.md` target stack**: *"+ jQuery, optional Alpine.js"* — не используем, только vanilla-TS + htmx. Плюс `(planned, not yet scaffolded)` — всё уже scaffold'нуто.
+23. ~~**`AGENTS.md` line 13**: *"Status: pre-code, spec-stage"*, *"There is no code yet"*. Абсолютно устарело (Phase A.0–D закрыты, 367 тестов зелёных).~~ — closed 2026-04-21 (`refactor(debt): close top priorities from audit`). Секция удалена.
+24. ~~**`AGENTS.md` target stack**: *"+ jQuery, optional Alpine.js"* — не используем, только vanilla-TS + htmx. Плюс `(planned, not yet scaffolded)` — всё уже scaffold'нуто.~~ — closed 2026-04-21 (`refactor(debt): close top priorities from audit`). Заголовок → "Target stack", список обновлён (vanilla TS + htmx + Tailwind + DaisyUI), "(planned, not yet scaffolded)" снят.
 25. **CI `permissions: packages: write`** — нужен только для `publish` job'а; `test` / `e2e` могут жить на `contents: read`. Per-job permissions — принятая практика для least-privilege.
 
 ### 🆕 Gated drafts (не долг, для полноты картины)
@@ -62,10 +62,10 @@
 ## Сводка по impact / urgency
 
 **Делать сейчас (immediate actions, выбрано из категорий ⚪/📄/🟠):**
-- #4 retention-service → `IWorkspaceStore` — real bug, малый fix.
-- #13 снять stale `CA1822`-pragma'ы в KqlTransformer/KqlCompletionService.
-- #15 NoWarn → `Directory.Build.props`.
-- #23–24 зачистить stale lines в AGENTS.md.
+- ~~#4 retention-service → `IWorkspaceStore` — real bug, малый fix.~~ — закрыто 2026-04-21.
+- ~~#13 снять stale `CA1822`-pragma'ы в KqlTransformer/KqlCompletionService.~~ — закрыто 2026-04-21.
+- ~~#15 NoWarn → `Directory.Build.props`.~~ — закрыто 2026-04-21 (через `Directory.Build.targets`).
+- ~~#23–24 зачистить stale lines в AGENTS.md.~~ — закрыто 2026-04-21.
 
 **Architectural, требуют решения сессии:**
 - #9 VACUUM policy, #10 Props indexing UX, #12 writer-threading.

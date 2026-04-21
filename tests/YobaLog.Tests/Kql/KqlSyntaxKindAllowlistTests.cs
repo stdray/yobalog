@@ -155,18 +155,17 @@ public sealed class KqlSyntaxKindAllowlistTests
 		// which the test never calls.
 		var source = Array.Empty<EventRecord>().AsQueryable();
 
-		var transformer = new KqlTransformer();
 		foreach (var (kind, query) in applyExamples)
 		{
 			var code = ParseOrFail(query, kind);
-			var act = () => transformer.Apply(source, code);
+			var act = () => KqlTransformer.Apply(source, code);
 			act.Should().NotThrow<UnsupportedKqlException>(
 				$"'{query}' ({kind}) must be handled by Apply");
 		}
 		foreach (var (kind, query) in executeExamples)
 		{
 			var code = ParseOrFail(query, kind);
-			var act = () => transformer.Execute(source, code);
+			var act = () => KqlTransformer.Execute(source, code);
 			act.Should().NotThrow<UnsupportedKqlException>(
 				$"'{query}' ({kind}) must be handled by Execute");
 		}

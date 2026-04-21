@@ -9,9 +9,8 @@ using ParamExpr = System.Linq.Expressions.ParameterExpression;
 namespace YobaLog.Core.Kql;
 
 #pragma warning disable CA1859 // Prefer Expression base type for AST composability.
-#pragma warning disable CA1822 // Apply is instance-scoped so future options/DI can hang off the class.
 
-sealed class KqlTransformer
+static class KqlTransformer
 {
 	public const string EventsTable = "events";
 
@@ -29,7 +28,7 @@ sealed class KqlTransformer
 		new("PropertiesJson", typeof(string)),
 	];
 
-	public KqlResult Execute(IQueryable<EventRecord> source, KustoCode code)
+	public static KqlResult Execute(IQueryable<EventRecord> source, KustoCode code)
 	{
 		var parseErrors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
 		if (parseErrors.Count > 0)
@@ -345,7 +344,7 @@ sealed class KqlTransformer
 		}
 	}
 
-	public IQueryable<EventRecord> Apply(IQueryable<EventRecord> source, KustoCode code)
+	public static IQueryable<EventRecord> Apply(IQueryable<EventRecord> source, KustoCode code)
 	{
 		var parseErrors = code.GetDiagnostics().Where(d => d.Severity == "Error").ToList();
 		if (parseErrors.Count > 0)

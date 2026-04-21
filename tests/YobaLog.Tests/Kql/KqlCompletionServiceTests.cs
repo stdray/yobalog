@@ -4,13 +4,11 @@ namespace YobaLog.Tests.Kql;
 
 public sealed class KqlCompletionServiceTests
 {
-	readonly KqlCompletionService _svc = new();
-
 	[Fact]
 	public void ColumnPrefix_ReturnsMatchingColumns()
 	{
 		const string q = "events | where Le";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 
 		result.Items.Should().Contain(i => i.DisplayText == "Level");
 		result.Items.Should().Contain(i => i.DisplayText == "LevelName");
@@ -21,7 +19,7 @@ public sealed class KqlCompletionServiceTests
 	public void TableName_ReturnsEvents()
 	{
 		const string q = "ev";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 
 		result.Items.Should().Contain(i => i.DisplayText == "events");
 	}
@@ -30,7 +28,7 @@ public sealed class KqlCompletionServiceTests
 	public void EditRange_CoversPrefix()
 	{
 		const string q = "events | where Lev";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 
 		var prefix = q.Substring(result.EditStart, result.EditLength);
 		prefix.Should().Be("Lev");
@@ -40,7 +38,7 @@ public sealed class KqlCompletionServiceTests
 	public void NoItems_ReturnsEmpty()
 	{
 		const string q = "events | where ZzzzzNothingMatches";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 		result.Items.Should().BeEmpty();
 	}
 
@@ -48,14 +46,14 @@ public sealed class KqlCompletionServiceTests
 	public void PositionOutOfRange_Clamped()
 	{
 		const string q = "events";
-		var result = _svc.Complete(q, q.Length * 10);
+		var result = KqlCompletionService.Complete(q, q.Length * 10);
 		result.Should().NotBeNull();
 	}
 
 	[Fact]
 	public void MaxItems_RespectsCap()
 	{
-		var result = _svc.Complete("", 0);
+		var result = KqlCompletionService.Complete("", 0);
 		result.Items.Should().HaveCountLessThanOrEqualTo(KqlCompletionService.MaxItems);
 	}
 
@@ -67,7 +65,7 @@ public sealed class KqlCompletionServiceTests
 		// with UnsupportedKqlException despite the item showing in the dropdown. Kusto emits
 		// `sort` / `order` without the mandatory `by` — same convention in the allowlist.
 		const string q = "events | ";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 
 		var displays = result.Items.Select(i => i.DisplayText).ToHashSet(StringComparer.Ordinal);
 		foreach (var op in new[] { "where", "take", "project", "extend", "count", "summarize", "sort", "order" })
@@ -102,7 +100,7 @@ public sealed class KqlCompletionServiceTests
 	public void AfterPipe_Drops_Unsupported_QueryPrefixes(string unsupported)
 	{
 		const string q = "events | ";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 
 		result.Items.Should().NotContain(i => i.DisplayText == unsupported,
 			$"'{unsupported}' is not supported by KqlTransformer → don't offer it");
@@ -114,7 +112,7 @@ public sealed class KqlCompletionServiceTests
 		// Picking "Properties" should insert "Properties." so the client's dot-triggered keyup
 		// round-trips to the server and the property-key discovery path fires.
 		const string q = "events | where ";
-		var result = _svc.Complete(q, q.Length);
+		var result = KqlCompletionService.Complete(q, q.Length);
 
 		var props = result.Items.FirstOrDefault(i => i.DisplayText == "Properties");
 		props.Should().NotBeNull();

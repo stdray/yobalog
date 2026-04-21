@@ -1,0 +1,13 @@
+<Project>
+
+	<!-- NoWarn for test projects. Lives in .targets (not .props) so $(IsTestProject) is already
+	     set by each test csproj by the time this import evaluates.
+	     CA1707: xUnit discovery names read better with underscores (Given_When_Then).
+	     CA1848: LoggerMessage source-gen irrelevant in tests (perf not measured).
+	     CA1861/CA1873: in-place arrays / ToString allocations — test setup lives and dies per case.
+	     CA2007: ConfigureAwait(false) unnecessary in xUnit (no sync ctx). -->
+	<PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+		<NoWarn>$(NoWarn);CA1707;CA1848;CA1861;CA1873;CA2007</NoWarn>
+	</PropertyGroup>
+
+</Project>

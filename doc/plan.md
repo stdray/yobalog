@@ -166,7 +166,7 @@ Playwright MCP (интерактивно, через Claude) — для smoke-п
 - [x] **CLEF-парсер:** tolerant NDJSON (кривая строка не убивает батч), partial-batch ack, malformed `@t`, missing required fields. _(CleFParserTests, 20 тестов)_
 - [x] **Ingestion pipeline:** Channels-based writer под нагрузкой — no event loss при `Count > capacity`; корректный shutdown-drain; per-workspace isolation. _(ChannelIngestionPipelineTests, 7 тестов)_
 - [~] **API-ключи:** невалидный/missing → 401; валидный + правильный workspace → 201. **Не покрыто:** expired keys, rate-limit, unscoped key/$system access (нужна модель прав). Вернёмся при DB-migrate API-ключей в Фазе D. _(IngestionEndpointTests + ConfigApiKeyStoreTests, 12 тестов)_
-- [x] **Retention executor:** удаляет ровно то, что в фильтре; идемпотентен; concurrent ingestion не блокируется. _(RetentionServiceTests, 6 тестов)_
+- [x] **Retention executor:** удаляет ровно то, что в фильтре; идемпотентен; concurrent ingestion не блокируется; пройдёт по workspace'ам из `IWorkspaceStore`, а не по `IApiKeyStore.ConfiguredWorkspaces` (tech-debt #4 закрыт 2026-04-21). _(RetentionServiceTests, 9 тестов)_
 - [x] **Cursor pagination:** базовая пагинация. **Не покрыто:** duplicate timestamps, cursor на удалённую запись, boundaries — добавить при появлении edge-case багов. _(SqliteLogStoreTests)_
 - [x] **Workspace isolation:** данные из workspace A физически недостижимы запросом из B. _(SqliteLogStoreTests)_
 - [x] **Маскирование:** HMAC детерминирован (один вход → один выход); удалённый share = 404; expired = 410. _(ShareEndpointTests + ValueMaskerTests + SqliteShareLinkStoreTests, 17 тестов)_

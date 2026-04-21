@@ -9,8 +9,6 @@ namespace YobaLog.Benchmarks;
 [MemoryDiagnoser]
 public class KqlTransformerBenchmark
 {
-	readonly KqlTransformer _transformer = new();
-
 	EventRecord[] _rows = [];
 	KustoCode _where = null!;
 	KustoCode _whereTakeOrder = null!;
@@ -46,19 +44,19 @@ public class KqlTransformerBenchmark
 	}
 
 	[Benchmark]
-	public int Where() => CountRows(_transformer.Apply(_rows.AsQueryable(), _where));
+	public int Where() => CountRows(KqlTransformer.Apply(_rows.AsQueryable(), _where));
 
 	[Benchmark]
-	public int WhereTakeOrder() => CountRows(_transformer.Apply(_rows.AsQueryable(), _whereTakeOrder));
+	public int WhereTakeOrder() => CountRows(KqlTransformer.Apply(_rows.AsQueryable(), _whereTakeOrder));
 
 	[Benchmark]
-	public async Task<int> Project() => await CountResultAsync(_transformer.Execute(_rows.AsQueryable(), _project));
+	public async Task<int> Project() => await CountResultAsync(KqlTransformer.Execute(_rows.AsQueryable(), _project));
 
 	[Benchmark]
-	public async Task<int> Summarize() => await CountResultAsync(_transformer.Execute(_rows.AsQueryable(), _summarize));
+	public async Task<int> Summarize() => await CountResultAsync(KqlTransformer.Execute(_rows.AsQueryable(), _summarize));
 
 	[Benchmark]
-	public async Task<int> Count() => await CountResultAsync(_transformer.Execute(_rows.AsQueryable(), _count));
+	public async Task<int> Count() => await CountResultAsync(KqlTransformer.Execute(_rows.AsQueryable(), _count));
 
 	static int CountRows(IQueryable<EventRecord> query)
 	{

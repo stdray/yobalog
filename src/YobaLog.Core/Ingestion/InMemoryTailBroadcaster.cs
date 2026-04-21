@@ -11,7 +11,6 @@ namespace YobaLog.Core.Ingestion;
 public sealed class InMemoryTailBroadcaster : ITailBroadcaster
 {
 	readonly ConcurrentDictionary<WorkspaceId, ImmutableList<ChannelWriter<LogEventCandidate>>> _subscribers = new();
-	readonly KqlTransformer _transformer = new();
 
 	public int WindowSize { get; init; } = 100;
 
@@ -67,15 +66,15 @@ public sealed class InMemoryTailBroadcaster : ITailBroadcaster
 		}
 	}
 
-	Func<LogEventCandidate, bool> CompilePredicate(KustoCode query)
+	static Func<LogEventCandidate, bool> CompilePredicate(KustoCode query)
 	{
 		// Eagerly validate the query — failure surfaces at subscribe time, not per-event.
-		_ = _transformer.Apply(Array.Empty<EventRecord>().AsQueryable(), query).ToList();
+		_ = KqlTransformer.Apply(Array.Empty<EventRecord>().AsQueryable(), query).ToList();
 
 		return candidate =>
 		{
 			var record = EventRecord.FromCandidate(candidate);
-			return _transformer.Apply(new[] { record }.AsQueryable(), query).Any();
+			return KqlTransformer.Apply(new[] { record }.AsQueryable(), query).Any();
 		};
 	}
 }

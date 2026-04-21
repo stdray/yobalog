@@ -6,8 +6,6 @@ namespace YobaLog.Tests.Kql;
 
 public sealed class KqlTransformerTests
 {
-	readonly KqlTransformer _transformer = new();
-
 	static readonly EventRecord[] Rows =
 	[
 		new() { Id = 1, TimestampMs = 100, Level = (int)LogLevel.Information, Message = "hello", TraceId = "t1" },
@@ -24,7 +22,7 @@ public sealed class KqlTransformerTests
 	public void Where_LevelEqualsInt_FiltersByRank()
 	{
 		var ast = Parse("events | where Level == 4");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
 	}
@@ -33,7 +31,7 @@ public sealed class KqlTransformerTests
 	public void Where_LevelOrdering_Works()
 	{
 		var ast = Parse("events | where Level >= 3");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 3L, 4L]);
 	}
@@ -42,7 +40,7 @@ public sealed class KqlTransformerTests
 	public void Where_LevelNameEquals_FiltersByName()
 	{
 		var ast = Parse("events | where LevelName == 'Error'");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
 	}
@@ -51,7 +49,7 @@ public sealed class KqlTransformerTests
 	public void Where_TraceIdEquals_Filters()
 	{
 		var ast = Parse("events | where TraceId == 't1'");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Select(r => r.Id).Should().BeEquivalentTo([1L, 3L]);
 	}
@@ -60,7 +58,7 @@ public sealed class KqlTransformerTests
 	public void Where_MessageEquals_Filters()
 	{
 		var ast = Parse("events | where Message == 'boom'");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Single().Id.Should().Be(2);
 	}
@@ -69,7 +67,7 @@ public sealed class KqlTransformerTests
 	public void Take_LimitsRows()
 	{
 		var ast = Parse("events | take 2");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Should().HaveCount(2);
 	}
@@ -78,7 +76,7 @@ public sealed class KqlTransformerTests
 	public void Where_Then_Take_Composes()
 	{
 		var ast = Parse("events | where Level == 4 | take 1");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 
 		result.Should().HaveCount(1);
 		result.Single().Level.Should().Be((int)LogLevel.Error);
@@ -88,7 +86,7 @@ public sealed class KqlTransformerTests
 	public void UnknownTable_Throws()
 	{
 		var ast = Parse("WrongTable | where Level == 4");
-		var act = () => _transformer.Apply(Src(), ast).ToList();
+		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*WrongTable*");
 	}
 
@@ -96,7 +94,7 @@ public sealed class KqlTransformerTests
 	public void UnknownOperator_Throws()
 	{
 		var ast = Parse("events | summarize count()");
-		var act = () => _transformer.Apply(Src(), ast).ToList();
+		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*not supported*");
 	}
 
@@ -104,7 +102,7 @@ public sealed class KqlTransformerTests
 	public void UnknownColumn_Throws()
 	{
 		var ast = Parse("events | where Nonexistent == 'x'");
-		var act = () => _transformer.Apply(Src(), ast).ToList();
+		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Nonexistent*");
 	}
 
@@ -112,7 +110,7 @@ public sealed class KqlTransformerTests
 	public void LevelWithStringLiteral_Throws()
 	{
 		var ast = Parse("events | where Level == 'Error'");
-		var act = () => _transformer.Apply(Src(), ast).ToList();
+		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*integer literal*");
 	}
 
@@ -120,7 +118,7 @@ public sealed class KqlTransformerTests
 	public void OrderBy_DefaultDescending()
 	{
 		var ast = Parse("events | order by Id");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 		result.Select(r => r.Id).Should().ContainInOrder(4L, 3L, 2L, 1L);
 	}
 
@@ -128,7 +126,7 @@ public sealed class KqlTransformerTests
 	public void OrderBy_AscendingExplicit()
 	{
 		var ast = Parse("events | order by Id asc");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 		result.Select(r => r.Id).Should().ContainInOrder(1L, 2L, 3L, 4L);
 	}
 
@@ -136,7 +134,7 @@ public sealed class KqlTransformerTests
 	public void OrderBy_MultipleColumns_ThenBy()
 	{
 		var ast = Parse("events | order by Level asc, Id desc");
-		var result = _transformer.Apply(Src(), ast).ToList();
+		var result = KqlTransformer.Apply(Src(), ast).ToList();
 		// Level asc: Info(2)=1, Warning(3)=3, Error(4)=2,4. Id desc within Error: 4, 2.
 		result.Select(r => r.Id).Should().ContainInOrder(1L, 3L, 4L, 2L);
 	}
@@ -145,7 +143,7 @@ public sealed class KqlTransformerTests
 	public void OrderBy_UnknownColumn_Throws()
 	{
 		var ast = Parse("events | order by Bogus");
-		var act = () => _transformer.Apply(Src(), ast).ToList();
+		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Bogus*");
 	}
 
@@ -153,7 +151,7 @@ public sealed class KqlTransformerTests
 	public void ParseError_Throws()
 	{
 		var ast = Parse("events | where Level ==");
-		var act = () => _transformer.Apply(Src(), ast).ToList();
+		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
 		act.Should().Throw<UnsupportedKqlException>().WithMessage("*parse error*");
 	}
 }

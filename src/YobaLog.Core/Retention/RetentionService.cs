@@ -3,7 +3,7 @@ using Kusto.Language;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using YobaLog.Core.Auth;
+using YobaLog.Core.Admin;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
@@ -15,7 +15,7 @@ public sealed class RetentionService : BackgroundService
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IShareLinkStore _shareLinks;
-	readonly IApiKeyStore _apiKeys;
+	readonly IWorkspaceStore _workspaces;
 	readonly IRetentionPolicyStore _policyStore;
 	readonly RetentionOptions _options;
 	readonly ILogger<RetentionService> _logger;
@@ -25,7 +25,7 @@ public sealed class RetentionService : BackgroundService
 		ILogStore store,
 		ISavedQueryStore savedQueries,
 		IShareLinkStore shareLinks,
-		IApiKeyStore apiKeys,
+		IWorkspaceStore workspaces,
 		IRetentionPolicyStore policyStore,
 		IOptions<RetentionOptions> options,
 		ILogger<RetentionService> logger,
@@ -34,7 +34,7 @@ public sealed class RetentionService : BackgroundService
 		_store = store;
 		_savedQueries = savedQueries;
 		_shareLinks = shareLinks;
-		_apiKeys = apiKeys;
+		_workspaces = workspaces;
 		_policyStore = policyStore;
 		_options = options.Value;
 		_logger = logger;
@@ -62,10 +62,12 @@ public sealed class RetentionService : BackgroundService
 
 	public async Task RunPassAsync(DateTimeOffset now, CancellationToken ct)
 	{
-		foreach (var ws in _apiKeys.ConfiguredWorkspaces)
+		var all = await _workspaces.ListAsync(ct).ConfigureAwait(false);
+		foreach (var info in all)
 		{
-			await SweepWorkspaceAsync(ws, now, ct).ConfigureAwait(false);
-			await SweepShareLinksAsync(ws, now, ct).ConfigureAwait(false);
+			if (info.Id.IsSystem) continue;
+			await SweepWorkspaceAsync(info.Id, now, ct).ConfigureAwait(false);
+			await SweepShareLinksAsync(info.Id, now, ct).ConfigureAwait(false);
 		}
 
 		await SweepSystemAsync(now, ct).ConfigureAwait(false);

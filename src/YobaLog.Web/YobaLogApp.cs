@@ -57,7 +57,6 @@ public static class YobaLogApp
 			sp.GetRequiredService<ConfigApiKeyStore>(),
 			sp.GetRequiredService<SqliteApiKeyStore>()));
 		builder.Services.AddSingleton<ICleFParser, CleFParser>();
-		builder.Services.AddSingleton<KqlCompletionService>();
 		builder.Services.AddSingleton<InMemoryTailBroadcaster>();
 		builder.Services.AddSingleton<ITailBroadcaster>(sp => sp.GetRequiredService<InMemoryTailBroadcaster>());
 		builder.Services.AddSingleton<IRazorPartialRenderer, RazorPartialRenderer>();
@@ -154,7 +153,6 @@ public static class YobaLogApp
 			[FromQuery(Name = "q")] string? query,
 			[FromQuery(Name = "pos")] int? position,
 			[FromQuery(Name = "ws")] string? ws,
-			KqlCompletionService completions,
 			ILogStore store,
 			IRazorPartialRenderer renderer,
 			CancellationToken ct) =>
@@ -175,7 +173,7 @@ public static class YobaLogApp
 				return Results.Extensions.CompletionsHtml(new KqlCompletionsResponse(editStart, prefix.Length, items), renderer);
 			}
 
-			var result = completions.Complete(q, p);
+			var result = KqlCompletionService.Complete(q, p);
 			return Results.Extensions.CompletionsHtml(result, renderer);
 		});
 

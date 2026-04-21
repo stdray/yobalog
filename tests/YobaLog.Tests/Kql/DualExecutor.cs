@@ -32,8 +32,6 @@ public sealed record TestEvent(
 
 static class DualExecutor
 {
-	static readonly KqlTransformer Transformer = new();
-
 	public static async Task AssertSameAsync(string kql, IReadOnlyList<TestEvent> dataset, bool ordered = false)
 	{
 		var refIds = await RunReferenceAsync(kql, dataset);
@@ -68,7 +66,7 @@ static class DualExecutor
 	{
 		var records = dataset.Select(ToRecord).ToList();
 		var code = KustoCode.Parse(kql);
-		var result = Transformer.Apply(records.AsQueryable(), code).ToList();
+		var result = KqlTransformer.Apply(records.AsQueryable(), code).ToList();
 		return [.. result.Select(r => r.Id)];
 	}
 

@@ -2,9 +2,7 @@ using Kusto.Language.Editor;
 
 namespace YobaLog.Core.Kql;
 
-#pragma warning disable CA1822 // Instance-scoped for future options/DI (see KqlTransformer rationale).
-
-public sealed class KqlCompletionService
+public static class KqlCompletionService
 {
 	public const int MaxItems = 50;
 
@@ -26,7 +24,7 @@ public sealed class KqlCompletionService
 		"order",   // follows, not part of the completion item display.
 	};
 
-	public KqlCompletionsResponse Complete(string query, int position)
+	public static KqlCompletionsResponse Complete(string query, int position)
 	{
 		ArgumentNullException.ThrowIfNull(query);
 		if (position < 0) position = 0;
