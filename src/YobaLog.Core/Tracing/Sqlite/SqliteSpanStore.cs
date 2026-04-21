@@ -125,17 +125,17 @@ public sealed class SqliteSpanStore : ISpanStore
 		KustoCode kql,
 		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
 	{
-		// Full KQL transformer support over spans lands in Phase H.3 — new target `spans`
-		// branch in KqlTransformer.Apply/Execute plus the column mapping (Duration / Kind /
-		// Status / ParentSpanId). For H.1 checkpoint, throw with an actionable message
-		// rather than silently returning empty.
 		ArgumentNullException.ThrowIfNull(kql);
-		_ = workspaceId;
-		await ValueTask.CompletedTask;
-		throw new NotSupportedException("KQL over spans ships in Phase H.3; use GetByTraceIdAsync for now");
-#pragma warning disable CS0162 // Unreachable yield keeps the method genuinely async-iterator (no CS8419).
-		yield break;
-#pragma warning restore CS0162
+
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.StorageTraces.StartActivity("traces.query.kql");
+		activity?.SetTag("workspace", workspaceId.Value);
+
+		await using var db = Open(workspaceId);
+		var source = db.GetTable<SpanRecord>().AsQueryable();
+		var translated = KqlSpansTransformer.Apply(source, kql);
+
+		await foreach (var r in translated.AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
+			yield return r.ToSpan();
 	}
 
 	public Task<KqlResult> QueryKqlResultAsync(
@@ -145,8 +145,10 @@ public sealed class SqliteSpanStore : ISpanStore
 	{
 		ArgumentNullException.ThrowIfNull(kql);
 		_ = workspaceId;
+		// Shape-changing operators (project / extend / summarize / count) over the spans
+		// target are deferred — the H.3 transformer handles filter-sort-limit only.
 		return Task.FromException<KqlResult>(
-			new NotSupportedException("KQL over spans ships in Phase H.3; use GetByTraceIdAsync for now"));
+			new NotSupportedException("project/extend/summarize/count on spans target deferred; use QueryKqlAsync + filter/sort/take"));
 	}
 
 	public async ValueTask<long> CountAsync(WorkspaceId workspaceId, CancellationToken ct)

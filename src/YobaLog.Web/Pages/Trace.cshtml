@@ -1,0 +1,24 @@
+@page "/trace/{id}"
+@model YobaLog.Web.Pages.TraceModel
+@{
+	ViewData["Title"] = $"Trace {Model.TraceId}";
+}
+
+<div class="mb-4 flex flex-wrap items-center gap-3">
+	<a asp-page="/Workspace" asp-route-id="@Model.Workspace.Value" class="text-sm opacity-60 hover:opacity-100">← @Model.Workspace.Value</a>
+	<h1 class="font-mono font-semibold text-xl" data-testid="trace-id">@Model.TraceId</h1>
+	@if (Model.Rows.Length > 0)
+	{
+		<span class="badge badge-ghost font-mono text-xs" data-testid="trace-span-count">@Model.Rows.Length spans</span>
+		<span class="badge badge-ghost font-mono text-xs" data-testid="trace-duration">@($"{Model.TraceDuration.TotalMilliseconds:F1}ms")</span>
+	}
+</div>
+
+@if (Model.NotFoundMessage is not null)
+{
+	<div class="alert alert-warning" data-testid="trace-not-found">@Model.NotFoundMessage</div>
+}
+else
+{
+	<partial name="_TraceWaterfall" model="Model" />
+}

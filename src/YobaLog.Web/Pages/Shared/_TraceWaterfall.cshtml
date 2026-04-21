@@ -1,0 +1,116 @@
+@using System.Globalization
+@using YobaLog.Core.Tracing
+@model YobaLog.Web.Pages.TraceModel
+@{
+	static string StatusBadge(SpanStatusCode status) => status switch
+	{
+		SpanStatusCode.Error => "badge-error",
+		SpanStatusCode.Ok => "badge-success",
+		_ => "badge-ghost",
+	};
+
+	// Waterfall bar fill color — ties into DaisyUI palette without ad-hoc hex values.
+	static string BarColor(SpanStatusCode status) => status switch
+	{
+		SpanStatusCode.Error => "bg-error",
+		SpanStatusCode.Ok => "bg-success",
+		_ => "bg-primary",
+	};
+
+	static string FormatDuration(TimeSpan d)
+	{
+		if (d.TotalSeconds >= 1) return $"{d.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture)}s";
+		if (d.TotalMilliseconds >= 1) return $"{d.TotalMilliseconds.ToString("F1", CultureInfo.InvariantCulture)}ms";
+		// 1 tick = 100 ns → microseconds = ticks / 10.
+		var us = d.Ticks / 10.0;
+		if (us >= 1) return $"{us.ToString("F0", CultureInfo.InvariantCulture)}μs";
+		return $"{d.Ticks * 100}ns";
+	}
+}
+
+<div class="bg-base-200 border border-base-300 overflow-hidden rounded-box" data-testid="trace-waterfall">
+	<table class="table table-sm w-full">
+		<thead>
+			<tr class="bg-base-300 text-xs">
+				<th class="w-2/5">Span</th>
+				<th class="w-16">Status</th>
+				<th class="w-20 text-right">Duration</th>
+				<th>Timeline</th>
+			</tr>
+		</thead>
+		<tbody>
+			@foreach (var row in Model.Rows)
+			{
+				var s = row.Span;
+				var offset = row.OffsetPct.ToString("F2", CultureInfo.InvariantCulture);
+				var width = row.WidthPct.ToString("F2", CultureInfo.InvariantCulture);
+				<tr class="cursor-pointer hover align-middle" data-testid="waterfall-row" data-span-id="@s.SpanId">
+					<td class="font-mono text-xs whitespace-nowrap">
+						<span style="display:inline-block;width:@(row.Depth * 12)px"></span>
+						@if (row.Depth > 0) { <span class="mr-1 opacity-40">↳</span> }
+						<span class="font-semibold" data-testid="waterfall-span-name">@s.Name</span>
+						<span class="ml-2 opacity-60">@s.Kind</span>
+					</td>
+					<td>
+						<span class="badge @StatusBadge(s.Status) badge-sm">@s.Status</span>
+					</td>
+					<td class="font-mono text-right text-xs opacity-80">@FormatDuration(s.Duration)</td>
+					<td>
+						<div class="relative bg-base-100 h-3 rounded">
+							<div class="@BarColor(s.Status) absolute h-full rounded"
+								style="left:@(offset)%;width:@(width)%"
+								title="@(FormatDuration(s.Duration)) at +@(offset)%">
+							</div>
+						</div>
+					</td>
+				</tr>
+				<tr class="hidden" data-testid="waterfall-details" data-span-details-for="@s.SpanId">
+					<td colspan="4" class="bg-base-100">
+						<dl class="gap-x-4 gap-y-1 grid grid-cols-[max-content_1fr] p-3 text-xs">
+							<dt class="font-semibold opacity-70">SpanId</dt>
+							<dd class="font-mono">@s.SpanId</dd>
+							<dt class="font-semibold opacity-70">TraceId</dt>
+							<dd class="font-mono">@s.TraceId</dd>
+							@if (s.ParentSpanId is not null)
+							{
+								<dt class="font-semibold opacity-70">ParentSpanId</dt>
+								<dd class="font-mono">@s.ParentSpanId</dd>
+							}
+							<dt class="font-semibold opacity-70">Start</dt>
+							<dd class="font-mono">@s.StartTime.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture)Z</dd>
+							<dt class="font-semibold opacity-70">Duration</dt>
+							<dd class="font-mono">@FormatDuration(s.Duration)</dd>
+							@if (s.StatusDescription is not null)
+							{
+								<dt class="font-semibold opacity-70">Status desc</dt>
+								<dd>@s.StatusDescription</dd>
+							}
+							@if (!s.Attributes.IsEmpty)
+							{
+								<dt class="font-semibold opacity-70">Attributes</dt>
+								<dd>
+									<pre class="bg-base-200 border border-base-300 overflow-x-auto p-2 rounded text-xs">@YobaLog.Core.PropertiesJsonSerializer.Serialize(s.Attributes, indented: true)</pre>
+								</dd>
+							}
+							@if (!s.Events.IsDefaultOrEmpty)
+							{
+								<dt class="font-semibold opacity-70">Events</dt>
+								<dd>
+									<ul class="list-disc list-inside">
+										@foreach (var e in s.Events)
+										{
+											<li class="font-mono">
+												<span class="opacity-70">@e.Timestamp.UtcDateTime.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)Z</span>
+												<span class="font-semibold">@e.Name</span>
+											</li>
+										}
+									</ul>
+								</dd>
+							}
+						</dl>
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+</div>

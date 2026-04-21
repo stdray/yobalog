@@ -446,3 +446,24 @@ document.addEventListener("click", (event) => {
 		details.classList.toggle("hidden");
 	}
 });
+
+// ---------- Expandable waterfall span row ----------
+// Click a span row → toggle the sibling details row (matched by data-span-details-for ==
+// data-span-id). Event-delegated at document level so htmx-swapped future content works
+// without re-binding.
+
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	if (!target) return;
+	if (target.closest("button, a, input, textarea, select, summary")) return;
+
+	const row = target.closest("tr[data-span-id]") as HTMLTableRowElement | null;
+	if (!row) return;
+	const spanId = row.getAttribute("data-span-id");
+	if (!spanId) return;
+
+	const details = row.parentElement?.querySelector(
+		`tr[data-span-details-for="${CSS.escape(spanId)}"]`,
+	) as HTMLElement | null;
+	details?.classList.toggle("hidden");
+});
