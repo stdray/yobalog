@@ -34,14 +34,19 @@ jobs:
       - name: English-only (user-facing files, spec §9)
         run: |
           set -e
-          if grep -RPn '[^\x00-\x7F]' \
+          # Non-ASCII check with whitelist for UI glyphs we use as icons / typography.
+          # These are **not** localization targets — they stay identical across translations
+          # (arrows, em/en-dash, ellipsis, check/cross marks, copy icon, section sign,
+          # comparison operators, Mac command key, micro-second μ, multiplication ×).
+          # Catches actual non-English text (Cyrillic / full-width punctuation / etc).
+          if grep -RPn '[^\x00-\x7F\x{00A7}\x{00B5}\x{00D7}\x{03BC}\x{2013}-\x{2014}\x{2026}\x{2190}-\x{2199}\x{21B3}\x{2264}-\x{2265}\x{2318}\x{2713}\x{2717}\x{29C9}]' \
               src/YobaLog.Web/ts \
               src/YobaLog.Web/Pages \
               src/YobaLog.Web/EventRowViewModel.cs \
               src/YobaLog.Web/EqNeChipsModel.cs \
               src/YobaLog.Web/PropertyKeyContext.cs \
               2>/dev/null; then
-            echo "::error::Non-ASCII characters in user-facing files. English-only until i18n scaffold lands (spec §9)."
+            echo "::error::Non-ASCII characters (outside the UI-glyph whitelist) in user-facing files. English-only prose until i18n scaffold lands (spec §9)."
             exit 1
           fi
 
