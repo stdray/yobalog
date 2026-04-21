@@ -158,20 +158,18 @@ jobs:
             set -euo pipefail
             IMAGE="ghcr.io/${{ github.repository }}/yobalog-web:${{ needs.publish.outputs.dockerTag }}"
             CONTAINER_NAME="yobalog-web"
-            PASSWORD="${{ secrets.DEPLOY_PASSWORD }}"
-            run_sudo() { printf '%s\n' "$PASSWORD" | sudo -S -p '' "$@"; }
-            # Package is public (repo is public + GHCR package visibility set to public after
-            # first push): `docker pull` works anonymously, no login → no GHCR_DEPLOY_* PAT.
-            # If the repo ever goes private, reinstate docker login ghcr.io with a read-only PAT.
-            run_sudo docker pull "$IMAGE"
-            run_sudo docker stop "$CONTAINER_NAME" || true
-            run_sudo docker rm "$CONTAINER_NAME" || true
-            run_sudo mkdir -p /opt/yobalog/data
+            # DEPLOY_USERNAME is in the `docker` group → no sudo for docker commands.
+            # /opt/yobalog/data is pre-created during host bootstrap with chown 1654:1654
+            # (chiseled `app` UID) so the container can write SQLite files on mount — see
+            # doc/deploy.md. Public GHCR package → docker pull is anonymous.
+            docker pull "$IMAGE"
+            docker stop "$CONTAINER_NAME" || true
+            docker rm "$CONTAINER_NAME" || true
             # Host port 8082 per the shared-host convention documented in
             # infra/Caddyfile.fragment (8080 = yobapub, 8081 = yobaconf, 8082 = yobalog).
             # Only loopback bind — central Caddy on host terminates TLS on :443 and
             # reverse-proxies to 127.0.0.1:8082.
-            run_sudo docker run -d \
+            docker run -d \
               --name "$CONTAINER_NAME" \
               --restart unless-stopped \
               -p 127.0.0.1:8082:8080 \
@@ -179,4 +177,4 @@ jobs:
               -e Admin__Username="${{ secrets.YOBALOG_ADMIN_USERNAME }}" \
               -e Admin__Password="${{ secrets.YOBALOG_ADMIN_PASSWORD }}" \
               "$IMAGE"
-            run_sudo docker system prune -a -f
+            docker system prune -a -f

@@ -87,11 +87,24 @@ sudo systemctl status caddy
 
 Логи: `sudo journalctl -u caddy -f`. При первом HTTPS-запросе Caddy сходит в Let's Encrypt за сертификатом, положит в `/var/lib/caddy/.local/share/caddy/certificates/`. Renewal — автоматически, cron-less.
 
-### 6. GitHub secrets
+### 6. Data-каталог для контейнера
+
+Chiseled-образ yobalog запускается под user'ом `app` (UID 1654) — наш SQLite должен уметь писать в mount'нутый volume. Если `/opt/yobalog/data` не существует, Docker создаст его при первом `docker run -v ...`, но **root-owned** → контейнер упадёт с permission denied. Создаём явно:
+
+```bash
+sudo mkdir -p /opt/yobalog/data
+sudo chown 1654:1654 /opt/yobalog/data
+```
+
+Одноразовый шаг — переживает redeploy, rebuild, restart.
+
+Пользователь `stdray` уже в группе `docker` (из Docker-секции выше), поэтому CI deploy-job не требует sudo для команд `docker pull/stop/rm/run/prune` — сразу работает через docker.sock.
+
+### 7. GitHub secrets
 
 Через Settings → Secrets → Actions заполнить все из Pre-requisites выше.
 
-### 7. Первый deploy
+### 8. Первый deploy
 
 ```bash
 # локально, в корне репо:
@@ -103,7 +116,7 @@ CI задеплоит: build image → `docker push ghcr.io/<owner>/yobalog:<sha
 
 `--force` нужен потому что тег `deploy` переиспользуется — каждый деплой move'ает его на новый commit.
 
-### 8. Sanity check
+### 9. Sanity check
 
 ```bash
 # с любой машины:
