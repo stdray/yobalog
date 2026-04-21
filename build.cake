@@ -201,9 +201,12 @@ Task("DockerSmoke")
 	}
 });
 
+// Test is already in the chain transitively (DockerSmoke → Docker → Test), but listing it
+// explicitly here keeps the top-level dependencies visible without having to walk the tree.
 Task("DockerPush")
-	.IsDependentOn("DockerSmoke")
+	.IsDependentOn("Test")
 	.IsDependentOn("E2ETest")
+	.IsDependentOn("DockerSmoke")
 	.WithCriteria(() => dockerPushEnabled)
 	.Does(() =>
 {
