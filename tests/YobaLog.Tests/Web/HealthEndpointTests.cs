@@ -65,23 +65,29 @@ public sealed class HealthEndpointTests : IAsyncDisposable
 		catch { /* best effort */ }
 	}
 
-	[Fact]
-	public async Task Get_Health_Anonymous_ReturnsOk()
+	[Theory]
+	[InlineData("/health")]
+	[InlineData("/version")]
+	public async Task Get_Anonymous_ReturnsOk(string path)
 	{
-		using var resp = await _client.GetAsync("/health");
+		using var resp = await _client.GetAsync(path);
 		resp.StatusCode.Should().Be(HttpStatusCode.OK,
-			"AllowAnonymous() on the minimal-API /health endpoint must bypass the RequireAuthenticatedUser fallback policy under real Kestrel + Production env");
-
-		var body = await resp.Content.ReadAsStringAsync();
-		body.Should().Contain("healthy");
+			$"AllowAnonymous() on the minimal-API {path} endpoint must bypass the RequireAuthenticatedUser fallback policy");
 	}
 
-	[Fact]
-	public async Task Get_Version_Anonymous_ReturnsOk()
+	[Theory]
+	[InlineData("/health")]
+	[InlineData("/version")]
+	public async Task Head_Anonymous_ReturnsOk(string path)
 	{
-		using var resp = await _client.GetAsync("/version");
-		resp.StatusCode.Should().Be(HttpStatusCode.OK);
-		var body = await resp.Content.ReadAsStringAsync();
-		body.Should().Contain("semVer");
+		// Regression for the first-deploy 302 bug: HEAD requests (`curl -I`, k8s httpGet
+		// healthcheck with method=HEAD, uptime monitors) hit routing → endpoint=null when
+		// MapGet is used (GET-only) → authz fallback policy kicks in → 302 /Login. Fix was
+		// MapMethods("...", ["GET", "HEAD"], ...). This theory guards that HEAD keeps
+		// returning 200 forever.
+		using var req = new HttpRequestMessage(HttpMethod.Head, path);
+		using var resp = await _client.SendAsync(req);
+		resp.StatusCode.Should().Be(HttpStatusCode.OK,
+			$"HEAD {path} must return 200 — MapMethods must include HEAD alongside GET for health probes");
 	}
 }

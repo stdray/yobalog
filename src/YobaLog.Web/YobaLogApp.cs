@@ -173,13 +173,19 @@ public static class YobaLogApp
 		// No dependencies — returns 200 as long as the process is up and serving HTTP.
 		// Replaces the /Login-based smoke probe; /Login has auth-middleware pipeline overhead
 		// and returns 200 only because the page is anonymous — coincidence, not semantic fit.
-		app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
+		//
+		// MapMethods (GET+HEAD) not MapGet: MapGet registers GET only. A HEAD probe
+		// (`curl -I`, k8s httpGet healthcheck with method=HEAD, uptime monitors) misses the
+		// route, gets endpoint=null in the pipeline, and the RequireAuthenticatedUser fallback
+		// policy then kicks in → cookie auth challenge → 302 /Login. GET-only probes never
+		// noticed (DockerSmoke uses curl without -I). Covers both verbs for health probes.
+		app.MapMethods("/health", ["GET", "HEAD"], () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
 
 		// Build provenance: GitVersion injects APP_VERSION / GIT_SHORT_SHA / GIT_COMMIT_DATE
 		// into the Docker image as env vars (see src/YobaLog.Web/Dockerfile ARG/ENV pairs).
 		// Local dev has no such vars — fall through to "dev"/"local"/empty so the endpoint
 		// is always available for quick "which build is this?" inspection.
-		app.MapGet("/version", () => Results.Ok(new
+		app.MapMethods("/version", ["GET", "HEAD"], () => Results.Ok(new
 		{
 			semVer = Environment.GetEnvironmentVariable("APP_VERSION") ?? "dev",
 			shortSha = Environment.GetEnvironmentVariable("GIT_SHORT_SHA") ?? "local",
