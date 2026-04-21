@@ -25,6 +25,8 @@ using YobaLog.Core.Sharing;
 using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Core.Tracing;
+using YobaLog.Core.Tracing.Sqlite;
 using YobaLog.Web.Observability;
 
 namespace YobaLog.Web;
@@ -60,6 +62,7 @@ public static class YobaLogApp
 		});
 
 		builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
+		builder.Services.AddSingleton<ISpanStore, SqliteSpanStore>();
 		builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
 		builder.Services.AddSingleton<IFieldMaskingPolicyStore, SqliteFieldMaskingPolicyStore>();
 		builder.Services.AddSingleton<IShareLinkStore, SqliteShareLinkStore>();
@@ -100,10 +103,11 @@ public static class YobaLogApp
 			builder.Services.AddOpenTelemetry()
 				.WithTracing(tracing => tracing
 					.AddSource(
-						Tracing.IngestionSourceName,
-						Tracing.QuerySourceName,
-						Tracing.RetentionSourceName,
-						Tracing.StorageSqliteSourceName)
+						ActivitySources.IngestionSourceName,
+						ActivitySources.QuerySourceName,
+						ActivitySources.RetentionSourceName,
+						ActivitySources.StorageSqliteSourceName,
+						ActivitySources.StorageTracesSourceName)
 					.AddAspNetCoreInstrumentation(opts =>
 					{
 						// Skip load-balancer / health-probe noise from filling $system.

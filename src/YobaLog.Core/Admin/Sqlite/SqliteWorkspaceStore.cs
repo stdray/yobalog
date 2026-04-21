@@ -7,6 +7,7 @@ using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Core.Tracing;
 
 namespace YobaLog.Core.Admin.Sqlite;
 
@@ -14,6 +15,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 {
 	readonly SqliteLogStoreOptions _options;
 	readonly ILogStore _logStore;
+	readonly ISpanStore _spans;
 	readonly IApiKeyAdmin _apiKeyAdmin;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
@@ -22,6 +24,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 	public SqliteWorkspaceStore(
 		IOptions<SqliteLogStoreOptions> options,
 		ILogStore logStore,
+		ISpanStore spans,
 		IApiKeyAdmin apiKeyAdmin,
 		ISavedQueryStore savedQueries,
 		IFieldMaskingPolicyStore maskingPolicies,
@@ -29,6 +32,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 	{
 		_options = options.Value;
 		_logStore = logStore;
+		_spans = spans;
 		_apiKeyAdmin = apiKeyAdmin;
 		_savedQueries = savedQueries;
 		_maskingPolicies = maskingPolicies;
@@ -81,6 +85,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 		}
 
 		await _logStore.CreateWorkspaceAsync(id, new WorkspaceSchema(), ct).ConfigureAwait(false);
+		await _spans.CreateWorkspaceAsync(id, ct).ConfigureAwait(false);
 		// All meta tables live in `<ws>.meta.db` — init all four stores so the first UI navigation
 		// to the new workspace doesn't explode on a missing SavedQueries / Sharing / Masking table.
 		// Mirrors WorkspaceBootstrapper.InitMetaAsync; the overlap is intentional since the
@@ -110,6 +115,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 		if (deleted > 0)
 		{
 			await _logStore.DropWorkspaceAsync(id, ct).ConfigureAwait(false);
+			await _spans.DropWorkspaceAsync(id, ct).ConfigureAwait(false);
 			await _apiKeyAdmin.DropWorkspaceAsync(id, ct).ConfigureAwait(false);
 		}
 

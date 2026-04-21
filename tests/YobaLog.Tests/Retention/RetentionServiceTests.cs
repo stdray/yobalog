@@ -10,6 +10,7 @@ using YobaLog.Core.SavedQueries.Sqlite;
 using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Core.Tracing.Sqlite;
 
 namespace YobaLog.Tests.Retention;
 
@@ -17,6 +18,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 {
 	readonly string _tempDir;
 	readonly SqliteLogStore _store;
+	readonly SqliteSpanStore _spans;
 	readonly SqliteSavedQueryStore _savedQueries;
 	readonly SqliteShareLinkStore _shareLinks;
 	readonly SqliteRetentionPolicyStore _policyStore;
@@ -29,6 +31,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		Directory.CreateDirectory(_tempDir);
 		var storeOpts = Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir });
 		_store = new SqliteLogStore(storeOpts);
+		_spans = new SqliteSpanStore(storeOpts);
 		_savedQueries = new SqliteSavedQueryStore(storeOpts);
 		_shareLinks = new SqliteShareLinkStore(storeOpts);
 		_policyStore = new SqliteRetentionPolicyStore(storeOpts);
@@ -39,6 +42,8 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 	{
 		await _store.CreateWorkspaceAsync(UserWs, new WorkspaceSchema(), CancellationToken.None);
 		await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), CancellationToken.None);
+		await _spans.CreateWorkspaceAsync(UserWs, CancellationToken.None);
+		await _spans.CreateWorkspaceAsync(WorkspaceId.System, CancellationToken.None);
 		await _savedQueries.InitializeWorkspaceAsync(UserWs, CancellationToken.None);
 		await _policyStore.InitializeAsync(CancellationToken.None);
 	}
@@ -61,6 +66,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		IWorkspaceStore? workspaces = null) =>
 		new(
 			_store,
+			_spans,
 			_savedQueries,
 			_shareLinks,
 			workspaces ?? _workspaces,

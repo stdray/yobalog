@@ -8,12 +8,14 @@ using YobaLog.Core.Observability;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
+using YobaLog.Core.Tracing;
 
 namespace YobaLog.Core.Retention;
 
 public sealed class RetentionService : BackgroundService
 {
 	readonly ILogStore _store;
+	readonly ISpanStore _spans;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IShareLinkStore _shareLinks;
 	readonly IWorkspaceStore _workspaces;
@@ -24,6 +26,7 @@ public sealed class RetentionService : BackgroundService
 
 	public RetentionService(
 		ILogStore store,
+		ISpanStore spans,
 		ISavedQueryStore savedQueries,
 		IShareLinkStore shareLinks,
 		IWorkspaceStore workspaces,
@@ -33,6 +36,7 @@ public sealed class RetentionService : BackgroundService
 		TimeProvider? time = null)
 	{
 		_store = store;
+		_spans = spans;
 		_savedQueries = savedQueries;
 		_shareLinks = shareLinks;
 		_workspaces = workspaces;
@@ -63,7 +67,7 @@ public sealed class RetentionService : BackgroundService
 
 	public async Task RunPassAsync(DateTimeOffset now, CancellationToken ct)
 	{
-		using var activity = Tracing.Retention.StartActivity("retention.pass");
+		using var activity = ActivitySources.Retention.StartActivity("retention.pass");
 
 		var all = await _workspaces.ListAsync(ct).ConfigureAwait(false);
 		activity?.SetTag("workspace.count", all.Count);
@@ -73,10 +77,25 @@ public sealed class RetentionService : BackgroundService
 			if (info.Id.IsSystem) continue;
 			await SweepWorkspaceAsync(info.Id, now, ct).ConfigureAwait(false);
 			await SweepShareLinksAsync(info.Id, now, ct).ConfigureAwait(false);
+			await SweepSpansAsync(info.Id, now - TimeSpan.FromDays(_options.DefaultSpansRetainDays), ct).ConfigureAwait(false);
 		}
 
 		await SweepSystemAsync(now, ct).ConfigureAwait(false);
 		await SweepShareLinksAsync(WorkspaceId.System, now, ct).ConfigureAwait(false);
+		await SweepSpansAsync(WorkspaceId.System, now - TimeSpan.FromDays(_options.SystemSpansRetainDays), ct).ConfigureAwait(false);
+	}
+
+	async Task SweepSpansAsync(WorkspaceId ws, DateTimeOffset cutoff, CancellationToken ct)
+	{
+		try
+		{
+			var deleted = await _spans.DeleteOlderThanAsync(ws, cutoff, ct).ConfigureAwait(false);
+			RetentionLog.SweptSpans(_logger, ws, deleted, cutoff);
+		}
+		catch (Exception ex) when (ex is not OperationCanceledException)
+		{
+			RetentionLog.SpansFailed(_logger, ex, ws);
+		}
 	}
 
 	async Task SweepShareLinksAsync(WorkspaceId ws, DateTimeOffset now, CancellationToken ct)
@@ -194,4 +213,12 @@ static partial class RetentionLog
 	[LoggerMessage(EventId = 27, Level = Microsoft.Extensions.Logging.LogLevel.Error,
 		Message = "Share-link sweep on {Workspace} failed")]
 	public static partial void ShareLinksFailed(ILogger logger, Exception ex, WorkspaceId workspace);
+
+	[LoggerMessage(EventId = 28, Level = Microsoft.Extensions.Logging.LogLevel.Information,
+		Message = "Retention swept spans on {Workspace}: deleted {Count} older than {Cutoff:O}")]
+	public static partial void SweptSpans(ILogger logger, WorkspaceId workspace, long count, DateTimeOffset cutoff);
+
+	[LoggerMessage(EventId = 29, Level = Microsoft.Extensions.Logging.LogLevel.Error,
+		Message = "Span retention failed on workspace {Workspace}")]
+	public static partial void SpansFailed(ILogger logger, Exception ex, WorkspaceId workspace);
 }

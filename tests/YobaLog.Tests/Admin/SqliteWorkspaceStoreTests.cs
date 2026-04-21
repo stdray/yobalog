@@ -7,6 +7,7 @@ using YobaLog.Core.SavedQueries.Sqlite;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Core.Tracing.Sqlite;
 
 namespace YobaLog.Tests.Admin;
 
@@ -15,6 +16,7 @@ public sealed class SqliteWorkspaceStoreTests : IAsyncLifetime
 	readonly string _tempDir;
 	readonly SqliteLogStoreOptions _options;
 	readonly SqliteLogStore _logStore;
+	readonly SqliteSpanStore _spans;
 	readonly SqliteApiKeyStore _apiKeys;
 	readonly SqliteSavedQueryStore _savedQueries;
 	readonly SqliteFieldMaskingPolicyStore _masking;
@@ -29,11 +31,12 @@ public sealed class SqliteWorkspaceStoreTests : IAsyncLifetime
 		_options = new SqliteLogStoreOptions { DataDirectory = _tempDir };
 		var opts = Options.Create(_options);
 		_logStore = new SqliteLogStore(opts);
+		_spans = new SqliteSpanStore(opts);
 		_apiKeys = new SqliteApiKeyStore(opts);
 		_savedQueries = new SqliteSavedQueryStore(opts);
 		_masking = new SqliteFieldMaskingPolicyStore(opts);
 		_shareLinks = new SqliteShareLinkStore(opts);
-		_store = new SqliteWorkspaceStore(opts, _logStore, _apiKeys, _savedQueries, _masking, _shareLinks);
+		_store = new SqliteWorkspaceStore(opts, _logStore, _spans, _apiKeys, _savedQueries, _masking, _shareLinks);
 	}
 
 	public async Task InitializeAsync() => await _store.InitializeAsync(CancellationToken.None);

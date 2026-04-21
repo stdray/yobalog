@@ -5,12 +5,14 @@ using YobaLog.Core.Auth;
 using YobaLog.Core.Retention;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
+using YobaLog.Core.Tracing;
 
 namespace YobaLog.Core.Storage;
 
 public sealed class WorkspaceBootstrapper : IHostedService
 {
 	readonly ILogStore _store;
+	readonly ISpanStore _spans;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
 	readonly IShareLinkStore _shareLinks;
@@ -23,6 +25,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 
 	public WorkspaceBootstrapper(
 		ILogStore store,
+		ISpanStore spans,
 		ISavedQueryStore savedQueries,
 		IFieldMaskingPolicyStore maskingPolicies,
 		IShareLinkStore shareLinks,
@@ -34,6 +37,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		ILogger<WorkspaceBootstrapper> logger)
 	{
 		_store = store;
+		_spans = spans;
 		_savedQueries = savedQueries;
 		_maskingPolicies = maskingPolicies;
 		_shareLinks = shareLinks;
@@ -50,9 +54,11 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		await _workspaceStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
 		await _userStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
 		await _retentionPolicies.InitializeAsync(cancellationToken).ConfigureAwait(false);
+		await _spans.InitializeAsync(cancellationToken).ConfigureAwait(false);
 
 		await InitMetaAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);
 		await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), cancellationToken).ConfigureAwait(false);
+		await _spans.CreateWorkspaceAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);
 		BootstrapLog.SystemCreated(_logger);
 
 		// First-run migration: seed workspace store from config's API keys if the store is empty.
@@ -68,6 +74,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		foreach (var info in known)
 		{
 			await _store.CreateWorkspaceAsync(info.Id, new WorkspaceSchema(), cancellationToken).ConfigureAwait(false);
+			await _spans.CreateWorkspaceAsync(info.Id, cancellationToken).ConfigureAwait(false);
 			await InitMetaAsync(info.Id, cancellationToken).ConfigureAwait(false);
 			BootstrapLog.WorkspaceCreated(_logger, info.Id);
 		}

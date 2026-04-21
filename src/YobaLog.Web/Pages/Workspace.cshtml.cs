@@ -139,7 +139,7 @@ public sealed class WorkspaceModel : PageModel
 
 		try
 		{
-			using var activity = ws.IsSystem ? null : Tracing.Query.StartActivity("query.kql");
+			using var activity = ws.IsSystem ? null : ActivitySources.Query.StartActivity("query.kql");
 			activity?.SetTag("workspace", ws.Value);
 			activity?.SetTag("shape_changed", IsShapeChanged);
 

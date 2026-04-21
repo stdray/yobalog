@@ -1,28 +1,29 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenTelemetry;
-using YobaLog.Core.Storage;
+using YobaLog.Core.Tracing;
 using YobaLog.Web.Observability;
-using LogEvent = YobaLog.Core.LogEvent;
 
 namespace YobaLog.E2ETests;
 
-// End-to-end Phase G self-emission: ingesting events into a user workspace should produce
+// End-to-end Phase H.1 self-emission: ingesting events into a user workspace produces
 // spans on the YobaLog.Ingestion / YobaLog.Storage.Sqlite sources; feeding them through
-// SystemSpanExporter should land span-events in $system with Properties.Kind="span".
+// SystemSpanExporter lands Span records in $system.traces.db (via ISpanStore).
 //
-// Decision-log 2026-04-21 Rule 4: KestrelAppHost runs under Testing env (OTel wiring off),
-// tests opt in via local ActivityListener that routes completed Activities through the
-// exporter. That exercises real instrumentation call sites + real exporter without
-// overriding the env gate.
+// Decision-log 2026-04-21 Rule 4: KestrelAppHost runs under Testing env (AddOpenTelemetry
+// off), tests opt in via local ActivityListener that routes completed Activities through
+// the exporter. Exercises real instrumentation sites + real exporter without overriding
+// the env gate.
 public sealed class SelfEmissionTests : IAsyncLifetime
 {
 	static readonly WorkspaceId Ws = WorkspaceId.Parse("self-emit-ws");
 	readonly KestrelAppHost _host = new();
+	readonly ConcurrentBag<string> _seenTraceIds = [];
+	readonly ConcurrentBag<string> _seenSources = [];
 	ActivityListener? _listener;
 
 	public async Task InitializeAsync()
@@ -33,10 +34,8 @@ public sealed class SelfEmissionTests : IAsyncLifetime
 			s["ApiKeys:Keys:0:Workspace"] = Ws.Value;
 		});
 
-		// Wire a local ActivityListener that mimics what AddOpenTelemetry().WithTracing would
-		// do: for every completed YobaLog.* Activity, feed it into SystemSpanExporter.
-		var store = _host.Services.GetRequiredService<ILogStore>();
-		var exporter = new SystemSpanExporter(store, NullLogger<SystemSpanExporter>.Instance);
+		var spans = _host.Services.GetRequiredService<ISpanStore>();
+		var exporter = new SystemSpanExporter(spans, NullLogger<SystemSpanExporter>.Instance);
 
 		_listener = new ActivityListener
 		{
@@ -44,6 +43,8 @@ public sealed class SelfEmissionTests : IAsyncLifetime
 			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
 			ActivityStopped = activity =>
 			{
+				_seenTraceIds.Add(activity.TraceId.ToHexString());
+				_seenSources.Add(activity.Source.Name);
 				// Single-activity batch per stop — the exporter handles the direct-write path.
 				exporter.Export(new Batch<Activity>([activity], count: 1));
 			},
@@ -58,7 +59,7 @@ public sealed class SelfEmissionTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task Ingesting_Events_Produces_SpanEvents_In_SystemWorkspace()
+	public async Task Ingesting_Events_Produces_Spans_In_SystemTracesDb()
 	{
 		using var client = new HttpClient { BaseAddress = new Uri(_host.BaseUrl) };
 		var body = """{"@t":"2026-04-21T12:00:00Z","@l":"Information","@m":"self-emission-probe"}""";
@@ -72,90 +73,71 @@ public sealed class SelfEmissionTests : IAsyncLifetime
 		resp.StatusCode.Should().Be(HttpStatusCode.Created);
 
 		// ChannelIngestionPipeline drains asynchronously — give SqliteLogStore.AppendBatchAsync
-		// time to run + emit its span.
+		// time to run + emit its span + exporter to land it in $system.traces.db.
 		await WaitForSystemSpansAsync(atLeast: 2);
 
-		var store = _host.Services.GetRequiredService<ILogStore>();
-		var spans = new List<LogEvent>();
-		await foreach (var e in store.QueryAsync(WorkspaceId.System, new LogQuery(PageSize: 50), CancellationToken.None))
-		{
-			if (e.Properties.TryGetValue("Kind", out var kind) && kind.GetString() == "span")
-				spans.Add(e);
-		}
+		var spansStore = _host.Services.GetRequiredService<ISpanStore>();
+		var count = await spansStore.CountAsync(WorkspaceId.System, CancellationToken.None);
+		count.Should().BeGreaterThanOrEqualTo(2,
+			"ingest triggers at least YobaLog.Ingestion + YobaLog.Storage.Sqlite spans");
 
-		spans.Should().NotBeEmpty("ingesting events must trigger at least one YobaLog.* span → exporter → $system write");
-
-		// Expect at minimum: one YobaLog.Ingestion span (IngestAsync) + one YobaLog.Storage.Sqlite
-		// span (AppendBatchAsync). The drain happens on a background thread so ordering isn't
-		// guaranteed here; just check both sources appeared.
-		var sources = spans.Select(s => s.Properties["Source"].GetString()).ToHashSet(StringComparer.Ordinal);
+		// Both expected sources must have fired.
+		var sources = _seenSources.ToHashSet(StringComparer.Ordinal);
 		sources.Should().Contain("YobaLog.Ingestion");
 		sources.Should().Contain("YobaLog.Storage.Sqlite");
 
-		// Span-shape sanity: each span-event must carry the flattened fields SystemSpanExporter
-		// documents (Kind / Name / StartUnixNs / DurationNs).
+		// Pick any observed TraceId and round-trip through the waterfall hot path.
+		var sampledTraceId = _seenTraceIds.First();
+		var spans = await spansStore.GetByTraceIdAsync(WorkspaceId.System, sampledTraceId, CancellationToken.None);
+		spans.Should().NotBeEmpty("GetByTraceIdAsync round-trip returns what the exporter wrote");
 		spans.Should().AllSatisfy(s =>
 		{
-			s.Properties.Should().ContainKey("Name");
-			s.Properties.Should().ContainKey("StartUnixNs");
-			s.Properties.Should().ContainKey("DurationNs");
-			s.TraceId.Should().NotBeNullOrEmpty();
-			s.SpanId.Should().NotBeNullOrEmpty();
+			s.SpanId.Should().HaveLength(16);
+			s.TraceId.Should().Be(sampledTraceId);
+			s.Name.Should().NotBeNullOrEmpty();
+			s.Attributes.Should().ContainKey("source");
 		});
 	}
 
 	[Fact]
 	public async Task System_Workspace_Writes_Are_Not_Instrumented()
 	{
-		// Defence in depth: even though ActivityListener would try to export a span if one was
-		// created for a $system write, the instrumented code skips StartActivity when
-		// workspaceId.IsSystem. Otherwise every span export would recurse: span → AppendBatch
-		// → span → AppendBatch → ... until ChannelIngestionPipeline drops.
-		//
-		// To assert: write directly to $system via the store; no new span-events should appear.
-		var store = _host.Services.GetRequiredService<ILogStore>();
-		await store.AppendBatchAsync(WorkspaceId.System, new[]
+		// Defence in depth: $system writes skip StartActivity (storage.traces.append.batch
+		// is guarded by workspaceId.IsSystem). Otherwise every span export would recurse:
+		// span → AppendBatch → span → AppendBatch → ... until the queue overflows.
+		var spansStore = _host.Services.GetRequiredService<ISpanStore>();
+		var before = await spansStore.CountAsync(WorkspaceId.System, CancellationToken.None);
+
+		await spansStore.AppendBatchAsync(WorkspaceId.System, new[]
 		{
-			new YobaLog.Core.LogEventCandidate(
-				DateTimeOffset.UtcNow,
-				YobaLog.Core.LogLevel.Information,
-				"system-write",
-				"system-write",
-				null, null, null, null,
-				System.Collections.Immutable.ImmutableDictionary<string, System.Text.Json.JsonElement>.Empty),
-		}, CancellationToken.None);
-
-		// Let any background spans settle.
-		await Task.Delay(200);
-
-		var beforeCount = await store.CountAsync(WorkspaceId.System, new LogQuery(PageSize: 1), CancellationToken.None);
-
-		// Second $system write — if we were instrumenting $system, ActivityListener would fire,
-		// exporter would write, count would jump by >1 (new event + span for the append).
-		await store.AppendBatchAsync(WorkspaceId.System, new[]
-		{
-			new YobaLog.Core.LogEventCandidate(
-				DateTimeOffset.UtcNow,
-				YobaLog.Core.LogLevel.Information,
-				"system-write-2",
-				"system-write-2",
-				null, null, null, null,
-				System.Collections.Immutable.ImmutableDictionary<string, System.Text.Json.JsonElement>.Empty),
+			new Span(
+				SpanId: "0123456789abcdef",
+				TraceId: "0123456789abcdef0123456789abcdef",
+				ParentSpanId: null,
+				Name: "direct-write",
+				Kind: SpanKind.Internal,
+				StartTime: DateTimeOffset.UtcNow,
+				Duration: TimeSpan.FromMilliseconds(1),
+				Status: SpanStatusCode.Unset,
+				StatusDescription: null,
+				Attributes: System.Collections.Immutable.ImmutableDictionary<string, System.Text.Json.JsonElement>.Empty,
+				Events: [],
+				Links: []),
 		}, CancellationToken.None);
 
 		await Task.Delay(200);
 
-		var afterCount = await store.CountAsync(WorkspaceId.System, new LogQuery(PageSize: 1), CancellationToken.None);
-		(afterCount - beforeCount).Should().Be(1, "exactly the explicit write should appear — no instrumentation span");
+		var after = await spansStore.CountAsync(WorkspaceId.System, CancellationToken.None);
+		(after - before).Should().Be(1, "exactly the explicit write should appear — no instrumentation span");
 	}
 
 	async Task WaitForSystemSpansAsync(int atLeast)
 	{
-		var store = _host.Services.GetRequiredService<ILogStore>();
+		var spansStore = _host.Services.GetRequiredService<ISpanStore>();
 		var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
 		while (DateTimeOffset.UtcNow < deadline)
 		{
-			var count = await store.CountAsync(WorkspaceId.System, new LogQuery(PageSize: 1), CancellationToken.None);
+			var count = await spansStore.CountAsync(WorkspaceId.System, CancellationToken.None);
 			if (count >= atLeast) return;
 			await Task.Delay(50);
 		}

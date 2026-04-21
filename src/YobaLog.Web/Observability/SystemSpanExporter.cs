@@ -5,41 +5,39 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using YobaLog.Core;
-using YobaLog.Core.SelfLogging;
-using YobaLog.Core.Storage;
-using LogLevel = YobaLog.Core.LogLevel;
+using YobaLog.Core.Tracing;
 
 namespace YobaLog.Web.Observability;
 
-// BaseExporter<Activity> → LogEventCandidate → ILogStore.AppendBatchAsync($system).
+// BaseExporter<Activity> → Span → ISpanStore.AppendBatchAsync($system.traces.db).
+//
+// Phase H switched the write target from ILogStore ($system.logs.db with Properties.Kind=
+// "span" sentinel) to a dedicated ISpanStore. Storage shape is now structurally typed
+// (SpanId / TraceId / Duration as first-class columns, AttributesJson for the dynamic
+// bag) — waterfall UI can query by TraceId in one indexed lookup instead of fishing with
+// `where Properties.Kind == 'span'`.
 //
 // Bypasses IIngestionPipeline on purpose (mirror SystemLoggerProvider pattern): spans are
 // already batched by SimpleActivityExportProcessor's queue, and feeding them through the
-// Channels-based pipeline would double-buffer and tangle shutdown order. Direct write is
-// what $system is for.
-//
-// Phase G "interim storage": until Phase H ships ISpanStore, spans live in $system.logs.db
-// under Properties.Kind="span" + flattened parent/duration/start/status. KQL over them is
-// awkward ('where Properties.DurationNs > ...'), but that's fine — Phase G is
-// self-observability, not user-facing trace UI (decision-log 2026-04-21 Phase G↔H sequencing).
+// Channels pipeline would double-buffer and tangle shutdown order.
 sealed class SystemSpanExporter : BaseExporter<Activity>
 {
-	readonly ILogStore _store;
+	readonly ISpanStore _spans;
 	readonly ILogger<SystemSpanExporter> _logger;
 
-	public SystemSpanExporter(ILogStore store, ILogger<SystemSpanExporter> logger)
+	public SystemSpanExporter(ISpanStore spans, ILogger<SystemSpanExporter> logger)
 	{
-		_store = store;
+		_spans = spans;
 		_logger = logger;
 	}
 
 	public override ExportResult Export(in Batch<Activity> batch)
 	{
-		var candidates = new List<LogEventCandidate>();
+		var spans = new List<Span>();
 		foreach (var activity in batch)
-			candidates.Add(ToCandidate(activity));
+			spans.Add(ToSpan(activity));
 
-		if (candidates.Count == 0)
+		if (spans.Count == 0)
 			return ExportResult.Success;
 
 		try
@@ -47,7 +45,7 @@ sealed class SystemSpanExporter : BaseExporter<Activity>
 			// BaseExporter.Export is synchronous — block on the ValueTask. Batch size is capped
 			// by the SimpleActivityExportProcessor upstream; under load we still prefer sync
 			// backpressure (late spans drop) over unbounded task queues.
-			_store.AppendBatchAsync(WorkspaceId.System, candidates, CancellationToken.None)
+			_spans.AppendBatchAsync(WorkspaceId.System, spans, CancellationToken.None)
 				.AsTask()
 				.GetAwaiter()
 				.GetResult();
@@ -55,63 +53,95 @@ sealed class SystemSpanExporter : BaseExporter<Activity>
 		}
 		catch (Exception ex)
 		{
-			SystemSpanLog.ExportFailed(_logger, ex, candidates.Count);
+			SystemSpanLog.ExportFailed(_logger, ex, spans.Count);
 			return ExportResult.Failure;
 		}
 	}
 
-	public static LogEventCandidate ToCandidate(Activity activity)
+	public static Span ToSpan(Activity activity)
 	{
-		var props = ImmutableDictionary.CreateBuilder<string, JsonElement>(StringComparer.Ordinal);
-		props["Kind"] = JsonFromLiteral("\"span\"");
-		props["Name"] = JsonFromString(activity.DisplayName);
-		props["ActivityKind"] = JsonFromString(activity.Kind.ToString());
-		props["Source"] = JsonFromString(activity.Source.Name);
+		var attributes = ImmutableDictionary.CreateBuilder<string, JsonElement>(StringComparer.Ordinal);
 
-		// Nanosecond precision isn't on DateTimeOffset — construct from Ticks (100ns units).
-		var startUnixNs = ((DateTimeOffset)activity.StartTimeUtc).ToUnixTimeMilliseconds() * 1_000_000L
-			+ (activity.StartTimeUtc.Ticks % TimeSpan.TicksPerMillisecond) * 100L;
-		props["StartUnixNs"] = JsonFromLiteral(startUnixNs.ToString(CultureInfo.InvariantCulture));
-
-		// Activity.Duration is populated on dispose; for exporter path (post-dispose) it's accurate.
-		// Falling back to 0 handles the niche case of exporting an in-flight activity (shouldn't
-		// happen in practice with SimpleActivityExportProcessor, but be defensive).
-		var durationNs = activity.Duration.Ticks > 0 ? activity.Duration.Ticks * 100 : 0;
-		props["DurationNs"] = JsonFromLiteral(durationNs.ToString(CultureInfo.InvariantCulture));
-
-		if (activity.ParentSpanId != default)
-			props["ParentSpanId"] = JsonFromString(activity.ParentSpanId.ToHexString());
-
-		if (activity.Status != ActivityStatusCode.Unset)
-			props["StatusCode"] = JsonFromString(activity.Status.ToString());
-		if (!string.IsNullOrEmpty(activity.StatusDescription))
-			props["StatusDescription"] = JsonFromString(activity.StatusDescription);
+		// Augment real tags with the source name so downstream filters (`where Attributes.source
+		// == 'YobaLog.Ingestion'`) work without needing a dedicated column.
+		attributes["source"] = JsonFromString(activity.Source.Name);
 
 		foreach (var kv in activity.TagObjects)
 		{
 			if (kv.Value is null) continue;
-			// Skip tag names that collide with our flattened span fields — a "Kind" tag from the
-			// instrumented code would silently shadow our Kind="span" sentinel, making the event
-			// not look like a span to downstream filters.
-			if (kv.Key is "Kind" or "Name" or "ActivityKind" or "Source" or "StartUnixNs"
-				or "DurationNs" or "ParentSpanId" or "StatusCode" or "StatusDescription")
-			{
-				continue;
-			}
-			props[kv.Key] = TagValueToJson(kv.Value);
+			// Reserved-key guard — a tag literally named "source" would silently shadow our
+			// source-name augmentation. Unlikely in practice but catches rogue instrumentation.
+			if (kv.Key == "source") continue;
+			attributes[kv.Key] = TagValueToJson(kv.Value);
 		}
 
-		return new LogEventCandidate(
-			Timestamp: new DateTimeOffset(activity.StartTimeUtc, TimeSpan.Zero),
-			Level: LogLevel.Information,
-			MessageTemplate: activity.DisplayName,
-			Message: activity.DisplayName,
-			Exception: null,
-			TraceId: activity.TraceId.ToHexString(),
+		var events = ImmutableArray.CreateBuilder<SpanEvent>();
+		foreach (var e in activity.Events)
+		{
+			var eventAttrs = ImmutableDictionary.CreateBuilder<string, JsonElement>(StringComparer.Ordinal);
+			foreach (var kv in e.Tags)
+			{
+				if (kv.Value is null) continue;
+				eventAttrs[kv.Key] = TagValueToJson(kv.Value);
+			}
+			events.Add(new SpanEvent(
+				Timestamp: new DateTimeOffset(e.Timestamp.UtcDateTime, TimeSpan.Zero),
+				Name: e.Name,
+				Attributes: eventAttrs.ToImmutable()));
+		}
+
+		var links = ImmutableArray.CreateBuilder<SpanLink>();
+		foreach (var l in activity.Links)
+		{
+			var linkAttrs = ImmutableDictionary.CreateBuilder<string, JsonElement>(StringComparer.Ordinal);
+			foreach (var kv in l.Tags ?? [])
+			{
+				if (kv.Value is null) continue;
+				linkAttrs[kv.Key] = TagValueToJson(kv.Value);
+			}
+			links.Add(new SpanLink(
+				TraceId: l.Context.TraceId.ToHexString(),
+				SpanId: l.Context.SpanId.ToHexString(),
+				Attributes: linkAttrs.ToImmutable()));
+		}
+
+		return new Span(
 			SpanId: activity.SpanId.ToHexString(),
-			EventId: null,
-			Properties: props.ToImmutable());
+			TraceId: activity.TraceId.ToHexString(),
+			ParentSpanId: activity.ParentSpanId != default ? activity.ParentSpanId.ToHexString() : null,
+			Name: activity.DisplayName,
+			Kind: MapKind(activity.Kind),
+			StartTime: new DateTimeOffset(activity.StartTimeUtc, TimeSpan.Zero),
+			// Duration is populated on Stop; for mid-flight activities (shouldn't happen with
+			// SimpleActivityExportProcessor but be defensive) we'd otherwise read TimeSpan.Zero.
+			Duration: activity.Duration.Ticks > 0 ? activity.Duration : TimeSpan.Zero,
+			Status: MapStatus(activity.Status),
+			StatusDescription: string.IsNullOrEmpty(activity.StatusDescription) ? null : activity.StatusDescription,
+			Attributes: attributes.ToImmutable(),
+			Events: events.ToImmutable(),
+			Links: links.ToImmutable());
 	}
+
+	// ActivityKind and SpanKind share integer values by MS convention — cast is safe. We still
+	// wrap it in a switch so a future enum member-add on either side surfaces as a compile
+	// error (switch-expression exhaustiveness check) instead of silently producing garbage.
+	static SpanKind MapKind(ActivityKind kind) => kind switch
+	{
+		ActivityKind.Internal => SpanKind.Internal,
+		ActivityKind.Server => SpanKind.Server,
+		ActivityKind.Client => SpanKind.Client,
+		ActivityKind.Producer => SpanKind.Producer,
+		ActivityKind.Consumer => SpanKind.Consumer,
+		_ => SpanKind.Internal,
+	};
+
+	static SpanStatusCode MapStatus(ActivityStatusCode status) => status switch
+	{
+		ActivityStatusCode.Unset => SpanStatusCode.Unset,
+		ActivityStatusCode.Ok => SpanStatusCode.Ok,
+		ActivityStatusCode.Error => SpanStatusCode.Error,
+		_ => SpanStatusCode.Unset,
+	};
 
 	static JsonElement TagValueToJson(object value)
 	{
@@ -139,6 +169,6 @@ sealed class SystemSpanExporter : BaseExporter<Activity>
 static partial class SystemSpanLog
 {
 	[LoggerMessage(EventId = 40, Level = Microsoft.Extensions.Logging.LogLevel.Error,
-		Message = "Failed to export {Count} span(s) to $system; dropped on the floor")]
+		Message = "Failed to export {Count} span(s) to $system.traces.db; dropped on the floor")]
 	public static partial void ExportFailed(ILogger logger, Exception ex, int count);
 }

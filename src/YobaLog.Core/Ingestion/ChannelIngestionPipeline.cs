@@ -37,7 +37,7 @@ public sealed class ChannelIngestionPipeline : IIngestionPipeline, IHostedServic
 		if (batch.Count == 0)
 			return;
 
-		using var activity = workspaceId.IsSystem ? null : Tracing.Ingestion.StartActivity("ingest.enqueue");
+		using var activity = workspaceId.IsSystem ? null : ActivitySources.Ingestion.StartActivity("ingest.enqueue");
 		activity?.SetTag("workspace", workspaceId.Value);
 		activity?.SetTag("batch.size", batch.Count);
 
