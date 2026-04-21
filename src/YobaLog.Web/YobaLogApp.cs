@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
+using System.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using YobaLog.Core;
@@ -38,6 +40,20 @@ public static class YobaLogApp
 		builder.Services.Configure<SystemLoggerOptions>(builder.Configuration.GetSection("SystemLogger"));
 		builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("Admin"));
 		builder.Services.Configure<ShareOptions>(builder.Configuration.GetSection("Share"));
+
+		// Caddy on the host terminates TLS on :443 and reverse-proxies to 127.0.0.1:8082
+		// (see doc/spec.md §11). Without this wiring HttpContext.Request.IsHttps is false
+		// behind the loopback proxy — UseHttpsRedirection loops 307, cookie Secure-flag is
+		// computed wrong, share-link URLs rendered with http://. Defaults are cleared
+		// so we only trust 127.0.0.1; any other X-Forwarded-* source is ignored.
+		builder.Services.Configure<ForwardedHeadersOptions>(o =>
+		{
+			o.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor;
+			o.KnownIPNetworks.Clear();
+			o.KnownProxies.Clear();
+			o.KnownProxies.Add(IPAddress.Loopback);
+			o.KnownProxies.Add(IPAddress.IPv6Loopback);
+		});
 
 		builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
 		builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
@@ -90,6 +106,12 @@ public static class YobaLogApp
 	public static void Configure(WebApplication app)
 	{
 		ArgumentNullException.ThrowIfNull(app);
+
+		// UseForwardedHeaders must run before UseHttpsRedirection / UseHsts / auth —
+		// anything that inspects HttpContext.Request.IsHttps or RemoteIpAddress needs
+		// the rewritten values. Options configured in ConfigureServices pin trust to
+		// loopback so forged X-Forwarded-Proto from non-proxy clients is ignored.
+		app.UseForwardedHeaders();
 
 		if (!app.Environment.IsDevelopment())
 		{
