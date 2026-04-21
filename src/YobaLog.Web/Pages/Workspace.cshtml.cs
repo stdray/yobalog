@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using YobaLog.Core;
 using YobaLog.Core.Kql;
+using YobaLog.Core.Retention;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Storage;
@@ -17,15 +18,18 @@ public sealed class WorkspaceModel : PageModel
 	readonly ILogStore _store;
 	readonly ISavedQueryStore _savedQueries;
 	readonly IFieldMaskingPolicyStore _maskingPolicies;
+	readonly IRetentionPolicyStore _retentionPolicies;
 
 	public WorkspaceModel(
 		ILogStore store,
 		ISavedQueryStore savedQueries,
-		IFieldMaskingPolicyStore maskingPolicies)
+		IFieldMaskingPolicyStore maskingPolicies,
+		IRetentionPolicyStore retentionPolicies)
 	{
 		_store = store;
 		_savedQueries = savedQueries;
 		_maskingPolicies = maskingPolicies;
+		_retentionPolicies = retentionPolicies;
 	}
 
 	public WorkspaceId Workspace { get; private set; }
@@ -63,7 +67,8 @@ public sealed class WorkspaceModel : PageModel
 
 	public string? ActiveSavedName { get; private set; }
 
-	public string? FlashError { get; private set; }
+	[TempData]
+	public string? FlashError { get; set; }
 
 	public FieldMaskingPolicy MaskingPolicy { get; private set; } = FieldMaskingPolicy.Empty;
 
@@ -229,6 +234,21 @@ public sealed class WorkspaceModel : PageModel
 	{
 		if (!WorkspaceId.TryParse(id, out var ws))
 			return NotFound();
+
+		// Block delete if a retention policy references this saved query by name — the policy
+		// would otherwise silently stop running (RetentionService logs a MissingSavedQuery warn
+		// and skips). Per spec §3, the operator has to unhook the policy first.
+		var saved = await _savedQueries.GetAsync(ws, savedId, ct);
+		if (saved is not null)
+		{
+			var refs = await _retentionPolicies.ListByWorkspaceAsync(ws, ct);
+			var byName = refs.FirstOrDefault(p => string.Equals(p.SavedQuery, saved.Name, StringComparison.Ordinal));
+			if (byName is not null)
+			{
+				FlashError = $"Saved query '{saved.Name}' is used by retention policy ({byName.RetainDays} days). Delete the policy at /admin/retention first.";
+				return RedirectToPage(new { id });
+			}
+		}
 
 		await _savedQueries.DeleteAsync(ws, savedId, ct);
 		return RedirectToPage(new { id });

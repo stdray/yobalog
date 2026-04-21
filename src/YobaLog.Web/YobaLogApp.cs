@@ -12,6 +12,7 @@ using YobaLog.Core.Auth.Sqlite;
 using YobaLog.Core.Ingestion;
 using YobaLog.Core.Kql;
 using YobaLog.Core.Retention;
+using YobaLog.Core.Retention.Sqlite;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.SavedQueries.Sqlite;
 using YobaLog.Core.SelfLogging;
@@ -44,6 +45,7 @@ public static class YobaLogApp
 		builder.Services.AddSingleton<IShareLinkStore, SqliteShareLinkStore>();
 		builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
 		builder.Services.AddSingleton<IUserStore, SqliteUserStore>();
+		builder.Services.AddSingleton<IRetentionPolicyStore, SqliteRetentionPolicyStore>();
 
 		// Two-tier api-key stack: ConfigApiKeyStore (appsettings, admin backdoor — no UI)
 		// and SqliteApiKeyStore (per-workspace `.meta.db`, managed via /ws/{id}/admin/api-keys).

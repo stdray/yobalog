@@ -35,6 +35,11 @@
 	</div>
 </div>
 
+@if (Model.FlashError is not null)
+{
+	<div data-testid="workspace-flash-error" class="alert alert-error mb-4 text-sm">@Model.FlashError</div>
+}
+
 @{
 	var baseUrl = $"{ViewContext.HttpContext.Request.Scheme}://{ViewContext.HttpContext.Request.Host}";
 	var seqBase = $"{baseUrl}/compat/seq";

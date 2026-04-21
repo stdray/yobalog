@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using YobaLog.Core.Admin;
 using YobaLog.Core.Auth;
+using YobaLog.Core.Retention;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
 
@@ -15,6 +16,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 	readonly IShareLinkStore _shareLinks;
 	readonly IWorkspaceStore _workspaceStore;
 	readonly IUserStore _userStore;
+	readonly IRetentionPolicyStore _retentionPolicies;
 	readonly IApiKeyStore _apiKeys;
 	readonly IApiKeyAdmin _apiKeyAdmin;
 	readonly ILogger<WorkspaceBootstrapper> _logger;
@@ -26,6 +28,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		IShareLinkStore shareLinks,
 		IWorkspaceStore workspaceStore,
 		IUserStore userStore,
+		IRetentionPolicyStore retentionPolicies,
 		IApiKeyStore apiKeys,
 		IApiKeyAdmin apiKeyAdmin,
 		ILogger<WorkspaceBootstrapper> logger)
@@ -36,6 +39,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 		_shareLinks = shareLinks;
 		_workspaceStore = workspaceStore;
 		_userStore = userStore;
+		_retentionPolicies = retentionPolicies;
 		_apiKeys = apiKeys;
 		_apiKeyAdmin = apiKeyAdmin;
 		_logger = logger;
@@ -45,6 +49,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
 	{
 		await _workspaceStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
 		await _userStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
+		await _retentionPolicies.InitializeAsync(cancellationToken).ConfigureAwait(false);
 
 		await InitMetaAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);
 		await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), cancellationToken).ConfigureAwait(false);

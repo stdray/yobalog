@@ -19,9 +19,19 @@ static class SqliteAdminSchema
 		);
 		""";
 
+	public const string CreateRetentionPolicies = """
+		CREATE TABLE IF NOT EXISTS RetentionPolicies (
+			Workspace   TEXT NOT NULL,
+			SavedQuery  TEXT NOT NULL,
+			RetainDays  INTEGER NOT NULL,
+			PRIMARY KEY (Workspace, SavedQuery)
+		);
+		""";
+
 	public static readonly IReadOnlyList<string> AllStatements =
 	[
 		CreateWorkspaces,
 		CreateUsers,
+		CreateRetentionPolicies,
 	];
 }

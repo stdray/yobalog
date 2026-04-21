@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Retention;
+using YobaLog.Core.Retention.Sqlite;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.SavedQueries.Sqlite;
 using YobaLog.Core.Sharing.Sqlite;
@@ -18,6 +19,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 	readonly SqliteLogStore _store;
 	readonly SqliteSavedQueryStore _savedQueries;
 	readonly SqliteShareLinkStore _shareLinks;
+	readonly SqliteRetentionPolicyStore _policyStore;
 	readonly ConfigApiKeyStore _apiKeys;
 	static readonly WorkspaceId UserWs = WorkspaceId.Parse("retention-test");
 
@@ -29,6 +31,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		_store = new SqliteLogStore(storeOpts);
 		_savedQueries = new SqliteSavedQueryStore(storeOpts);
 		_shareLinks = new SqliteShareLinkStore(storeOpts);
+		_policyStore = new SqliteRetentionPolicyStore(storeOpts);
 		_apiKeys = new ConfigApiKeyStore(Options.Create(new ApiKeyOptions
 		{
 			Keys = [new ApiKeyConfig { Token = "k", Workspace = UserWs.Value }],
@@ -40,6 +43,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		await _store.CreateWorkspaceAsync(UserWs, new WorkspaceSchema(), CancellationToken.None);
 		await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), CancellationToken.None);
 		await _savedQueries.InitializeWorkspaceAsync(UserWs, CancellationToken.None);
+		await _policyStore.InitializeAsync(CancellationToken.None);
 	}
 
 	public Task DisposeAsync()
@@ -63,6 +67,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 			_savedQueries,
 			_shareLinks,
 			apiKeys ?? _apiKeys,
+			_policyStore,
 			Options.Create(new RetentionOptions
 			{
 				DefaultRetainDays = defaultDays,
@@ -184,6 +189,33 @@ public sealed class RetentionServiceTests : IAsyncLifetime
 		await foreach (var e in _store.QueryAsync(UserWs, new LogQuery(PageSize: 10), CancellationToken.None))
 			messages.Add(e.Message);
 		messages.Should().BeEquivalentTo(["recent-warning"]);
+	}
+
+	[Fact]
+	public async Task DbPolicy_Overrides_ConfigPolicy_When_Both_Defined()
+	{
+		// When the DB store has any policy for a workspace, config Retention:Policies[] is ignored
+		// for that workspace. Proves the DB = source of truth, config = bootstrap fallback.
+		var now = new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero);
+		await _store.AppendBatchAsync(UserWs,
+			[
+				Candidate(now.AddDays(-20), LogLevel.Error, "err"),
+			],
+			CancellationToken.None);
+		await _savedQueries.UpsertAsync(UserWs, "errors", "events | where Level >= 4", CancellationToken.None);
+
+		// Config says keep errors 90 days; DB says keep 7 days. DB wins → the -20d error should be swept.
+		await _policyStore.UpsertAsync(
+			new RetentionPolicy { Workspace = UserWs.Value, SavedQuery = "errors", RetainDays = 7 },
+			CancellationToken.None);
+
+		var svc = CreateService(policies:
+		[
+			new RetentionPolicy { Workspace = UserWs.Value, SavedQuery = "errors", RetainDays = 90 },
+		]);
+		await svc.RunPassAsync(now, CancellationToken.None);
+
+		(await _store.CountAsync(UserWs, new LogQuery(PageSize: 1), CancellationToken.None)).Should().Be(0);
 	}
 
 	[Fact]

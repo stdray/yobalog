@@ -1,0 +1,94 @@
+@page "/admin/retention"
+@model YobaLog.Web.Pages.Admin.RetentionModel
+@{
+	ViewData["Title"] = "Admin — Retention";
+}
+
+<div class="flex flex-wrap gap-3 items-center mb-4">
+	<a asp-page="/Index" class="hover:opacity-100 opacity-60 text-sm">← workspaces</a>
+	<h1 class="font-semibold text-2xl">Admin — Retention</h1>
+</div>
+
+@if (Model.FlashMessage is not null)
+{
+	<div class="alert alert-success mb-4 text-sm">@Model.FlashMessage</div>
+}
+@if (Model.ErrorMessage is not null)
+{
+	<div class="alert alert-error mb-4 text-sm">@Model.ErrorMessage</div>
+}
+
+@if (Model.Workspaces.Count == 0)
+{
+	<div class="alert mb-4 text-sm">
+		No user workspaces yet. Create one at <a class="link" asp-page="/Admin/Workspaces">/admin/workspaces</a> first.
+	</div>
+}
+else
+{
+	<form method="post" asp-page-handler="create" class="flex flex-wrap gap-2 items-center mb-4">
+		<select name="workspace" required
+			data-testid="retention-workspace"
+			class="select select-bordered select-sm w-48">
+			<option value="" disabled selected>workspace…</option>
+			@foreach (var w in Model.Workspaces)
+			{
+				<option value="@w.Id.Value">@w.Id.Value</option>
+			}
+		</select>
+		<input type="text" name="savedQuery" required
+			placeholder="saved query name"
+			data-testid="retention-saved"
+			class="input input-bordered input-sm w-48" />
+		<input type="number" name="retainDays" required min="1" value="7"
+			data-testid="retention-days"
+			class="input input-bordered input-sm w-24" />
+		<span class="opacity-60 text-xs">days</span>
+		<button type="submit" data-testid="retention-create" class="btn btn-primary btn-sm">Save policy</button>
+	</form>
+	<p class="mb-4 opacity-60 text-xs">
+		Each policy = a saved query (KQL filter) + retention horizon. Events matched by the query are
+		kept this many days, then swept. If a workspace has ≥1 policy, the default retain-days is ignored
+		for that workspace; unmatched events stay until explicitly covered.
+	</p>
+}
+
+@if (Model.Policies.Count == 0)
+{
+	<div class="alert text-sm" data-testid="retention-empty">
+		No retention policies yet. Without a policy, a workspace is swept by <code>Retention:DefaultRetainDays</code>.
+	</div>
+}
+else
+{
+	<div class="bg-base-200 border border-base-300 overflow-x-auto rounded-box">
+		<table class="table table-sm">
+			<thead>
+				<tr>
+					<th>Workspace</th>
+					<th>Saved query</th>
+					<th class="w-32">Retain days</th>
+					<th class="w-32"></th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var p in Model.Policies)
+				{
+					<tr data-testid="retention-row" data-workspace="@p.Workspace" data-saved="@p.SavedQuery">
+						<td class="font-mono">@p.Workspace</td>
+						<td class="font-mono">@p.SavedQuery</td>
+						<td class="font-mono">@p.RetainDays</td>
+						<td>
+							<form method="post" asp-page-handler="delete">
+								<input type="hidden" name="workspace" value="@p.Workspace" />
+								<input type="hidden" name="savedQuery" value="@p.SavedQuery" />
+								<button type="submit" data-testid="retention-delete" class="btn btn-ghost btn-xs text-error"
+									onclick="return confirm('Delete policy @p.Workspace / @p.SavedQuery?');">Delete</button>
+							</form>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}

@@ -16,6 +16,7 @@ public sealed class RetentionService : BackgroundService
 	readonly ISavedQueryStore _savedQueries;
 	readonly IShareLinkStore _shareLinks;
 	readonly IApiKeyStore _apiKeys;
+	readonly IRetentionPolicyStore _policyStore;
 	readonly RetentionOptions _options;
 	readonly ILogger<RetentionService> _logger;
 	readonly TimeProvider _time;
@@ -25,6 +26,7 @@ public sealed class RetentionService : BackgroundService
 		ISavedQueryStore savedQueries,
 		IShareLinkStore shareLinks,
 		IApiKeyStore apiKeys,
+		IRetentionPolicyStore policyStore,
 		IOptions<RetentionOptions> options,
 		ILogger<RetentionService> logger,
 		TimeProvider? time = null)
@@ -33,6 +35,7 @@ public sealed class RetentionService : BackgroundService
 		_savedQueries = savedQueries;
 		_shareLinks = shareLinks;
 		_apiKeys = apiKeys;
+		_policyStore = policyStore;
 		_options = options.Value;
 		_logger = logger;
 		_time = time ?? TimeProvider.System;
@@ -85,9 +88,15 @@ public sealed class RetentionService : BackgroundService
 
 	async Task SweepWorkspaceAsync(WorkspaceId ws, DateTimeOffset now, CancellationToken ct)
 	{
-		var policies = _options.Policies
-			.Where(p => string.Equals(p.Workspace, ws.Value, StringComparison.Ordinal))
-			.ToList();
+		// DB-backed policies take precedence. Config-driven Retention:Policies[] is a
+		// bootstrap/migration fallback — honored only when no DB policy exists for this ws.
+		var policies = await _policyStore.ListByWorkspaceAsync(ws, ct).ConfigureAwait(false);
+		if (policies.Count == 0)
+		{
+			policies = _options.Policies
+				.Where(p => string.Equals(p.Workspace, ws.Value, StringComparison.Ordinal))
+				.ToList();
+		}
 
 		if (policies.Count == 0)
 		{
