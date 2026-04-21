@@ -9,6 +9,18 @@
     - `POST /api/v1/ingest/clef` — канонический версионированный путь. Принимает CLEF NDJSON (`application/vnd.serilog.clef`) и Seq Events-envelope (`application/json`, `{"Events":[…]}`; внутри либо CLEF, либо legacy Raw — нормализуется в CLEF).
     - `POST /compat/seq/api/events/raw` — приёмник для Seq-клиентов (Serilog.Sinks.Seq, seq-logging, seqlog). Клиенты строят endpoint как `<base-url>/api/events/raw` (просто конкатенация строки), поэтому пользователь прописывает в своём Serilog/winston-конфиге base URL `https://yobalog.example.com/compat/seq` — клиент дописывает хвост сам. Тот же handler, что и canonical. UI API-ключа даст кнопку «Copy Seq URL» с готовым base URL.
     - Будущие форматы — два независимых вектора: **нативные** (`POST /api/v1/ingest/<fmt>` — например, `gelf`, `otlp`) + **совместимые с внешними вендорами** (`POST /compat/<tech>/...` — `hec` для Splunk HEC, `statsd` и т.п.; точный путь под каждый — как требует клиент). Auth и pipeline-dispatch шарятся через `IngestionHandlers.ResolveScopeAsync` + `IIngestionPipeline.IngestAsync`.
+<!-- OTel proposal (Phase F, decision-log 2026-04-21 draft): добавить третий вектор — OTLP —
+     зеркалящий Seq-овский surface, чтобы существующие OTel-экспортёры, смотрящие в Seq,
+     работали без изменений: `POST /ingest/otlp/v1/logs` (HTTP/Protobuf, заголовок
+     `X-Seq-ApiKey`). Опциональный alias `POST /v1/logs` для OTel-клиентов, которые жёстко
+     прописывают стандартный путь. gRPC и HTTP/JSON отложены в Phase F+1 / скипнуты
+     соответственно. Metrics — жёстко out of scope (yobalog = logs + traces; metrics живут в
+     Prometheus/Grafana). Traces: `POST /ingest/otlp/v1/traces` → Phase H, отдельная схема
+     (см. proposal в §3). -->
+<!-- OTel proposal (Phase F): метрики OTLP (counters / gauges / histograms) — явный non-goal.
+     Не ложатся в log/trace-store, дублировали бы Prometheus/Grafana. Зафиксировать в спеке
+     отдельной строкой чтобы не дрейфовать. -->
+- **Явный non-goal:** OTLP Metrics — yobalog хранит логи (и опционально, позже, трейсы). Метрики — территория Prometheus/Grafana. [Черновик; finalize после ревью OTel-решения.]
 - **Хранение:**
     - Стартовый backend — **SQLite + FTS5** через `linq2db`. Один файл `.db` на каждое хранилище (Workspace).
     - Обоснование: inverted index на `Message` через FTS5 — из коробки, без собственной реализации (главный UX-gap против Seq закрыт бесплатно); `linq2db` даёт общий путь трансляции KQL→SQL, тот же, что пригодится для DuckDB.
@@ -26,9 +38,41 @@
 - **.NET:** Serilog + Serilog.Sinks.Seq. Проверено integration-тестом `SerilogSeqSinkCompatTests`.
 - **TS/JS:** Winston + `@datalust/winston-seq` (и Pino через аналогичные sink'ы). Проверено `WinstonSeqCompatTests` под bun.
 - **Python:** `logging` + `seqlog`. Пока не покрыто тестом.
+<!-- OTel proposal (Phase F): добавить OpenTelemetry SDK как first-class таргет по языкам.
+     Любой app с `OpenTelemetry.Exporter.OpenTelemetryProtocol` (или эквивалентом в Go /
+     Python / Java / JS), HTTP/Protobuf + `X-Seq-ApiKey` + endpoint
+     `https://<host>/ingest/otlp/v1/logs` — пишет в yobalog без адаптерного кода. Стек по
+     языкам:
+     - .NET: `builder.Logging.AddOpenTelemetry(l => l.AddOtlpExporter(o => o.Endpoint = ...))`.
+     - Go / Python / JS: стандартный OTel SDK с env `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
+     Phase F compat-тесты повторяют паттерн `WinstonSeqCompatTests`: спавним внешний
+     OTel-enabled процесс, ассертим state store. Один тест на major-язык (минимум .NET +
+     Python). -->
+- **OpenTelemetry (черновик, Phase F):** любой OTel-enabled app, нацелив exporter на
+  `https://<host>/ingest/otlp/v1/logs` (HTTP/Protobuf), пишет в yobalog через `X-Seq-ApiKey` —
+  тот же surface что у Seq-овского OTLP endpoint'а, т.е. существующие OTel→Seq связки
+  переезжают сменой только URL base.
 
 ## 3. Функциональные возможности
 - **Query Engine:** KQL — официальный диалект, не собственный "KQL-подобный". Парсер = `Microsoft.Azure.Kusto.Language` (NuGet от MS, тот же, что в Azure Data Explorer / Log Analytics) через обёртку [`kusto-loco`](https://github.com/NeilMacMullen/kusto-loco) (MIT). AST = Kusto AST; свой AST не пишем. Unsupported-операторы режутся на стадии трансляции с понятной ошибкой ("operator X not supported in yobalog"). Трансляция Kusto AST → backend-query: `Expression Trees` через `linq2db` (SQLite+FTS5 на старте, позже DuckDB). Full-text поиск по `Message` транслируется в FTS5 MATCH на SQLite. Агрегации (`summarize`, `count`, `by`) — часть KQL из коробки.
+<!-- OTel proposal (Phase H): расширяем KQL вторым таргетом `spans` рядом с существующим
+     `events`. Хранение — отдельная таблица per-workspace `Spans(SpanId, TraceId,
+     ParentSpanId, Name, Kind, StartUnixNs, EndUnixNs, StatusCode, AttributesJson,
+     EventsJson, LinksJson)`, индекс `(TraceId, StartUnixNs)` для waterfall-lookup'ов. KQL
+     пример: `spans | where Duration > 100ms | order by StartTime`. Новые колонки на
+     `spans`-таргете: `Duration` (int ms, computed), `ParentSpanId`, `Kind`, `Status`. KQL
+     transformer'у добавляется `spans`-ветка в `ApplyEventQuery` (или, общее, `ApplyQuery`).
+     Dual-executor тесты расширяются 10-15 spans-кейсами; никаких новых KQL-операторов. -->
+<!-- OTel proposal (Phase H) — альтернативы хранения спанов были рассмотрены:
+     (a) rich-log: `Events.Kind='span'` + всё остальное в Properties — отклонено (KQL-поверх
+         Properties JSON неловок, Events-схема заточена под лог-текст);
+     (b) отдельная таблица `spans` — рекомендация;
+     (c) скип — fallback, если Phase F/G не получат traction.
+     См. decision-log 2026-04-21 draft. -->
+<!-- OTel proposal (Phase H): service map / aggregate views (dependency graph over spans,
+     GROUP BY service.name + resource.attributes) — explicit defer. Большой UX surface,
+     минимальная ценность для self-hosted single-service observability. Документируем как
+     "out of MVP". -->
 - **Saved Queries / Shared Queries:**
     - Сохранённый запрос = KQL + агрегация. Заменяет нужду в domain-specific таблицах (аналог yobapub-овского `PlaybackErrorStore` = запрос с `summarize count() by domain`).
     - Анонимная ссылка на view (Guid, TTL, read-only).
@@ -90,6 +134,11 @@
 - ❌ Запрещён `.ToList()` перед фильтром.
 - ❌ Запрещена offset-пагинация на больших таблицах.
 - ⚠ Фильтр по неиндексированному Properties-пути допустим, но UI показывает предупреждение о full scan.
+<!-- OTel proposal (Phase H): все инварианты распространяются на `spans`-таргет идентично.
+     cursor — композитный `(StartUnixNs, SpanId)`; фильтры (`where Duration > 100ms`,
+     `where Kind == 'server'`) транслируются в SQL через linq2db; страница — единственная
+     материализация; waterfall-UI запрашивает спаны одного trace_id одной выборкой (индекс
+     `(TraceId, StartUnixNs)` делает это дешёвым). Новых инвариантов не появляется. -->
 
 ## 8. Self-observability
 - Сервис пишет свои события через `SystemLoggerProvider` (`ILoggerProvider`, зарегистрирован в DI) в зарезервированный workspace `$system` — напрямую через `ILogStore.AppendBatchAsync`, минуя общий `IIngestionPipeline` (чтобы pipeline-ошибки не уходили в pipeline же и не создавали рекурсию). `SystemLogFlusher` (hosted service) бэкает батчи.
@@ -97,6 +146,15 @@
 - **Queue-full политика:** `DropWrite` — при переполнении внутреннего буфера новые self-события молча отбрасываются, чтобы не блокировать user ingest под нагрузкой.
 - **Что туда пишется:** результаты retention-проходов, ingestion-ошибки (malformed CLEF, rate-limit rejects), query-статистика (медленные запросы, full scan'ы), аудит админских действий.
 - **Admin UI:** системный workspace скрыт из admin-списка (`/admin/workspaces`) как non-deletable, но доступен через обычный viewer `/ws/$system` и KQL. Retention-политика отдельная, более консервативная (`SystemRetainDays`).
+<!-- OTel proposal (Phase G): self-emission повторяет паттерн `SystemLoggerProvider`. Custom
+     `BaseExporter<Activity>` маппит завершённые Activity → `LogEventCandidate` с
+     `Properties.Kind="span"`, пишет в `$system` через `ILogStore.AppendBatchAsync` напрямую
+     (минует `IIngestionPipeline` по тому же reasoning — иначе pipeline-собственные спаны
+     рекурсят). Защита от рекурсии — именованные `ActivitySource`'ы (`YobaLog.Ingestion`,
+     `YobaLog.Query`, `YobaLog.Retention`, `YobaLog.Storage.Sqlite`); экспортёр слушает
+     только их, не `Microsoft.AspNetCore.*`. Queue-full → DropWrite как у логов.
+     Hot-path: spans только на boundary батчей (ingestion-батч, KQL-запрос, SQLite bulk-
+     copy, retention-проход), никогда per-event. -->
 
 ## 9. Локализация
 - **Стартовый язык:** английский ASCII. Русский — отложен, но каркас предусматривает. CI-проверка (`grep -P '[^\x00-\x7F]'`) валит билд на не-ASCII в `ts/`, `Pages/`, Web-root `.cs`, пока scaffold не появится — чтобы случайный русский литерал не проскочил (бывало).

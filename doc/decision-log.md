@@ -4,6 +4,110 @@
 
 ---
 
+## 2026-04-21 (draft) — OpenTelemetry integration: scope + cost assessment
+
+**Status: RESEARCH DRAFT.** Not approved for implementation. Code changes gated on review of this entry + spec `<!-- OTel proposal -->` comments + Phase F/G/H bullets in `plan.md`.
+
+**Problem.** Modern .NET-app hygiene 2026 includes OpenTelemetry. yobalog is uniquely positioned — it IS a log store, so OTel intersects on two sides:
+- **Ingest side:** OTLP-enabled clients should be able to write to yobalog with zero adapter code.
+- **Emit side:** yobalog's own operations (ingestion / query / retention) should emit OTel spans for self-observability.
+
+Three directions analyzed; each stands on its own — not all-or-nothing.
+
+### Direction 1 — OTLP ingestion (HTTP/Protobuf for logs): Phase F recommendation
+
+**Recommendation: Phase F.** Smallest unit of real value — any OTel-enabled .NET / Go / Python / JS app becomes a drop-in yobalog writer without code changes.
+
+**Path: mirror Seq's exact surface.** `POST /ingest/otlp/v1/logs` with `X-Seq-ApiKey` header. yobalog IS Seq-compatible; users who today point their OTel exporter at Seq should change only URL base and nothing else. OTel-standard `/v1/logs` path diverges from Seq's `/ingest/otlp/v1/logs` — Seq prefixes to disambiguate from its public API. We follow. Optional: also expose `/v1/logs` as an alias so OTel clients that hard-code the standard path work out of the box — trivial extra `MapPost`, open question below.
+
+**Protocol: HTTP/Protobuf only.** HTTP/JSON (~1-2 % real deployments; Seq skipped too) and gRPC (HTTP/2 + Kestrel config + reverse-proxy-hostile) both deferred to Phase F+1 if demand appears. Matches our Dockerfile (HTTP-only, port 8080).
+
+**OTLP LogRecord → CLEF mapping** (OTel Logs proto v1.5.0):
+
+| OTLP                                            | CLEF                          | Notes                                                                                     |
+|-------------------------------------------------|-------------------------------|-------------------------------------------------------------------------------------------|
+| `time_unix_nano` (fixed64)                      | `@t`                          | ÷ 1_000_000 → ms. If 0, fallback to `observed_time_unix_nano`. If both 0, reject record.  |
+| `severity_number` (SeverityNumber enum 1-24)    | `@l`                          | 1-4→Verbose, 5-8→Debug, 9-12→Information, 13-16→Warning, 17-20→Error, 21-24→Fatal.        |
+| `severity_text` (string)                        | `Properties["severity_text"]` | Preserve raw; may differ from number (custom levels).                                     |
+| `body` (AnyValue)                               | `@m`                          | string_value→direct. int/double/bool→ToString. array/map→System.Text.Json-serialize.      |
+| `attributes` (list\<KeyValue>)                  | `Properties`                  | Flatten into flat namespace (per spec §1).                                                |
+| `resource.attributes`                           | `Properties`                  | Merge with attributes; on key collision **resource wins** (deployment identity).          |
+| `trace_id` (bytes[16])                          | `@tr`                         | Hex-encode → 32-char lowercase. All-zero = absent, skip.                                  |
+| `span_id` (bytes[8])                            | `@sp`                         | Hex-encode → 16-char lowercase. All-zero = absent, skip.                                  |
+| `event_name` (string, new in 1.5)               | `@mt`                         | If non-empty, preserved as message template name.                                         |
+| `dropped_attributes_count`                      | `Properties["otlp_dropped"]`  | Skip if 0; debugging signal otherwise.                                                    |
+| `flags` (fixed32)                               | `Properties["otlp_flags"]`    | W3C trace flags; keep only if non-zero.                                                   |
+
+**Workspace routing:** same as Seq-compat. `X-Seq-ApiKey` header resolves via `CompositeApiKeyStore` → target workspace. `service.name` from resource attributes lands in `Properties` for filtering, NOT for routing (keeps the multi-tenant model explicit, resists attribute-injection workspace hops).
+
+**Effort:** 3-5 d. `OpenTelemetry.Proto` NuGet (first-party from OTel, v1.5.0) gives compiled Protobuf types at parser boundary. New `IOtlpLogParser` + endpoint handler + shared `IIngestionPipeline.IngestAsync` + 5-10 compat tests with real OTel exporter from a .NET / Python client (mirrors `WinstonSeqCompatTests` pattern — external process emits, we assert store state).
+
+### Direction 2 — Self-emission (yobalog as OTel client): Phase G recommendation
+
+**Recommendation: Phase G, after F lands.** Self-emission writes into `$system` workspace via a custom exporter — cleaner to build on a codebase that already understands OTLP-shaped data.
+
+**Packages** (as of April 2026, OTel .NET 1.15.x line):
+- `OpenTelemetry` 1.15.x — core.
+- `OpenTelemetry.Extensions.Hosting` 1.15.x — `AddOpenTelemetry()` DI integration.
+- `OpenTelemetry.Instrumentation.AspNetCore` 1.15.1 — auto-trace incoming HTTP (built-in .NET 8+ metrics).
+- `OpenTelemetry.Instrumentation.Http` 1.15.x — auto-trace outgoing HttpClient (costs nothing, useful for future).
+- **No `OpenTelemetry.Instrumentation.Sqlite`** exists (neither official nor community). Trace SQLite writes via a manual `ActivitySource` at `SqliteLogStore.AppendBatchAsync` boundary.
+
+**Destination: custom exporter → `$system`.** `BaseExporter<Activity>` that maps each completed Activity → `LogEventCandidate` with `Properties.Kind = "span"`, flattening `parent_id / name / duration / start_unix_ns / status_code` into Properties. Writes via `ILogStore.AppendBatchAsync` directly to `$system` — same pattern as `SystemLoggerProvider`, bypasses `IIngestionPipeline` to avoid recursion on the pipeline's own Activities.
+
+**Hot-path overhead budget** (grounded in BDN numbers from `perf-baseline.md`):
+- `ActivitySource.StartActivity()` with no listener: ~10 ns → sprinkle freely.
+- With listener, new Activity: 0.5-2 μs → fine at batch granularity.
+- **Do NOT emit a span per event inside `ChannelIngestionPipeline.WriteLoop`.** At 100k events/sec (current SqliteLogStore throughput), per-event overhead would be 50-200 ms/sec = 5-20 % CPU on tracing alone. Instrument batch boundaries only.
+- Safe targets: ingestion batch (~1 span / 1k events), KQL query (1 span / request — currently 300 μs-5 ms, overhead <1 %), SQLite BulkCopy (1 span / batch), retention sweep per workspace.
+- ASP.NET Core auto-instrumentation covers HTTP endpoints by default; explicitly skip `/health` / `/version` to avoid span churn under load-balancer pings.
+
+**Effort:** 1-2 d. Packages + `AddOpenTelemetry()` in `YobaLogApp` + named `ActivitySource`s at batch points (`YobaLog.Ingestion`, `YobaLog.Query`, `YobaLog.Retention`, `YobaLog.Storage.Sqlite`) + custom exporter + BDN regression test (baseline vs +OTel).
+
+### Direction 3 — Trace ingestion + UI: Phase H recommendation
+
+**Recommendation: Phase H, defer indefinitely unless F gets traction.** Only build trace support after ingest-logs proves valuable — if nobody's sending logs over OTLP, nobody's sending spans either.
+
+**Storage option analysis:**
+
+| Option                                            | Pro                                                                                                                  | Con                                                                                                                                                                | Verdict       |
+|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
+| (a) Rich-log: `Events.Kind='span'` + everything in Properties | Reuse Events table, single KQL target.                                                                              | `Duration` / `ParentSpanId` / `Kind` / `Status` live in Properties JSON → awkward KQL (`where json_extract(PropertiesJson,'$.Duration') > 100`). Schema lies: Events is optimized for log text; spans have structure. | **Reject**    |
+| (b) Separate `spans` table per workspace          | Schema matches reality: `(SpanId, TraceId, ParentSpanId, Name, Kind, StartUnixNs, EndUnixNs, StatusCode, AttributesJson, EventsJson, LinksJson)`. Indexed `(TraceId, StartUnixNs)` for waterfall lookups. KQL transformer adds a `spans`-target branch alongside `events`. | Duplicated migration path; two tables per workspace file.                                                                                                         | **Recommend** |
+| (c) Skip traces entirely                          | Zero scope.                                                                                                          | Direction 1 + 2 already cover half the OTel surface; skipping traces means trace-waterfall UI never ships.                                                        | **Fallback**  |
+
+**UI: trace waterfall** = Razor partial `_TraceWaterfall.cshtml`, takes `TraceId`, fetches spans ordered by `start_unix_ns`, renders `<div>` bars with width ∝ duration, indent = depth-in-parent-tree. Hover-tooltip on span for attributes / events / status. ~200 lines Razor + ~100 lines TS (event-delegated hover). **No D3 / vis.js** — keeps dependency footprint flat, matches our "htmx + DaisyUI, no heavy client framework" posture.
+
+**KQL extensions:** `spans | where Duration > 100ms | order by StartTime`. New columns on the `spans` target: `Duration` (int ms, computed from `EndUnixNs - StartUnixNs`), `ParentSpanId`, `Kind`, `Status`. Transformer: `ApplyEventQuery` generalizes to `ApplyQuery(target ∈ {events, spans})`; dual-executor tests extended with 10-15 spans-cases. No new KQL operators.
+
+**Service map / aggregate views — explicit defer.** Dependency graph over spans requires `GROUP BY service.name + resource.attributes`-style rollups; huge UX surface, minimal value for self-hosted single-service observability. Document as "out of MVP".
+
+**Effort:** 7-10 d. Spans schema + migration + separate `linq2db` table mapping + OTLP traces Protobuf parser + KQL transformer `spans`-target branch + waterfall Razor partial + span-details panel.
+
+### Rejected alternatives
+
+- **"Jaeger-only for traces"** — fragments observability across two stores and two UIs. Defeats the point of yobalog being self-hosted + single-pane-of-glass.
+- **"Seq-native `Seq.OpenTelemetry.Exporter` for client-side emit"** — that package is a CLIENT-side exporter sending from an OTel-enabled app INTO Seq's OTLP ingester. Doesn't apply on the receiving end; we'd be building the receiver.
+- **"Ingest metrics (OTLP Metrics)"** — yobalog is a log/trace store. Metrics are Prometheus/Grafana territory, completely different storage shape (counters / gauges / histograms → time-series), completely different query surface. Explicit-no; documented as hard-scope in the spec §1 proposal. Seq's upcoming 2026.1 OTLP-metrics support is NOT a signal to follow — they're also bolting on a separate metrics UX.
+- **"All three directions at once"** — scope creep, no feedback loop. F alone delivers measurable value (Seq-compat + OTLP-compat = largest protocol surface among self-hosted log stores).
+
+### Unresolved questions for review
+
+1. **Protocol-buffer source:** prefer `OpenTelemetry.Proto` NuGet (first-party, tracks spec) over compiling `.proto` from source via `Grpc.Tools`. Generated types are `public` + non-sealed + mutable → formally escapes our "max static typing, no mutable escape hatches" invariant (AGENTS.md). Scoped to parser boundary only — domain `LogEventCandidate` stays immutable. Acceptable?
+2. **Path alias `/v1/logs`:** expose OTel-standard path alongside Seq-prefixed `/ingest/otlp/v1/logs`? Trivial `MapPost`, helps OTel clients that hard-code the standard. Opens door for endpoint sprawl.
+3. **gRPC support scope:** defer entirely to Phase F+1 (recommended), or ship in F because the `OpenTelemetry.Proto` NuGet already brings Protobuf and Grpc.AspNetCore is a one-line addition? Cost: HTTP/2 at reverse proxy, ~100 extra lines of gRPC service, one extra endpoint binding in Kestrel.
+4. **Activity emission in unit tests:** OTel SDK listener is set up at DI time in `YobaLogApp.ConfigureServices`. Tests should NOT emit spans (no consumer, waste). Gate `AddOpenTelemetry().WithTracing(...)` on `!IsEnvironment("Testing")` — same pattern as `UseHttpsRedirection`.
+
+### Recommendation
+
+**Phase F (OTLP-logs ingest) first, by a wide margin.** Smallest surface, biggest real-world payoff — any OTel-enabled .NET / Go / Python / JS app becomes a yobalog writer. Direct extension of the existing ingestion pipeline: same `ILogStore`, same `CompositeApiKeyStore`, same workspace routing, ~80 % shared test infrastructure with the Serilog / Winston-compat suites.
+
+Phase G (self-emission) gated on F landing: it writes INTO a workspace that just learned OTLP-shaped data, so we consume our own dog food.
+
+Phase H (traces + waterfall UI) gated on G proving useful: if telemetry emission stays quiet, spans-storage stays hypothetical. Can live as a deferred plan bullet indefinitely.
+
+**Non-decision to record:** we are explicitly NOT shipping OTLP-metrics ingestion, ever. yobalog = logs + (optionally, later) traces. Metrics elsewhere.
+
 ## 2026-04-21 — Build pipeline: Cake + GitVersion; Docker = chiseled + smoke-test; deploy = manual `deploy` tag
 
 **Решение:** сборочный pipeline синхронизирован с yobaconf (commit `9f99b84`) — теперь один шаблон на оба репо, расширяться будут вместе:

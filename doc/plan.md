@@ -67,7 +67,29 @@
     - [ ] **Viewport awareness:** пока пользователь не наверху — новые события не префендятся, накапливаются в индикаторе "N новых"; клик/скролл к верху применяет.
     - [x] **Infinite scroll (вместо "Load older"):** sentinel-row в конце `<tbody>` с `hx-trigger="intersect once"` фетчит следующую страницу через ту же `/ws/{id}` URL. `WorkspaceModel.OnGetAsync` при `HX-Request` возвращает `Partial("_RowsFragment", this)` — те же rows + новый sentinel. htmx 2.0 `outerHTML`-swap на `<tr>` использует template-fragments автоматически. Copy/expand handlers в `admin.ts` делают event-delegation на `document`, так что работают на новых строках без `htmx.process`. Верхняя граница (cursor-based "show newer") — когда появится use-case. Spec §7 запрещает offset.
     - [x] **Share → masked TSV** per spec §3. DB-backed links: `ShareLink(Id, Kql, CreatedAt, ExpiresAt, Salt, Columns, Modes)` в `.meta.db` per workspace, Id — `ShortGuid` (22-char base64url от Guid.NewGuid). `GET /share/{ws}/{id}.tsv` anonymous, 404 для неизвестного id, 410 Gone + lazy-delete при expiry. `RetentionService` сметает протухшие ссылки заодно с событиями. Три режима на поле: `keep` / `mask` (детерминированный HMAC-SHA256(salt,value)→4-byte hex с префиксом из последнего сегмента пути — `email:a1b2c3d4`, связи в рамках одной ссылки сохраняются) / `hide` (поле вырезается, column тоже). Property keys — плоский namespace с top-level, top-level shadows properties на collision. Policy-per-workspace в `FieldMaskingPolicy` — модалка не переспрашивает одно и то же. Revocation — `DELETE` row (UI пока нет). HTML-preview шарированного view отложен — 99% use-case TSV-to-LLM.
-- [ ] **Фаза F — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
+- [ ] **Фаза F (черновик) — OTLP logs ingestion.** Оценка + решение в `decision-log.md` (2026-04-21 draft). Любой OTel-enabled .NET/Go/Python/JS app становится yobalog-писателем без адаптерного кода. Mirror Seq-surface: `POST /ingest/otlp/v1/logs` + `X-Seq-ApiKey`, HTTP/Protobuf-only (gRPC и HTTP/JSON отложены). Effort ~3-5 d.
+    - [ ] `OpenTelemetry.Proto` NuGet v1.5.0 в `Directory.Packages.props` (закомментирован до аппрува).
+    - [ ] `IOtlpLogParser` + реализация: парсит `ExportLogsServiceRequest` → `IEnumerable<LogEventCandidate>`. Маппинг полей — см. таблицу в decision-log.
+    - [ ] `OtlpIngestionHandler` + регистрация в `YobaLogApp.MapEndpoints`: `app.MapPost("/ingest/otlp/v1/logs", OtlpIngestionHandler.LogsHttpProtobuf).AllowAnonymous()`. Auth через `IngestionHandlers.ResolveScopeAsync` (`X-Seq-ApiKey`).
+    - [ ] Опциональный alias `POST /v1/logs` для OTel-клиентов, жёстко ожидающих стандартный путь (открытый вопрос в decision-log).
+    - [ ] Compat-тесты в `YobaLog.E2ETests/Compat/`: `OtlpDotnetCompatTests` (внешний .NET-процесс с `OpenTelemetry.Exporter.OpenTelemetryProtocol`), `OtlpPythonCompatTests` (Python с `opentelemetry-exporter-otlp-proto-http`). Pattern из `WinstonSeqCompatTests`.
+    - [ ] Дифф в `perf-baseline.md`: BDN-бенчмарк OTLP-parse vs CLEF-parse на равных батчах.
+- [ ] **Фаза G (черновик) — OTel self-emission.** Ждёт F, т.к. пишет в `$system` workspace в OTLP-shape. Effort ~1-2 d.
+    - [ ] Пакеты (`OpenTelemetry` 1.15.x, `.Extensions.Hosting`, `.Instrumentation.AspNetCore` 1.15.1, `.Instrumentation.Http`) в `Directory.Packages.props`.
+    - [ ] `AddOpenTelemetry().WithTracing(...)` в `YobaLogApp.ConfigureServices`, gated на `!IsEnvironment("Testing")` (паттерн `UseHttpsRedirection`).
+    - [ ] Named `ActivitySource`'ы: `YobaLog.Ingestion`, `YobaLog.Query`, `YobaLog.Retention`, `YobaLog.Storage.Sqlite`. Spans только на batch-boundary; per-event инструментация запрещена (BDN-вывод: 5-20% overhead при 100k ev/s).
+    - [ ] Custom `BaseExporter<Activity>` → `LogEventCandidate { Properties.Kind="span" }` → `ILogStore.AppendBatchAsync` в `$system` (минует `IIngestionPipeline`, как `SystemLoggerProvider`).
+    - [ ] Skip-filter на `/health` и `/version` в AspNetCoreInstrumentation чтобы load-balancer пинги не раздули `$system`.
+    - [ ] BDN regression: baseline vs +OTel на SqliteLogStore + IngestionPipeline — gate ±10% timing, ±1% allocations.
+- [ ] **Фаза H (черновик) — trace ingestion + waterfall UI.** Gate на G plus ненулевой use-case (если ingest-logs в F не набирает трафик, H = indefinite defer). Effort ~7-10 d.
+    - [ ] Schema-decision **(b) — отдельная таблица `Spans` per-workspace**: `(SpanId PK, TraceId, ParentSpanId, Name, Kind, StartUnixNs, EndUnixNs, StatusCode, AttributesJson, EventsJson, LinksJson)`, индекс `(TraceId, StartUnixNs)` для waterfall-lookup'ов. linq2db mapping + миграция в `SqliteLogStore.CreateWorkspaceAsync`.
+    - [ ] `POST /ingest/otlp/v1/traces` + `OtlpTraceParser`: `ExportTraceServiceRequest` → `SpanRecord[]`.
+    - [ ] KQL `spans`-target в `KqlTransformer.ApplyEventQuery` — генерализация до `ApplyQuery(target ∈ {events, spans})`. Новые колонки на spans: `Duration` (computed int ms), `ParentSpanId`, `Kind`, `Status`. Dual-executor тесты расширяются 10-15 spans-cases; no new KQL operators.
+    - [ ] Razor partial `_TraceWaterfall.cshtml` + `GET /trace/{id}`: по `TraceId` вытягивает спаны, сортирует по `StartUnixNs`, рендерит bars с width ∝ duration + indent по parent-tree. ~200 LOC Razor + ~100 LOC TS на hover-tooltip (event-delegated). No D3 / vis.js.
+    - [ ] Span details panel — attributes / events / status / links в раскрывающейся строке. Паттерн того же event-row `_EventRow` expansion.
+    - [ ] E2E: `TraceWaterfallTests` (seed трейс из 10 спанов, navigate `/trace/<id>`, assert waterfall rows + click на span expands details).
+    - [ ] Service map — **explicit defer**. Документируется как "out of MVP scope" в decision-log.
+- [ ] **DuckDB backend (отложено, внешний blocker).** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически. Timeline зависит от ревью PR в upstream; номер фазы не присвоен чтобы не блокировать ordering OTel-фаз F/G/H.
 
 ## UI regression coverage
 
@@ -119,7 +141,7 @@ Playwright MCP (интерактивно, через Claude) — для smoke-п
 - [ ] **Skip:** pixel-perfect / CSS regression; animation-тайминги (flash в live-tail); cross-browser.
 - [x] **Trace-on-failure.** `TraceArtifact` хелпер: `StartAsync(ctx)` на каждый `WebAppFixture.NewContextAsync()`, `StopAndSaveAsync(ctx, ITestOutputHelper)` в `DisposeAsync` тест-класса. Имя теста извлекается из private `test` field'а у `ITestOutputHelper` через reflection → zip кладётся в `bin/<cfg>/<tfm>/artifacts/<Class.Method>.zip`. Always-save pattern (xUnit 2.x в `DisposeAsync` не отдаёт test outcome); в CI — `upload-artifact: if: failure()` оставит только зелёные runs без артефактов. Локально — `artifacts/` в `.gitignore`, удалять вручную при необходимости. Trace пишется только для тест-контекстов; seed-login в фикстуре явно обходится через `trace: false` чтобы не плодить мусор.
 - [ ] **CI-бюджет.** Полный прогон ≤3 минут на обычном GitHub Actions runner. Если разрастётся — parallel workers через xunit `[CollectionDefinition(DisableParallelization = false)]`, шардинг admin/viewer/ingestion.
-- [ ] **Phase placement.** После закрытия Фазы D (админ-UI стабилизируется), перед Фазой F (DuckDB). Раньше — будем переписывать тесты на каждом изменении админки.
+- [ ] **Phase placement.** После закрытия Фазы D (админ-UI стабилизируется), перед тяжёлыми back-end-работами (DuckDB / OTel-ingest). Раньше — будем переписывать тесты на каждом изменении админки.
 
 ## Perf / регрессии
 См. [`performance-testing.md`](performance-testing.md) для философии и tier'ов, [`perf-baseline.md`](perf-baseline.md) для актуальных чисел.
