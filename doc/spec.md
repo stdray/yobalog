@@ -225,3 +225,28 @@ public sealed record WorkspaceStats(long EventCount, long SizeBytes, DateTimeOff
 - Swap LiteDB → SQLite+FTS5 → DuckDB → Lucene.NET — **одна новая реализация интерфейса**, остальной код не трогается.
 - dual-executor тесты работают против любой реализации автоматически.
 - retention policy (KQL-фильтр + time cutoff) маппится на `DeleteAsync` + `DeleteOlderThanAsync` одинаково для всех бэкендов.
+
+## 11. Развёртывание и HTTPS
+
+- **Docker-образ + независимый deploy.** Yobalog деплоится собственным CI (`build.cake` → `DockerPush` → SSH → `docker pull` + `docker run -d -p 127.0.0.1:8082:8080`). Никакого docker-compose в общем lifecycle'е со стеком. Паттерн зеркалит yobaconf и yobapub: image идёт в `ghcr.io`, SSH-деплой делает `docker run` с уникальным именем контейнера.
+- **Host-port convention.** Контейнер yobalog биндится на `127.0.0.1:8082` (loopback only — no direct public exposure). Ports per project on the shared host:
+    - `8080` — yobapub (existing, pre-Caddy era)
+    - `8081` — yobaconf
+    - `8082` — **yobalog (этот сервис)**
+    - следующие свободные — для future services
+
+  Allocation-таблица продублирована в `infra/Caddyfile.fragment` (rooted здесь же в репо) — для быстрого grep'а при добавлении нового сервиса. Table должна оставаться синхронизированной с fragment'ами yobaconf / yobapub / любого будущего HTTPS-сервиса.
+- **HTTPS через Caddy (host-level reverse proxy).** Central Caddy на хосте терминирует TLS на `:443`, proxy'ит к loopback-портам проектов. Выбран вместо nginx+certbot: Let's Encrypt renewal встроен (cron-less), конфиг — 3 строки на сервис, reload без downtime. Подробности выбора и rejected alternatives — `decision-log.md` 2026-04-21 "Caddy on host as HTTPS terminator; yobalog deploys first".
+- **Caddyfile-fragment живёт в `infra/Caddyfile.fragment`** в репо как reference (не consumed Caddy'ом напрямую). Центральный `/etc/caddy/Caddyfile` собирается из fragment'ов (вручную или через отдельный infra-repo — TBD). Renewal автоматический; cert-файлы хранятся в `/var/lib/caddy/`.
+- **Forwarded-headers wiring в ASP.NET.** Caddy устанавливает `X-Forwarded-Proto=https` / `X-Forwarded-For`. Yobalog конфигурируется `app.UseForwardedHeaders(new ForwardedHeadersOptions { KnownProxies = { IPAddress.Loopback } })` **до** `app.UseHttpsRedirection()` (Phase A deploy bullet). Без этого `HttpContext.Request.IsHttps == false` за proxy → redirect loops, cookie `Secure`-flag рассчитывается неправильно, sharelink'и форсируют http.
+- **SSE streaming через Caddy (`flush_interval -1`).** Yobalog имеет live-tail endpoint `GET /api/ws/{id}/tail` — Server-Sent Events. Caddy по-умолчанию буферизирует reverse-proxy response body (оптимизация throughput); для SSE это ломает streaming — клиент не получает события, пока не наберётся буфер. `flush_interval -1` в `reverse_proxy`-блоке отключает буферизацию, каждый flush из upstream'а уходит клиенту мгновенно. Это ключевое отличие `infra/Caddyfile.fragment` yobalog от yobaconf'овского (у yobaconf SSE-endpoint'ов нет).
+- **Первичный bootstrap хоста** (делается один раз, **yobalog — первый сервис под Caddy на этом хосте**, поэтому bootstrap-steps живут именно здесь в `doc/deploy.md`):
+    1. DNS A-запись `yobalog.3po.su` → server IP.
+    2. `apt install caddy` (от root).
+    3. `/etc/caddy/Caddyfile` scaffold из `infra/Caddyfile.fragment` (copy-paste).
+    4. `ufw allow 80,443/tcp` (или iptables-эквивалент).
+    5. `systemctl enable caddy && systemctl start caddy`.
+    6. First `git tag deploy && git push origin deploy --force` — CI задеплоит контейнер, Caddy auto-provision'ит cert при первом HTTPS-запросе (ACME HTTP-01 challenge на `:80`).
+
+  После этого добавление каждого нового сервиса на хост (yobaconf следующим) = (1) DNS A-запись, (2) `docker run` на свой loopback-port, (3) вставить fragment в центральный Caddyfile, (4) `systemctl reload caddy`. Шаги 2-4 автоматизируются в deploy-job каждого проекта.
+- **Access log.** Caddy пишет JSON в `/var/log/caddy/yobalog.access.log` с локальной ротацией (50MB × 5 keep). После Phase F (OTLP-ingestion в yobalog) можно ingest'ить эти логи обратно в yobalog — бонус-симметрия: yobalog самоингестит собственные access-log'и через свой же OTLP-endpoint.

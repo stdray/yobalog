@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-04-21 — Caddy on host as HTTPS terminator; yobalog deploys first
+
+**Решение:** HTTPS для yobalog реализуется через **Caddy**, установленный на shared хост как systemd-сервис. Caddy на `:443` терминирует TLS и реверс-прокси'т на `127.0.0.1:8082`, куда биндится контейнер yobalog. Deploy независим от других сервисов стека — собственный CI (`build.cake --target=DockerPush` + SSH → `docker run -d -p 127.0.0.1:8082:8080`). Никакого docker-compose поверх. Зеркалит решение yobaconf (`D:\my\prj\yobaconf\doc\decision-log.md` запись того же дня, commit `3f06f3e`) — один host, общий Caddy, каждый проект деплоится сам по себе.
+
+**Host-port convention (единая для всех проектов на shared хосте):**
+- `127.0.0.1:8080` — yobapub (существующий, до-Caddy эра, остаётся)
+- `127.0.0.1:8081` — yobaconf
+- `127.0.0.1:8082` — **yobalog (этот репо)**
+- Следующие свободные — для новых сервисов
+
+Таблица дублируется в `infra/Caddyfile.fragment` каждого HTTP-serving проекта (комментарий сверху). Локальный source-of-truth для "какой порт у этого сервиса"; центральный `/etc/caddy/Caddyfile` на хосте — глобальная картина.
+
+**Yobalog идёт первым.** Из всех сервисов стека yobalog первый выкатывается под Caddy, поэтому **one-time host bootstrap живёт в этом репо** (`doc/deploy.md`, bullet в `plan.md`): `apt install caddy`, начальный Caddyfile из `infra/Caddyfile.fragment`, firewall на 80/443, `systemctl enable caddy`. Последующие проекты (yobaconf — следующий в очереди) в своих deploy-doc'ах пропускают host-setup и сразу переходят к "добавить fragment в центральный Caddyfile + `caddy reload`".
+
+**SSE-специфика yobalog (это отличие от yobaconf).** Yobalog имеет live-tail через `GET /api/ws/{id}/tail` — Server-Sent Events. Caddy по-умолчанию буферизирует response body у reverse-proxy upstream'ов (batching для throughput). Для SSE это ломает streaming: клиент не получает события, пока Caddy не накопит буфер. Фикс — `flush_interval -1` в блоке `reverse_proxy` (отключает буферизацию, каждый flush из upstream'а идёт клиенту сразу). Обязательно в `infra/Caddyfile.fragment`. В идеале покрывается E2E-тестом (yobalog + Caddy в testcontainers → SSE-connect → проверка incremental-стриминга); если Caddy в test env слишком тяжёл — fallback на "trusted by default, covered manually on first deploy" (bullet в plan).
+
+**Rejected alternatives:**
+- **nginx + certbot** (текущий yobapub-паттерн). Ручной server-блок + managed-by-Certbot-секция + cron на renewal. 20-30 строк конфига на сервис vs 3 строки Caddy. yobapub остаётся как есть — live-and-let-live, мигрируется при следующем пересетапе.
+- **Traefik.** Docker-label discovery плохо ложится на "каждый проект независимо делает `docker run`" — лейблы рассыпаны по CI-скриптам разных репо. Для static 5-service setup — overkill. Caddy ~15MB vs Traefik ~30MB.
+- **In-process `LettuceEncrypt` NuGet.** Cert-renewal требует рестарт процесса (brief downtime каждые 60 дней). Per-service cert state не шарится между апгрейдами контейнера — каждый redeploy терял бы cache и делал fresh ACME challenge.
+- **Cloudflare edge-TLS.** Free-tier покрывает, но привязывает к DNS-терминированному Cloudflare-домену — вендор-лок на бесплатный-пока тариф.
+- **Caddy в контейнере с `--network host`.** Работает, но добавляет ещё одну docker-единицу в lifecycle. systemd-Caddy — установка один раз, видит `localhost:*` других сервисов без разговоров о docker-networks.
+
+**Откатили:**
+- docker-compose для HTTPS-оркестрации — противоречит independent-lifecycle паттерну.
+
+**Открытые вопросы для first-time host bootstrap:**
+- Централизация Caddyfile: (1) отдельный infra-репо с concat-скриптом из fragment'ов; (2) hand-edit `/etc/caddy/Caddyfile` на сервере; (3) Ansible/скрипт в одном из репо. Решится в момент реального deploy; до того fragment'ы лежат в каждом проекте как reference.
+- Forwarded-headers wiring в ASP.NET (`UseForwardedHeaders` c `KnownProxies = { IPAddress.Loopback }` перед `UseHttpsRedirection`) — bullet в Phase A, закроется при первом реальном деплое.
+- Caddy access-log в `/var/log/caddy/yobalog.access.log` (JSON, локальная ротация). После Phase F (OTLP-ingestion) — ingest'ится в yobalog через shipper / прямой OTLP push. Приятная симметрия: yobalog самоингестит свои собственные access-log'и.
+
+---
+
 ## 2026-04-21 — OpenTelemetry integration: scope, cost, архитектурные решения
 
 **Статус: архитектурные решения зафиксированы; кода пока нет.** `plan.md` Phase F/G/H — источник истины для sequencing и sub-task'ов; в `spec.md` черновые proposal-комментарии `<!-- OTel proposal -->` остаются в виде комментариев до первого Phase-F коммита, который промоутит их в основной текст.

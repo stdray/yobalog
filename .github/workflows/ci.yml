@@ -172,10 +172,14 @@ jobs:
             run_sudo docker stop "$CONTAINER_NAME" || true
             run_sudo docker rm "$CONTAINER_NAME" || true
             run_sudo mkdir -p /opt/yobalog/data
+            # Host port 8082 per the shared-host convention documented in
+            # infra/Caddyfile.fragment (8080 = yobapub, 8081 = yobaconf, 8082 = yobalog).
+            # Only loopback bind — central Caddy on host terminates TLS on :443 and
+            # reverse-proxies to 127.0.0.1:8082.
             run_sudo docker run -d \
               --name "$CONTAINER_NAME" \
               --restart unless-stopped \
-              -p 127.0.0.1:8080:8080 \
+              -p 127.0.0.1:8082:8080 \
               -v /opt/yobalog/data:/app/data \
               -e Admin__Username="${{ secrets.YOBALOG_ADMIN_USERNAME }}" \
               -e Admin__Password="${{ secrets.YOBALOG_ADMIN_PASSWORD }}" \
