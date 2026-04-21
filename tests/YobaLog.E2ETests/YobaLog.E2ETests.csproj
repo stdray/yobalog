@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+		<!-- CA1001: xUnit's IAsyncLifetime is the disposal pattern here; the analyzer only detects IDisposable. -->
+		<NoWarn>$(NoWarn);CA1001;CA1707;CA1848;CA1861;CA1873;CA2007</NoWarn>
+	</PropertyGroup>
+
+	<!-- Ship the web project's wwwroot path to tests via assembly metadata so KestrelAppHost can
+	     point WebRootPath at real CSS/JS files (silences StaticFileMiddleware warnings; gives
+	     Playwright traces real styling for debugging). -->
+	<ItemGroup>
+		<AssemblyMetadata Include="YobaLogWebProjectDir" Value="$(MSBuildThisFileDirectory)..\..\src\YobaLog.Web" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="coverlet.collector" />
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" />
+		<PackageReference Include="Microsoft.Playwright" />
+		<PackageReference Include="xunit" />
+		<PackageReference Include="xunit.runner.visualstudio" />
+		<PackageReference Include="FluentAssertions" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="Xunit" />
+		<Using Include="FluentAssertions" />
+		<Using Include="YobaLog.Core" />
+		<Using Include="Microsoft.Playwright" />
+		<Using Include="Microsoft.Playwright.Assertions" Static="true" />
+		<Using Include="YobaLog.E2ETests.Infrastructure" />
+		<Using Include="YobaLog.E2ETests.Pages" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\YobaLog.Core\YobaLog.Core.csproj" />
+		<ProjectReference Include="..\..\src\YobaLog.Web\YobaLog.Web.csproj" />
+	</ItemGroup>
+
+</Project>

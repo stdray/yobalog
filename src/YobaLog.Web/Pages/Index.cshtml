@@ -12,11 +12,14 @@
 }
 else
 {
-	<ul class="menu bg-base-200 rounded-box border border-base-300 w-full">
+	<ul class="menu bg-base-200 rounded-box border border-base-300 w-full" data-testid="workspace-list">
 		@foreach (var ws in Model.Workspaces)
 		{
 			<li>
-				<a asp-page="/Workspace" asp-route-id="@ws.Value" class="flex items-center justify-between">
+				<a asp-page="/Workspace" asp-route-id="@ws.Value"
+					data-testid="workspace-link"
+					data-workspace-id="@ws.Value"
+					class="flex items-center justify-between">
 					<span class="font-mono @(ws.IsSystem ? "text-secondary" : "")">@ws.Value</span>
 					<span class="text-sm opacity-60">View events →</span>
 				</a>

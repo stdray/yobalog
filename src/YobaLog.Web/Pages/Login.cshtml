@@ -17,18 +17,18 @@
 		<h1 class="text-xl font-semibold mb-4">Sign in to YobaLog</h1>
 		@if (!string.IsNullOrEmpty(Model.Error))
 		{
-			<div class="alert alert-error mb-3 py-2 text-sm">@Model.Error</div>
+			<div data-testid="login-error" class="alert alert-error mb-3 py-2 text-sm">@Model.Error</div>
 		}
 		<label class="form-control mb-3">
 			<span class="label-text text-xs opacity-70">Username</span>
-			<input type="text" name="Username" autocomplete="username" autofocus value="@Model.Username" class="input input-sm input-bordered" />
+			<input type="text" name="Username" autocomplete="username" autofocus value="@Model.Username" data-testid="login-username" class="input input-sm input-bordered" />
 		</label>
 		<label class="form-control mb-4">
 			<span class="label-text text-xs opacity-70">Password</span>
-			<input type="password" name="Password" autocomplete="current-password" class="input input-sm input-bordered" />
+			<input type="password" name="Password" autocomplete="current-password" data-testid="login-password" class="input input-sm input-bordered" />
 		</label>
 		<input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
-		<button type="submit" class="btn btn-sm btn-primary w-full">Sign in</button>
+		<button type="submit" data-testid="login-submit" class="btn btn-sm btn-primary w-full">Sign in</button>
 	</form>
 </body>
 </html>

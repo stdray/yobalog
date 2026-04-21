@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-04-21 — UI-тесты: `Microsoft.Playwright` + `data-testid` обязателен, text/role-name/CSS-селекторы запрещены
+
+**Решение:** Playwright MCP остаётся для интерактивной smoke-проверки при разработке; CI-регрессии — отдельный проект `tests/YobaLog.UiTests/` на `Microsoft.Playwright` (.NET SDK), chromium headless. Элементы, которые трогают тесты, обязаны иметь `data-testid="<kebab-slug>"` в Razor-разметке. Локаторы в тестах — только `page.GetByTestId(...)`; `GetByText`, `GetByRole(Name=...)`, `GetByPlaceholder` и CSS-класс-селекторы (`.btn-primary`, `.alert-error`) запрещены на UI chrome. `HasText=...` разрешён только внутри testid-scoped локатора и только для проверки data-контента (event message, saved query name).
+
+**Причина:**
+- Все user-facing строки — цели локализации (spec §9). Тест, матчащийся на "Apply" / "Keys" / "no events", сломается на первом же переводе или ребрендинге. `GetByRole(Name=...)` ровно так же читает localized accessible name — псевдо-семантика, не решение.
+- CSS-классы DaisyUI (`.btn-primary`, `.alert-error`) — стилевая деталь, subject to refactor. Переход с DaisyUI на Flowbite или просто смена palette — и `.alert-error` переименовывается в `.alert-danger`, все селекторы отваливаются.
+- `data-testid` — явный контракт "эта штука — точка тестирования". Devs видят атрибут в разметке → думают дважды перед удалением. Переводчики и designer'ы к нему не прикасаются.
+- Selenium / Atata исключены отдельно: WebDriver-протокол медленнее CDP, флакier; Atata добавляет фреймворк поверх и без того проблемного стека.
+
+**Откатили:** гипотетический вариант "матчить по тексту + переопределять culture на `en-US` в test-setup, чтобы тесты читали английский независимо от локали" — работает только до появления первого переформулированного label'а (переводы добавляют расхождения и в пределах одного языка).
+
 ## 2026-04-19 — Ingestion namespace split: `/api/v1/ingest/<fmt>` (native) + `/compat/<tech>/…` (vendor compat)
 
 **Решение:** два независимых URL-корня под ingestion.

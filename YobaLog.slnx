@@ -8,5 +8,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/YobaLog.Tests/YobaLog.Tests.csproj" />
+    <Project Path="tests/YobaLog.E2ETests/YobaLog.E2ETests.csproj" />
   </Folder>
 </Solution>

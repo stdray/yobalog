@@ -1,70 +1,30 @@
 using System.Diagnostics;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Storage;
-using YobaLog.Web;
 using LogEvent = YobaLog.Core.LogEvent;
 
-namespace YobaLog.Tests.Compat;
+namespace YobaLog.E2ETests.Compat;
 
-/// <summary>
-/// End-to-end: `@datalust/winston-seq` running under bun hits a real Kestrel-backed Web app on
-/// an ephemeral port. Structured events land in our SQLite store. Requires `bun` on PATH
-/// (CI setup-bun covers it; locally `winget install Oven.Bun` or similar).
-/// </summary>
+// End-to-end: `@datalust/winston-seq` running under bun hits a real Kestrel-backed Web app on an
+// ephemeral port. Structured events land in our SQLite store. Requires `bun` on PATH
+// (CI setup-bun covers it; locally `winget install Oven.Bun` or similar). Shares the Kestrel host
+// machinery with the UI tests via KestrelAppHost.
 public sealed class WinstonSeqCompatTests : IAsyncLifetime
 {
 	static readonly string FixtureDir = Path.Combine(
 		AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "winston-seq");
 	static readonly WorkspaceId Ws = WorkspaceId.Parse("compat-winston");
 
-	readonly string _tempDir;
-	WebApplication? _app;
-	string _baseUrl = "";
+	readonly KestrelAppHost _host = new();
 
-	public WinstonSeqCompatTests()
-	{
-		_tempDir = Path.Combine(Path.GetTempPath(), "yobalog-winstoncompat-" + Guid.NewGuid().ToString("N")[..8]);
-		Directory.CreateDirectory(_tempDir);
-	}
-
-	public async Task InitializeAsync()
-	{
-		// Build a real Kestrel-hosted app (not WebApplicationFactory, which hard-codes TestServer).
-		var builder = WebApplication.CreateBuilder();
-		builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+	public async Task InitializeAsync() =>
+		await _host.StartAsync(s =>
 		{
-			["SqliteLogStore:DataDirectory"] = _tempDir,
-			["ApiKeys:Keys:0:Token"] = "compat-winston-key",
-			["ApiKeys:Keys:0:Workspace"] = Ws.Value,
+			s["ApiKeys:Keys:0:Token"] = "compat-winston-key";
+			s["ApiKeys:Keys:0:Workspace"] = Ws.Value;
 		});
-		builder.WebHost.UseKestrel();
-		builder.WebHost.UseUrls("http://127.0.0.1:0");
-		YobaLogApp.ConfigureServices(builder);
 
-		_app = builder.Build();
-		YobaLogApp.Configure(_app);
-		await _app.StartAsync();
-
-		var server = _app.Services.GetRequiredService<IServer>();
-		_baseUrl = server.Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault()
-			?? throw new InvalidOperationException("Kestrel did not report an address");
-	}
-
-	public async Task DisposeAsync()
-	{
-		if (_app is not null)
-		{
-			await _app.StopAsync();
-			await _app.DisposeAsync();
-		}
-		try { Directory.Delete(_tempDir, recursive: true); }
-		catch { /* best effort */ }
-	}
+	public async Task DisposeAsync() => await _host.DisposeAsync();
 
 	[Fact]
 	public async Task WinstonSeq_UnderBun_DeliversStructuredEventsThroughRawEndpoint()
@@ -77,14 +37,14 @@ public sealed class WinstonSeqCompatTests : IAsyncLifetime
 
 		var env = new Dictionary<string, string>
 		{
-			["SEQ_URL"] = _baseUrl.TrimEnd('/') + "/compat/seq",
+			["SEQ_URL"] = _host.BaseUrl.TrimEnd('/') + "/compat/seq",
 			["SEQ_API_KEY"] = "compat-winston-key",
 		};
 		await RunBunAsync(FixtureDir, "run emit.ts", env);
 
 		await WaitForEventsAsync(expected: 3);
 
-		var store = _app!.Services.GetRequiredService<ILogStore>();
+		var store = _host.Services.GetRequiredService<ILogStore>();
 		var events = new List<LogEvent>();
 		await foreach (var e in store.QueryAsync(Ws, new LogQuery(PageSize: 10), CancellationToken.None))
 			events.Add(e);
@@ -147,7 +107,7 @@ public sealed class WinstonSeqCompatTests : IAsyncLifetime
 
 	async Task WaitForEventsAsync(long expected)
 	{
-		var store = _app!.Services.GetRequiredService<ILogStore>();
+		var store = _host.Services.GetRequiredService<ILogStore>();
 		var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
 		while (DateTimeOffset.UtcNow < deadline)
 		{

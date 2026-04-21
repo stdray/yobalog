@@ -7,7 +7,7 @@
 	var levelInt = ((int)Model.Level).ToString(System.Globalization.CultureInfo.InvariantCulture);
 	var traceKql = EventRowViewModel.KqlString(Model.TraceId);
 }
-<tr class="@rowClasses"@(Model.IsLive || Model.Id is null ? "" : $" data-event-id=\"{Model.Id}\"")>
+<tr class="@rowClasses" data-testid="events-row"@(Model.IsLive || Model.Id is null ? "" : $" data-event-id=\"{Model.Id}\"")>
 	<td class="font-mono text-xs opacity-70 whitespace-nowrap relative group">
 		<time class="local-time" datetime="@EventRowViewModel.IsoUtc(Model.Timestamp)" title="UTC: @EventRowViewModel.IsoUtc(Model.Timestamp)">@Model.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff")</time>
 		@if (showChips)
@@ -38,7 +38,7 @@
 	</td>
 	<td class="break-words">
 		<div class="flex items-start gap-2">
-			<span class="flex-1">@Model.Message</span>
+			<span class="flex-1" data-testid="event-message">@Model.Message</span>
 			@if (!Model.IsLive)
 			{
 				<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"

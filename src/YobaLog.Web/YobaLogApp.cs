@@ -95,7 +95,12 @@ public static class YobaLogApp
 			app.UseHsts();
 		}
 
-		app.UseHttpsRedirection();
+		// UseHttpsRedirection off under the Testing env: UI tests run headless Kestrel on plain http
+		// and the redirect middleware otherwise loops the browser on /Login (307 → /Login → 307).
+		// Compat and integration tests that use WebApplicationFactory's TestServer are unaffected
+		// because TestServer short-circuits the scheme probe differently.
+		if (!app.Environment.IsEnvironment("Testing"))
+			app.UseHttpsRedirection();
 		app.UseStaticFiles();
 		app.UseRouting();
 		app.UseAuthentication();

@@ -68,6 +68,55 @@
     - [x] **Share → masked TSV** per spec §3. DB-backed links: `ShareLink(Id, Kql, CreatedAt, ExpiresAt, Salt, Columns, Modes)` в `.meta.db` per workspace, Id — `ShortGuid` (22-char base64url от Guid.NewGuid). `GET /share/{ws}/{id}.tsv` anonymous, 404 для неизвестного id, 410 Gone + lazy-delete при expiry. `RetentionService` сметает протухшие ссылки заодно с событиями. Три режима на поле: `keep` / `mask` (детерминированный HMAC-SHA256(salt,value)→4-byte hex с префиксом из последнего сегмента пути — `email:a1b2c3d4`, связи в рамках одной ссылки сохраняются) / `hide` (поле вырезается, column тоже). Property keys — плоский namespace с top-level, top-level shadows properties на collision. Policy-per-workspace в `FieldMaskingPolicy` — модалка не переспрашивает одно и то же. Revocation — `DELETE` row (UI пока нет). HTML-preview шарированного view отложен — 99% use-case TSV-to-LLM.
 - [ ] **Фаза F — второй бэкенд: DuckDB.** Вторая реализация `ILogStore` после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). Transformer пишется минимально (SQL с поправками на DuckDB-диалект), dual-executor тесты покрывают автоматически.
 
+## UI regression coverage
+
+Playwright MCP (интерактивно, через Claude) — для smoke-проверки новой функциональности при разработке. Для CI-регрессий нужен скриптовый слой. Selenium-обвязки (Atata, SpecFlow+WebDriver) — прошлый век: WebDriver-протокол медленнее CDP/BiDi, флакier; Atata добавляет фреймворк поверх уже проблемного стека. Используем **`Microsoft.Playwright`** (.NET SDK) — та же библиотека, что у MCP, но скриптами. Auto-waiting из коробки, trace viewer для дебага CI-падений, в 3-5× быстрее Selenium.
+
+- [x] **Тест-проект `tests/YobaLog.E2ETests/`.** xUnit + `Microsoft.Playwright 1.59.0`. Browsers через `pwsh bin/Debug/net10.0/playwright.ps1 install chromium`; в CI отдельный job с `--with-deps`. Chromium-only — htmx+SSE+стандартный DOM, cross-browser не окупается. Объединён с Kestrel-based compat тестами (`WinstonSeqCompatTests` переехал сюда из `YobaLog.Tests`) — общий `KestrelAppHost` бутстрап.
+- [x] **Host-фабрика `KestrelAppHost`.** `WebApplication.CreateBuilder` с Kestrel на `http://127.0.0.1:0`, fresh temp data-dir per fixture. WebApplicationFactory не используется — он hard-код-ит TestServer, а браузер с in-memory handler не работает. Два ключевых гвоздя: (1) `WebApplicationOptions.ApplicationName = YobaLog.Web` — иначе entry-assembly test-dll, Razor Pages discovery не видит `.cshtml`, authz-fallback редиректит /Login → /Login. (2) `EnvironmentName = "Testing"` — `YobaLogApp.Configure` под этим флагом не вызывает `UseHttpsRedirection` (иначе http-only Kestrel зацикливается 307-ми). Seed данных через `ILogStore.AppendBatchAsync` напрямую. `WebRootPath` указывает на `src/YobaLog.Web/wwwroot` через `AssemblyMetadata("YobaLogWebProjectDir")` — без этого `StaticFileMiddleware` warn-ит.
+- [x] **Селекторы = `data-testid`, без привязки к тексту или CSS.** См. инвариант в `AGENTS.md`: user-facing строки — цели локализации (§9 спеки), CSS-классы — стилевая деталь. Разметка получает `data-testid="kql-input"`, `data-testid="kql-apply"`, `data-testid="events-row"` и т.п. на всех элементах, которые трогают тесты. Слаги — английский kebab-case, стабильны к переводу.
+- [x] **Page objects — hand-rolled, без фреймворков.** Тонкий слой классов (`LoginPage`, `WorkspacePage`) с методами `GotoAsync`, `SubmitKqlAsync(string kql)`, `AssertRowCountAsync(int n)`. Внутри — только `page.GetByTestId(...)`; никаких `GetByText`, `GetByRole(Name=...)`, CSS-класс-селекторов. `HasText=...` разрешён только внутри testid-scoped локатора и только для проверки data-контента (сообщение события, имя saved query), никогда — на chrome. Пример:
+
+    ```csharp
+    public sealed class WorkspacePage(IPage page)
+    {
+        public async Task SubmitKqlAsync(string kql)
+        {
+            await page.GetByTestId("kql-input").FillAsync(kql);
+            await page.GetByTestId("kql-apply").ClickAsync();
+        }
+
+        public Task AssertRowCountAsync(int n) =>
+            Expect(page.GetByTestId("events-row")).ToHaveCountAsync(n);
+
+        public async Task AssertMessagesAsync(params string[] messages)
+        {
+            var rows = page.GetByTestId("events-row");
+            foreach (var m in messages)
+                await Expect(rows.Filter(new() { HasText = m })).ToBeVisibleAsync();
+        }
+
+        public Task AssertKqlErrorAsync(string text) =>
+            Expect(page.GetByTestId("kql-error")).ToContainTextAsync(text);
+    }
+    ```
+- [~] **Golden paths (must-cover):** первая волна закрыта — login (wrong + right creds) и workspace KQL (filter by level + parse-error alert). Остальное по мере расширения coverage.
+    - [x] Login: wrong creds → alert; right → workspace-list.
+    - [x] Workspace KQL: filter применяется; parse-error показывается красным.
+    - [ ] Logout чистит cookie.
+    - [ ] Cursor pagination / infinite scroll: sentinel intersect → следующая страница догружается.
+    - [ ] Live tail: toggle → SSE подключается → новые события появляются сверху.
+    - [ ] Saved queries: save → chip появляется → click перезагружает KQL.
+    - [ ] Share: generate → anonymous TSV fetch → expired link → 410.
+    - [ ] Admin workspaces: create → появился в listing → delete → `.db` снесён.
+    - [ ] Admin API keys: create показывает plaintext один раз → ключ валидирует ingestion → delete инвалидирует кеш.
+- [x] **Storage-state auth.** Фикстура логинится один раз, сохраняет cookie через `context.StorageStateAsync` → `StorageStatePath`, каждый тест получает authenticated context. Без этого login на каждый test-method → медленнее + флейкит. Тесты login flow явно берут `authenticated: false`.
+- [x] **Disable per-assembly parallelization.** `[assembly: CollectionBehavior(DisableTestParallelization = true)]` — классовые фикстуры поднимают Kestrel + Chromium параллельно, гонят конкуренцию при старте. Весь прогон всё равно ≤10с с 3-4 классами.
+- [ ] **Skip:** pixel-perfect / CSS regression; animation-тайминги (flash в live-tail); cross-browser.
+- [ ] **Trace-on-failure.** `tracing.start` в test-base, `stop` с `artifacts/<testname>.zip` только при fail. `upload-artifact` в CI, открывать `pwsh playwright.ps1 show-trace artifacts/X.zip`.
+- [ ] **CI-бюджет.** Полный прогон ≤3 минут на обычном GitHub Actions runner. Если разрастётся — parallel workers через xunit `[CollectionDefinition(DisableParallelization = false)]`, шардинг admin/viewer/ingestion.
+- [ ] **Phase placement.** После закрытия Фазы D (админ-UI стабилизируется), перед Фазой F (DuckDB). Раньше — будем переписывать тесты на каждом изменении админки.
+
 ## Perf / регрессии
 См. [`performance-testing.md`](performance-testing.md) для философии и tier'ов, [`perf-baseline.md`](perf-baseline.md) для актуальных чисел.
 - [x] BDN-проект `benchmarks/YobaLog.Benchmarks/` + стартовые бенчи (CleFParser, KqlTransformer на всех операторах, SqliteLogStore ingest + 3 способа query).
