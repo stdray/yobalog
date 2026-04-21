@@ -25,8 +25,10 @@ public sealed record Span(
 	ImmutableArray<SpanEvent> Events,
 	ImmutableArray<SpanLink> Links);
 
-// Mirror of OTel's SpanKind. Integer values match the proto enum so the OTLP ingest path
-// can cast directly without a mapping table.
+// Mirror of System.Diagnostics.ActivityKind (same integer values) so SystemSpanExporter
+// can cast directly from Activity.Kind. Note: OTLP proto's SpanKind enum is 1-indexed
+// with a leading Unspecified — OtlpTracesParser converts on the boundary (decrement or
+// default to Internal when Unspecified).
 public enum SpanKind
 {
 	Internal = 0,

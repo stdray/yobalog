@@ -2,6 +2,7 @@ using System.Text.Json;
 using YobaLog.Core;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Ingestion;
+using YobaLog.Core.Tracing;
 using YobaLog.Web.Ingestion;
 
 namespace YobaLog.Web;
@@ -102,6 +103,34 @@ static class IngestionHandlers
 		// both otel-dotnet and otel-python accept any 2xx with empty/JSON body as "delivered".
 		// We keep Created/202 semantics symmetric with CLEF rather than inventing a new shape.
 		return Results.Created(ctx.Request.Path.Value, new IngestResponse(result.Candidates.Count, result.Errors));
+	}
+
+	// OTLP Traces ingestion: HTTP/Protobuf body parse → ISpanStore.AppendBatchAsync. Same
+	// CompositeApiKeyStore auth + same workspace routing as OtlpLogs. Phase H.2 of the OTel
+	// integration (decision-log 2026-04-21). Proto DTOs never escape OtlpTracesParser.
+	public static async Task<IResult> OtlpTraces(
+		HttpContext ctx,
+		IApiKeyStore apiKeys,
+		ISpanStore spans,
+		CancellationToken ct)
+	{
+		var scope = await ResolveScopeAsync(ctx, apiKeys, ct);
+		if (scope is null)
+			return Results.Unauthorized();
+
+		using var ms = new MemoryStream();
+		await ctx.Request.Body.CopyToAsync(ms, ct);
+
+		var result = OtlpTracesParser.Parse(ms.GetBuffer().AsSpan(0, (int)ms.Length));
+		if (result.IsMalformed)
+			return Results.BadRequest("malformed OTLP protobuf");
+
+		if (result.Spans.Count > 0)
+			await spans.AppendBatchAsync(scope.Value, result.Spans, ct);
+
+		// Symmetric with /v1/logs — Created(201) with received/errors count. OTel SDK clients
+		// treat any 2xx as success regardless of body shape.
+		return Results.Created(ctx.Request.Path.Value, new IngestResponse(result.Spans.Count, result.Errors));
 	}
 
 	static async Task<WorkspaceId?> ResolveScopeAsync(HttpContext ctx, IApiKeyStore apiKeys, CancellationToken ct)

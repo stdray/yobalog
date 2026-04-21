@@ -198,6 +198,11 @@ public static class YobaLogApp
 		app.MapPost("/ingest/otlp/v1/logs", IngestionHandlers.OtlpLogs).AllowAnonymous();
 		app.MapPost("/v1/logs", IngestionHandlers.OtlpLogs).AllowAnonymous();
 
+		// OTLP Traces — same two-alias pattern. Phase H.2 of the OTel integration. Traces
+		// land in ISpanStore.AppendBatchAsync ({workspace}.traces.db), not the log store.
+		app.MapPost("/ingest/otlp/v1/traces", IngestionHandlers.OtlpTraces).AllowAnonymous();
+		app.MapPost("/v1/traces", IngestionHandlers.OtlpTraces).AllowAnonymous();
+
 		// Compatibility surface for third-party clients. Each vendor gets its own slot under
 		// /compat/<tech>/ so a future HEC / statsd / GELF receiver doesn't share the seq
 		// prefix. Seq clients (Serilog.Sinks.Seq, seq-logging, seqlog) hardcode the trailing

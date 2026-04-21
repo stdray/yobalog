@@ -12,14 +12,16 @@ Decision-log 2026-04-21 originally targeted the `OpenTelemetry.Proto` NuGet pack
 
 ## Which proto files?
 
-Just what's needed for OTLP Logs ingestion:
+OTLP Logs + Traces ingestion (Phase F + H.2):
 
 - `common/v1/common.proto` — `AnyValue`, `KeyValue`, `InstrumentationScope`.
 - `resource/v1/resource.proto` — `Resource`.
 - `logs/v1/logs.proto` — `LogRecord`, `ResourceLogs`, `ScopeLogs`, `LogsData`, `SeverityNumber`.
 - `collector/logs/v1/logs_service.proto` — `ExportLogsServiceRequest`, `ExportLogsServiceResponse`.
+- `trace/v1/trace.proto` — `Span` (OTLP wire shape; maps to our `YobaLog.Core.Tracing.Span`), `ResourceSpans`, `ScopeSpans`, `Status`.
+- `collector/trace/v1/trace_service.proto` — `ExportTraceServiceRequest`, `ExportTraceServiceResponse`.
 
-Phase H (traces) will add `trace/v1/trace.proto` + `collector/trace/v1/trace_service.proto` alongside.
+OTLP Metrics is explicitly out of scope (decision-log 2026-04-21 — yobalog is logs + traces, metrics are Prometheus territory).
 
 ## How to update
 
@@ -28,12 +30,14 @@ When bumping to a newer OTel proto version:
 ```bash
 V=1.6.0  # target version
 B=https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/v$V/opentelemetry/proto
-for p in common/v1/common resource/v1/resource logs/v1/logs collector/logs/v1/logs_service; do
+for p in common/v1/common resource/v1/resource \
+         logs/v1/logs collector/logs/v1/logs_service \
+         trace/v1/trace collector/trace/v1/trace_service; do
   curl -sSfo "src/YobaLog.Web/Proto/opentelemetry/proto/$p.proto" "$B/$p.proto"
 done
 ```
 
-Rebuild, run the OTLP compat tests, verify the generated `ExportLogsServiceRequest` still has the fields the parser pulls.
+Rebuild, run the OTLP compat tests, verify generated types still have the fields the parsers pull.
 
 ## Generated namespace
 
