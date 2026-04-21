@@ -15,12 +15,11 @@
 
 - **Сервер.** Ubuntu 22.04/24.04 (или аналог), root/sudo доступ, открытые входящие `80/tcp` и `443/tcp`. IPv4 обязательно; IPv6 опционально.
 - **DNS-контроль** над зоной `3po.su` (для A-записей).
-- **GHCR credentials** — PAT с scope `read:packages` + `write:packages` для публикации Docker-образа из CI. Отдельный deploy-PAT с `read:packages` для `docker pull` с сервера.
+- **Public GitHub repo + public GHCR package.** `publish`-job пушит образ в `ghcr.io` используя автоматический `${{ secrets.GITHUB_TOKEN }}` (workflow top-level `permissions: packages: write`) — отдельного PAT не нужно. Deploy-job на VM `docker pull`-ит анонимно, тоже без PAT. Если когда-то репо станет private — вернуть `GHCR_DEPLOY_USERNAME` / `GHCR_DEPLOY_TOKEN` secrets и `docker login ghcr.io` в deploy-script. После первого push'а в GHCR надо один раз **вручную** сменить visibility package'а на public: GitHub profile → Packages → yobalog → Package settings → Change visibility.
 - **GitHub secrets** в этом репо (Settings → Secrets → Actions):
-    - `DEPLOY_HOST` — `yobalog.3po.su` или IP (CI подключается по SSH).
-    - `DEPLOY_USERNAME` / `DEPLOY_PASSWORD` — SSH-креды для пользователя на сервере с правом `docker`.
-    - `GHCR_USERNAME` / `GHCR_TOKEN` — для `docker push` из `publish`-job'а.
-    - `GHCR_DEPLOY_USERNAME` / `GHCR_DEPLOY_TOKEN` — для `docker pull` на сервере.
+    - `DEPLOY_HOST` — `yoba-apps.3po.su` или IP (CI подключается по SSH).
+    - `DEPLOY_USERNAME` — пользователь на сервере с правом `docker` (через группу `docker`, не sudo NOPASSWD).
+    - `DEPLOY_PASSWORD` — SSH-пароль этого пользователя (он же sudo-пароль). SSH на сервере оставлен с `PasswordAuthentication yes` для CI-дружественного flow; `PermitRootLogin no` обязательно.
     - `YOBALOG_ADMIN_USERNAME` / `YOBALOG_ADMIN_PASSWORD` — первичный admin для cookie-auth (через DB-миграцию в `/admin/users` потом добавятся остальные).
 
 ---
