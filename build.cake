@@ -163,8 +163,8 @@ Task("DockerSmoke")
 				// Cake's RedirectStandardOutput uses ProcessStartInfo under the hood and Windows
 				// `curl.exe` doesn't know `/dev/null`.
 				Arguments = IsRunningOnWindows()
-					? "-fsS --max-time 2 -o NUL http://127.0.0.1:8080/Login"
-					: "-fsS --max-time 2 -o /dev/null http://127.0.0.1:8080/Login",
+					? "-fsS --max-time 2 -o NUL http://127.0.0.1:8080/health"
+					: "-fsS --max-time 2 -o /dev/null http://127.0.0.1:8080/health",
 			});
 			if (curlExit == 0)
 			{

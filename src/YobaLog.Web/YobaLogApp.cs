@@ -115,6 +115,23 @@ public static class YobaLogApp
 
 	static void MapEndpoints(WebApplication app)
 	{
+		// Lightweight liveness probe for Docker healthcheck and the Cake DockerSmoke task.
+		// No dependencies — returns 200 as long as the process is up and serving HTTP.
+		// Replaces the /Login-based smoke probe; /Login has auth-middleware pipeline overhead
+		// and returns 200 only because the page is anonymous — coincidence, not semantic fit.
+		app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
+
+		// Build provenance: GitVersion injects APP_VERSION / GIT_SHORT_SHA / GIT_COMMIT_DATE
+		// into the Docker image as env vars (see src/YobaLog.Web/Dockerfile ARG/ENV pairs).
+		// Local dev has no such vars — fall through to "dev"/"local"/empty so the endpoint
+		// is always available for quick "which build is this?" inspection.
+		app.MapGet("/version", () => Results.Ok(new
+		{
+			semVer = Environment.GetEnvironmentVariable("APP_VERSION") ?? "dev",
+			shortSha = Environment.GetEnvironmentVariable("GIT_SHORT_SHA") ?? "local",
+			commitDate = Environment.GetEnvironmentVariable("GIT_COMMIT_DATE") ?? string.Empty,
+		})).AllowAnonymous();
+
 		// Canonical versioned ingestion, one per wire format.
 		// Adding a new format = one more MapPost with a format-specific handler; nothing else moves.
 		app.MapPost("/api/v1/ingest/clef", IngestionHandlers.CleF).AllowAnonymous();
