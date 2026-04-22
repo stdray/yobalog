@@ -8,6 +8,11 @@ var dockerTagArgument = Argument("dockerTag", string.Empty);
 var dockerPushEnabled = Argument("dockerPush", false);
 var ghcrRepositoryArgument = Argument("ghcrRepository", string.Empty);
 var dockerTagOutputArgument = Argument("dockerTagOutput", string.Empty);
+// Buildx GHA layer cache — passed as CLI args from CI, empty locally so dev builds
+// stay on the default docker daemon with no buildx cache backend dependency.
+// Typical CI invocation: --dockerCacheFrom=type=gha --dockerCacheTo=type=gha,mode=max
+var dockerCacheFrom = Argument("dockerCacheFrom", string.Empty);
+var dockerCacheTo = Argument("dockerCacheTo", string.Empty);
 
 var solution = "./YobaLog.slnx";
 var webProject = "./src/YobaLog.Web/YobaLog.Web.csproj";
@@ -127,7 +132,14 @@ Task("Docker")
 
 	Information("Building Docker image {0}", imageWithTag);
 
-	var buildSettings = new DockerImageBuildSettings
+	// buildx + GHA layer cache when --dockerCacheFrom/--dockerCacheTo are provided
+	// (CI). Load=true brings the final image into the local docker daemon so
+	// DockerSmoke and DockerPush can tag/run it. Without CacheFrom/CacheTo, buildx
+	// still works (local dev) — it just doesn't read/write the gha backend.
+	var cacheFrom = string.IsNullOrWhiteSpace(dockerCacheFrom) ? Array.Empty<string>() : new[] { dockerCacheFrom };
+	var cacheTo = string.IsNullOrWhiteSpace(dockerCacheTo) ? Array.Empty<string>() : new[] { dockerCacheTo };
+
+	var buildSettings = new DockerBuildXBuildSettings
 	{
 		File = dockerFile,
 		Tag = new[] { imageWithTag },
@@ -136,10 +148,13 @@ Task("Docker")
 			$"APP_VERSION={gitVersion.FullSemVer}",
 			$"GIT_SHORT_SHA={gitVersion.ShortSha}",
 			$"GIT_COMMIT_DATE={gitVersion.CommitDate}"
-		}
+		},
+		CacheFrom = cacheFrom,
+		CacheTo = cacheTo,
+		Load = true,
 	};
 
-	DockerBuild(buildSettings, ".");
+	DockerBuildXBuild(buildSettings, ".");
 });
 
 // Smoke-test the chiseled runtime: launch container, wait for HTTP 200 on /health + /version
@@ -323,6 +338,13 @@ Task("Dev")
 
 	KillAll();
 });
+
+// Single-target entry point for the PR-only `ci` job — Test + E2ETest share the Build
+// task (Cake DAG). Keeps the CI yml simple (one `./build.sh --target=CI` line) and
+// ensures E2E doesn't run if unit tests fail.
+Task("CI")
+	.IsDependentOn("Test")
+	.IsDependentOn("E2ETest");
 
 Task("Default")
 	.IsDependentOn("DockerPush");
