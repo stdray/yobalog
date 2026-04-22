@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -153,6 +154,24 @@ public static class YobaLogApp
 					// pattern unprocessed — it's a self-host special case.
 					.AddProcessor(sp => new SimpleActivityExportProcessor(
 						sp.GetRequiredService<SystemSpanExporter>())));
+		}
+
+		// Persist DataProtection keys across container restarts. Default ASP.NET behavior
+		// is an in-memory master key regenerated per process — every redeploy invalidates
+		// prior auth-cookies and antiforgery tokens ("key not found in key ring"), which
+		// manifests as users getting logged out on every deploy.
+		// Config-driven: empty `DataProtection:KeysDirectory` = no persistence (tests and
+		// dev-without-secrets fall here, getting the harmless in-memory default); prod sets
+		// it via the Dockerfile ENV `DataProtection__KeysDirectory=/app/data/keys`, pointing
+		// at the mounted data volume (chowned 1654:1654 for the chiseled `app` UID) that
+		// survives redeploys. No XML encryptor — filesystem permissions are the boundary.
+		var keysDir = builder.Configuration["DataProtection:KeysDirectory"];
+		if (!string.IsNullOrWhiteSpace(keysDir))
+		{
+			Directory.CreateDirectory(keysDir);
+			builder.Services.AddDataProtection()
+				.PersistKeysToFileSystem(new DirectoryInfo(keysDir))
+				.SetApplicationName("yobalog");
 		}
 
 		builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

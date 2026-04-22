@@ -42,6 +42,10 @@ ENV APP_VERSION=$APP_VERSION
 ENV GIT_SHORT_SHA=$GIT_SHORT_SHA
 ENV GIT_COMMIT_DATE=$GIT_COMMIT_DATE
 ENV ASPNETCORE_URLS=http://+:8080
+# DataProtection keys persist across redeploys on the `/app/data` volume — without
+# this, every redeploy regenerates the in-memory master key and invalidates prior
+# cookies (users get logged out). See DataProtection block in YobaLogApp.cs.
+ENV DataProtection__KeysDirectory=/app/data/keys
 WORKDIR /app
 COPY --from=build --chown=app:app /app/publish .
 # `data/` holds per-workspace `.logs.db` + `.meta.db`. In prod mount a host volume here:
