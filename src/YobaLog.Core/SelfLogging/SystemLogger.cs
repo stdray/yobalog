@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -43,8 +43,15 @@ sealed class SystemLogger : ILogger
 		var message = formatter(state, exception);
 		var template = ExtractTemplate(state) ?? message;
 
-		var props = ImmutableDictionary<string, JsonElement>.Empty
-			.Add("SourceContext", _categoryElement);
+		var props = _options.StaticProperties.SetItem("SourceContext", _categoryElement);
+
+		// Activity.Current is ambient — AspNetCoreInstrumentation sets the root span,
+		// domain code extends it via ActivitySource.StartActivity. Reading directly
+		// here bypasses MEL scope plumbing (SystemLogger returns null from BeginScope)
+		// while producing the same TraceId/SpanId stamping as ActivityTrackingOptions would.
+		var activity = Activity.Current;
+		var traceId = activity?.TraceId.ToHexString();
+		var spanId = activity?.SpanId.ToHexString();
 
 		var candidate = new LogEventCandidate(
 			_time.GetUtcNow(),
@@ -52,8 +59,8 @@ sealed class SystemLogger : ILogger
 			template,
 			message,
 			exception?.ToString(),
-			null,
-			null,
+			string.IsNullOrEmpty(traceId) || traceId == "00000000000000000000000000000000" ? null : traceId,
+			string.IsNullOrEmpty(spanId) || spanId == "0000000000000000" ? null : spanId,
 			eventId.Id == 0 ? null : eventId.Id,
 			props);
 

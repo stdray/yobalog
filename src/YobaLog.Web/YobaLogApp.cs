@@ -1,10 +1,12 @@
 using System.Collections.Immutable;
 using System.Net;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
@@ -44,6 +46,29 @@ public static class YobaLogApp
 		builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection("ApiKeys"));
 		builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection("Retention"));
 		builder.Services.Configure<SystemLoggerOptions>(builder.Configuration.GetSection("SystemLogger"));
+
+		// Static property bag for self-logs: App/Env/Ver/Sha/Host per yobaconf's
+		// logging-policy.md field taxonomy. Stamped on every $system event via
+		// SystemLogger so `where App == "yobalog"` + `where Ver == "0.3.0-148"`
+		// work in the $system workspace KQL — parity with consumer-app events.
+		// Ver/Sha/CommitDate come from APP_VERSION/GIT_SHORT_SHA env vars injected
+		// by the Dockerfile at build time (GitVersion → ARG → ENV).
+		builder.Services.PostConfigure<SystemLoggerOptions>(opts =>
+		{
+			var props = ImmutableDictionary.CreateBuilder<string, JsonElement>();
+			props["App"] = JsonSerializer.SerializeToElement("yobalog");
+			props["Env"] = JsonSerializer.SerializeToElement(builder.Environment.EnvironmentName);
+			props["Ver"] = JsonSerializer.SerializeToElement(Environment.GetEnvironmentVariable("APP_VERSION") ?? "dev");
+			props["Sha"] = JsonSerializer.SerializeToElement(Environment.GetEnvironmentVariable("GIT_SHORT_SHA") ?? "local");
+			props["Host"] = JsonSerializer.SerializeToElement(Environment.MachineName);
+			opts.StaticProperties = props.ToImmutable();
+		});
+
+		// ActivityTrackingOptions covers non-SystemLogger providers (console in dev) —
+		// SystemLogger reads Activity.Current directly and doesn't need scope plumbing,
+		// but the flag costs nothing and benefits other sinks in the pipeline.
+		builder.Logging.Configure(o => o.ActivityTrackingOptions =
+			ActivityTrackingOptions.TraceId | ActivityTrackingOptions.SpanId);
 		builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("Admin"));
 		builder.Services.Configure<ShareOptions>(builder.Configuration.GetSection("Share"));
 

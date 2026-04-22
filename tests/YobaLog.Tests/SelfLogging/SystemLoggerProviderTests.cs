@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -103,5 +106,65 @@ public sealed class SystemLoggerProviderTests
 		var a = provider.CreateLogger("YobaLog.Test");
 		var b = provider.CreateLogger("YobaLog.Test");
 		a.Should().BeSameAs(b);
+	}
+
+	[Fact]
+	public void StaticProperties_Stamped_On_Every_Event()
+	{
+		var staticProps = ImmutableDictionary<string, JsonElement>.Empty
+			.SetItem("App", JsonSerializer.SerializeToElement("yobalog"))
+			.SetItem("Env", JsonSerializer.SerializeToElement("Testing"))
+			.SetItem("Ver", JsonSerializer.SerializeToElement("0.3.0-148"));
+		var provider = Create(new SystemLoggerOptions { StaticProperties = staticProps });
+		var logger = provider.CreateLogger("YobaLog.Test");
+
+		logger.LogInformation("hello");
+
+		provider.Reader.TryRead(out var ev).Should().BeTrue();
+		ev!.Properties["App"].GetString().Should().Be("yobalog");
+		ev.Properties["Env"].GetString().Should().Be("Testing");
+		ev.Properties["Ver"].GetString().Should().Be("0.3.0-148");
+		ev.Properties["SourceContext"].GetString().Should().Be("YobaLog.Test");
+	}
+
+	[Fact]
+	public void Activity_Current_TraceId_SpanId_Captured()
+	{
+		// ActivitySource needs at least one listener with ActivityIsAllDataRequested
+		// returning true; otherwise StartActivity returns null and TraceId/SpanId
+		// stay at zero (no-op activity). Mirrors what AspNetCoreInstrumentation does in prod.
+		using var listener = new ActivityListener
+		{
+			ShouldListenTo = _ => true,
+			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+		};
+		ActivitySource.AddActivityListener(listener);
+
+		using var source = new ActivitySource("YobaLog.Test.Activity");
+		using var activity = source.StartActivity("test-span");
+		activity.Should().NotBeNull();
+
+		var provider = Create();
+		var logger = provider.CreateLogger("YobaLog.Test");
+		logger.LogInformation("inside span");
+
+		provider.Reader.TryRead(out var ev).Should().BeTrue();
+		ev!.TraceId.Should().Be(activity!.TraceId.ToHexString());
+		ev.SpanId.Should().Be(activity.SpanId.ToHexString());
+	}
+
+	[Fact]
+	public void No_Ambient_Activity_Leaves_TraceId_Null()
+	{
+		// In a test fixture with no listener, Activity.Current is typically null; even
+		// when an upstream test leaked a listener, the all-zero IDs must still be
+		// normalized to null (writing "00000…" to LogEvents would be worse than nothing).
+		var provider = Create();
+		var logger = provider.CreateLogger("YobaLog.Test");
+		logger.LogInformation("no span");
+
+		provider.Reader.TryRead(out var ev).Should().BeTrue();
+		ev!.TraceId.Should().BeNull();
+		ev.SpanId.Should().BeNull();
 	}
 }
