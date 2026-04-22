@@ -308,7 +308,117 @@ document.addEventListener("click", (event) => {
 	});
 });
 
-// ---------- Live-tail toggle ----------
+// ---------- Live-tail toggle + viewport-aware staging ----------
+
+// Scroll threshold below which we prepend directly (user is near-top, reading head).
+// Above it, we accumulate rows in a staged fragment and surface a "N new" pill so the
+// user's scroll position through historical content doesn't jump on every arrival.
+const LIVE_TAIL_SCROLL_THRESHOLD = 100;
+
+// DocumentFragment works fine as a <tr> container even though <tr> normally needs a
+// <tbody> parent — the browser keeps them as detached nodes until re-attached.
+let liveTailStaged: DocumentFragment | null = null;
+let liveTailStagedCount = 0;
+// Suppresses the MutationObserver during badge-click flush — otherwise reinserting
+// the staged fragment into #events-body fires the observer, which (still seeing
+// scrollY > threshold because scroll-to-top is smooth/async) re-stages the same
+// rows in a tight loop.
+let liveTailFlushing = false;
+
+function liveTailIsActive(): boolean {
+	const toggle = document.getElementById("live-tail-toggle") as HTMLInputElement | null;
+	return toggle?.checked === true;
+}
+
+function updateLiveTailBadge(): void {
+	const badge = document.getElementById("live-tail-badge");
+	const count = document.querySelector<HTMLElement>('[data-testid="live-tail-count"]');
+	if (!badge || !count) return;
+	if (liveTailStagedCount > 0) {
+		count.textContent = String(liveTailStagedCount);
+		badge.classList.remove("hidden");
+		badge.removeAttribute("hidden");
+	} else {
+		badge.classList.add("hidden");
+		badge.setAttribute("hidden", "");
+	}
+}
+
+function resetLiveTailStaging(): void {
+	liveTailStaged = null;
+	liveTailStagedCount = 0;
+	updateLiveTailBadge();
+}
+
+// MutationObserver on #events-body — catches every way a row gets inserted, including
+// htmx-ext-sse's direct DOM manipulation (which bypasses the htmx:beforeSwap lifecycle
+// that regular `hx-*` attributes run through). When live-tail is active AND the user has
+// scrolled past the threshold, just-inserted rows are detached from events-body, moved
+// to a staged DocumentFragment, and the scroll position is compensated so the historical
+// content the user is reading doesn't jump. A "N new" badge surfaces the pending count.
+let liveTailObserver: MutationObserver | null = null;
+
+function ensureLiveTailObserver(): void {
+	if (liveTailObserver !== null) return;
+	const eventsBody = document.getElementById("events-body");
+	if (!eventsBody) return;
+
+	liveTailObserver = new MutationObserver((mutations) => {
+		if (liveTailFlushing) return;
+		if (!liveTailIsActive()) return;
+		if (window.scrollY <= LIVE_TAIL_SCROLL_THRESHOLD) return;
+
+		let compensate = 0;
+		for (const mut of mutations) {
+			for (const node of Array.from(mut.addedNodes)) {
+				if (!(node instanceof HTMLTableRowElement)) continue;
+				// Only stage rows that belong to events — infinite-scroll sentinel /
+				// non-event artifacts stay where htmx put them.
+				if (node.dataset["testid"] !== "events-row") continue;
+
+				const h = node.getBoundingClientRect().height;
+				compensate += h;
+				node.remove();
+
+				if (liveTailStaged === null) liveTailStaged = document.createDocumentFragment();
+				liveTailStaged.insertBefore(node, liveTailStaged.firstChild);
+				liveTailStagedCount++;
+			}
+		}
+		if (compensate > 0) {
+			// Prepend inserts above the viewport, which browsers translate into an
+			// absolute-scrollY-preserving visual scroll-down. Subtracting the row heights
+			// after detaching keeps the user's reading position pixel-stable.
+			window.scrollBy(0, -compensate);
+			updateLiveTailBadge();
+		}
+	});
+	liveTailObserver.observe(eventsBody, { childList: true });
+}
+
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	if (!target) return;
+	const badge = target.closest("#live-tail-badge");
+	if (!badge) return;
+
+	const tbody = document.getElementById("events-body");
+	if (!tbody || liveTailStaged === null) return;
+
+	liveTailFlushing = true;
+	try {
+		// insertBefore the whole fragment in one shot — preserves internal order, single
+		// reflow. Fragment becomes empty after insert (spec behavior).
+		tbody.insertBefore(liveTailStaged, tbody.firstChild);
+	} finally {
+		// Observer runs mutations as a microtask after the current stack unwinds —
+		// reset the flag on the next tick so the insertion's mutations are seen with
+		// the flag still true.
+		queueMicrotask(() => { liveTailFlushing = false; });
+	}
+	resetLiveTailStaging();
+	window.scrollTo({ top: 0, behavior: "smooth" });
+});
 
 document.addEventListener("change", (event) => {
 	const target = event.target as HTMLInputElement | null;
@@ -319,10 +429,20 @@ document.addEventListener("change", (event) => {
 	const tbody = document.getElementById("events-body");
 	if (!wsId || !tbody?.parentElement) return;
 
+	// Mirror toggle state into the hidden form field so Apply-form submit carries
+	// liveTail=1 → reloaded page auto-reconnects with the new KQL.
+	const formField = document.getElementById("live-tail-form-field") as HTMLInputElement | null;
+	if (formField) formField.disabled = !target.checked;
+
 	const containerId = "live-tail-sse";
 	document.getElementById(containerId)?.remove();
+	// Toggle-off (or re-toggle) always clears staged state so stale badges don't
+	// linger on disabled streams, and so a fresh enable starts from zero.
+	resetLiveTailStaging();
 
 	if (!target.checked) return;
+
+	ensureLiveTailObserver();
 
 	const url = `/api/ws/${encodeURIComponent(wsId)}/tail?kql=${encodeURIComponent(kql)}`;
 	const container = document.createElement("div");
@@ -333,6 +453,20 @@ document.addEventListener("change", (event) => {
 	tbody.parentElement.parentElement?.insertBefore(container, tbody.parentElement);
 	window.htmx?.process(container);
 });
+
+// Reconnect live-tail across filter changes. Apply submits a GET form that reloads the
+// page with the new `?kql=...` — if the user had live-tail on, liveTail=1 rides along
+// and this block re-checks the toggle on load, dispatching `change` so the existing
+// handler re-opens the SSE stream with the current (new) KQL. Script loads as ES
+// module → deferred → DOM is ready when this runs.
+(() => {
+	const params = new URLSearchParams(window.location.search);
+	if (params.get("liveTail") !== "1") return;
+	const toggle = document.getElementById("live-tail-toggle") as HTMLInputElement | null;
+	if (!toggle || toggle.checked) return;
+	toggle.checked = true;
+	toggle.dispatchEvent(new Event("change", { bubbles: true }));
+})();
 
 // ---------- Share as TSV modal ----------
 

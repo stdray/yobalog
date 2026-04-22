@@ -125,6 +125,10 @@
 			</label>
 		}
 	</div>
+	@* Carries the toggle state across the Apply-form GET submit so the reloaded page
+	   re-enables live-tail with the new KQL. `disabled` keeps the param out of the
+	   URL until admin.ts enables it in response to a toggle change. *@
+	<input type="hidden" name="liveTail" value="1" id="live-tail-form-field" disabled />
 </form>
 
 
@@ -238,6 +242,15 @@ else if (Model.Events.Count == 0)
 }
 else
 {
+	@* Floating "N new" pill. Live-tail accumulates incoming rows here when the user has
+	   scrolled away from the top instead of prepending and pushing historical content
+	   down (classic Slack-style). Click → flush staged rows into #events-body and scroll
+	   to top. admin.ts hooks htmx:beforeSwap to route SSE events to staging vs #events-body. *@
+	<button type="button" id="live-tail-badge" data-testid="live-tail-badge"
+		class="btn btn-primary btn-sm fixed hidden right-4 shadow-lg top-4 z-50"
+		aria-live="polite" hidden>
+		<span data-testid="live-tail-count">0</span> new
+	</button>
 	<div class="overflow-x-auto rounded-box border border-base-300 bg-base-200">
 		<table class="table table-sm">
 			<thead>
