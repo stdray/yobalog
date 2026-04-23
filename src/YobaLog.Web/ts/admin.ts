@@ -265,12 +265,25 @@ function highlightKqlItem(items: readonly HTMLButtonElement[], i: number): void 
 
 // ---------- Hover filter chips (✓/✗ over event cells) ----------
 
+// Rapid clicks on the same chip used to stack identical `| where …` clauses before
+// the form's requestSubmit() navigated away. Two guards: a dedup check on the clause
+// text (handles re-clicking the same chip / same value across rows), and a one-shot
+// submit lock (handles different chips mashed in the same frame). Module-scope lock
+// resets naturally on page reload.
+let chipSubmitLock = false;
+
+window.addEventListener("pageshow", () => {
+	chipSubmitLock = false;
+});
+
 document.addEventListener("click", (event) => {
 	const target = event.target as HTMLElement | null;
 	const btn = target?.closest("[data-filter-field]") as HTMLButtonElement | null;
 	if (!btn) return;
 	event.stopPropagation();
 	event.preventDefault();
+
+	if (chipSubmitLock) return;
 
 	const field = btn.dataset["filterField"] ?? "";
 	const op = btn.dataset["filterOp"] ?? "eq";
@@ -282,9 +295,56 @@ document.addEventListener("click", (event) => {
 	const textarea = document.getElementById("kql-textarea") as HTMLTextAreaElement | null;
 	if (!textarea) return;
 
+	const clause = `| where ${field} ${sym} ${value}`;
 	const base = textarea.value.trim().length > 0 ? textarea.value.trimEnd() : "events";
-	textarea.value = `${base}\n| where ${field} ${sym} ${value}`;
+	if (base.includes(clause)) return;
+	textarea.value = `${base}\n${clause}`;
+	chipSubmitLock = true;
 	textarea.form?.requestSubmit();
+});
+
+// ---------- Pin search panel (sticky-on-scroll) ----------
+
+// Tailwind JIT scans this file, so the toggle classes below are picked up even though
+// they're only set at runtime. Pinned state lives in localStorage so it survives reloads
+// and applies across workspaces — one preference for the user, not per-workspace.
+const KqlPinKey = "yobalog.kqlPanelPinned";
+
+function applyKqlPinState(pinned: boolean): void {
+	const form = document.getElementById("kql-search-form");
+	const toggle = document.getElementById("kql-pin-toggle");
+	if (!form) return;
+	form.classList.toggle("sticky", pinned);
+	form.classList.toggle("top-0", pinned);
+	form.classList.toggle("z-20", pinned);
+	form.classList.toggle("shadow-lg", pinned);
+	if (toggle) {
+		toggle.setAttribute("aria-pressed", pinned ? "true" : "false");
+		toggle.classList.toggle("btn-active", pinned);
+		toggle.textContent = pinned ? "Unpin" : "Pin";
+	}
+}
+
+(() => {
+	try {
+		if (localStorage.getItem(KqlPinKey) === "1") applyKqlPinState(true);
+	} catch {
+		// localStorage unavailable (private mode / SecurityError) — start unpinned.
+	}
+})();
+
+document.addEventListener("click", (event) => {
+	const target = event.target as HTMLElement | null;
+	const btn = target?.closest("#kql-pin-toggle") as HTMLButtonElement | null;
+	if (!btn) return;
+	event.preventDefault();
+	const pinned = btn.getAttribute("aria-pressed") !== "true";
+	try {
+		localStorage.setItem(KqlPinKey, pinned ? "1" : "0");
+	} catch {
+		// localStorage unavailable — apply state for this session only.
+	}
+	applyKqlPinState(pinned);
 });
 
 // ---------- Copy-to-clipboard ----------
@@ -414,7 +474,9 @@ document.addEventListener("click", (event) => {
 		// Observer runs mutations as a microtask after the current stack unwinds —
 		// reset the flag on the next tick so the insertion's mutations are seen with
 		// the flag still true.
-		queueMicrotask(() => { liveTailFlushing = false; });
+		queueMicrotask(() => {
+			liveTailFlushing = false;
+		});
 	}
 	resetLiveTailStaging();
 	window.scrollTo({ top: 0, behavior: "smooth" });
