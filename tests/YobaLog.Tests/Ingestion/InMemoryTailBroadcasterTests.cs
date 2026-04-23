@@ -21,6 +21,16 @@ public sealed class InMemoryTailBroadcasterTests
 		null,
 		ImmutableDictionary<string, JsonElement>.Empty);
 
+	// Subscribe is `async IAsyncEnumerable` — the method body (including the
+	// _subscribers.AddOrUpdate registration) only runs on the first MoveNextAsync,
+	// up to the first real await (which is the channel reader). Priming the
+	// enumerator ourselves is a deterministic barrier: by the time MoveNextAsync
+	// returns (completed or pending), the subscriber is registered. Replaces a
+	// racy Task.Delay that hoped Task.Run had reached Subscribe in time — on slow
+	// CI that slept-too-short and Publish slipped past an empty subscriber list.
+	static async Task<T> WithTimeoutAsync<T>(ValueTask<T> task, int seconds = 2) =>
+		await task.AsTask().WaitAsync(TimeSpan.FromSeconds(seconds));
+
 	[Fact]
 	public async Task Subscribe_ReceivesPublishedEvents_Unfiltered()
 	{
@@ -28,22 +38,18 @@ public sealed class InMemoryTailBroadcasterTests
 		var allQuery = KustoCode.Parse("events");
 		using var cts = new CancellationTokenSource();
 
-		var received = new List<LogEventCandidate>();
-		var task = Task.Run(async () =>
-		{
-			await foreach (var e in broadcaster.Subscribe(Ws, allQuery, cts.Token))
-			{
-				received.Add(e);
-				if (received.Count >= 2) break;
-			}
-		});
-
-		await Task.Delay(50);
+		var enumerator = broadcaster.Subscribe(Ws, allQuery, cts.Token).GetAsyncEnumerator(cts.Token);
+		var pending = enumerator.MoveNextAsync();
 		broadcaster.Publish(Ws, [Mk(LogLevel.Information, "a"), Mk(LogLevel.Error, "b")]);
 
-		await task.WaitAsync(TimeSpan.FromSeconds(2));
-		received.Should().HaveCount(2);
-		received.Select(e => e.Message).Should().ContainInOrder("a", "b");
+		(await WithTimeoutAsync(pending)).Should().BeTrue();
+		enumerator.Current.Message.Should().Be("a");
+
+		(await WithTimeoutAsync(enumerator.MoveNextAsync())).Should().BeTrue();
+		enumerator.Current.Message.Should().Be("b");
+
+		await cts.CancelAsync();
+		await enumerator.DisposeAsync();
 	}
 
 	[Fact]
@@ -53,17 +59,8 @@ public sealed class InMemoryTailBroadcasterTests
 		var errorsOnly = KustoCode.Parse("events | where Level >= 4");
 		using var cts = new CancellationTokenSource();
 
-		var received = new List<LogEventCandidate>();
-		var task = Task.Run(async () =>
-		{
-			await foreach (var e in broadcaster.Subscribe(Ws, errorsOnly, cts.Token))
-			{
-				received.Add(e);
-				if (received.Count >= 1) break;
-			}
-		});
-
-		await Task.Delay(50);
+		var enumerator = broadcaster.Subscribe(Ws, errorsOnly, cts.Token).GetAsyncEnumerator(cts.Token);
+		var pending = enumerator.MoveNextAsync();
 		broadcaster.Publish(Ws,
 			[
 				Mk(LogLevel.Information, "skipped"),
@@ -71,8 +68,11 @@ public sealed class InMemoryTailBroadcasterTests
 				Mk(LogLevel.Error, "kept"),
 			]);
 
-		await task.WaitAsync(TimeSpan.FromSeconds(2));
-		received.Single().Message.Should().Be("kept");
+		(await WithTimeoutAsync(pending)).Should().BeTrue();
+		enumerator.Current.Message.Should().Be("kept");
+
+		await cts.CancelAsync();
+		await enumerator.DisposeAsync();
 	}
 
 	[Fact]
@@ -82,32 +82,22 @@ public sealed class InMemoryTailBroadcasterTests
 		var allQuery = KustoCode.Parse("events");
 		using var cts = new CancellationTokenSource();
 
-		var subA = new List<LogEventCandidate>();
-		var subB = new List<LogEventCandidate>();
+		var enumA = broadcaster.Subscribe(Ws, allQuery, cts.Token).GetAsyncEnumerator(cts.Token);
+		var enumB = broadcaster.Subscribe(Ws, allQuery, cts.Token).GetAsyncEnumerator(cts.Token);
 
-		var taskA = Task.Run(async () =>
-		{
-			await foreach (var e in broadcaster.Subscribe(Ws, allQuery, cts.Token))
-			{
-				subA.Add(e);
-				if (subA.Count >= 1) break;
-			}
-		});
-		var taskB = Task.Run(async () =>
-		{
-			await foreach (var e in broadcaster.Subscribe(Ws, allQuery, cts.Token))
-			{
-				subB.Add(e);
-				if (subB.Count >= 1) break;
-			}
-		});
+		var pendA = enumA.MoveNextAsync();
+		var pendB = enumB.MoveNextAsync();
 
-		await Task.Delay(100);
 		broadcaster.Publish(Ws, [Mk(LogLevel.Information, "shared")]);
 
-		await Task.WhenAll(taskA, taskB).WaitAsync(TimeSpan.FromSeconds(2));
-		subA.Single().Message.Should().Be("shared");
-		subB.Single().Message.Should().Be("shared");
+		(await WithTimeoutAsync(pendA)).Should().BeTrue();
+		(await WithTimeoutAsync(pendB)).Should().BeTrue();
+		enumA.Current.Message.Should().Be("shared");
+		enumB.Current.Message.Should().Be("shared");
+
+		await cts.CancelAsync();
+		await enumA.DisposeAsync();
+		await enumB.DisposeAsync();
 	}
 
 	[Fact]
