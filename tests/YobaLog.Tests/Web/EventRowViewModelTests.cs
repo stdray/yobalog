@@ -33,22 +33,24 @@ public sealed class EventRowViewModelTests
 			IsLive: false);
 
 	[Fact]
-	public void ToClefJson_MinimalFields()
+	public void ToJson_MinimalFields()
 	{
 		var vm = Mk(mt: "hello", m: "hello");
-		var json = JsonDocument.Parse(vm.ToClefJson()).RootElement;
+		var json = JsonDocument.Parse(vm.ToJson()).RootElement;
 
-		json.GetProperty("@t").GetString().Should().Be("2026-04-23T08:30:15.250Z");
-		json.GetProperty("@l").GetString().Should().Be("Information");
-		json.GetProperty("@mt").GetString().Should().Be("hello");
-		// @m omitted when identical to @mt (CLEF convention: renderer can rebuild from @mt).
-		json.TryGetProperty("@m", out _).Should().BeFalse();
-		json.TryGetProperty("@x", out _).Should().BeFalse();
-		json.TryGetProperty("@tr", out _).Should().BeFalse();
+		json.GetProperty("timestamp").GetString().Should().Be("2026-04-23T08:30:15.250Z");
+		json.GetProperty("level").GetString().Should().Be("Information");
+		json.GetProperty("messageTemplate").GetString().Should().Be("hello");
+		// `message` omitted when identical to the template (renderer can rebuild it).
+		json.TryGetProperty("message", out _).Should().BeFalse();
+		json.TryGetProperty("exception", out _).Should().BeFalse();
+		json.TryGetProperty("traceId", out _).Should().BeFalse();
+		// `properties` omitted when the dictionary is empty.
+		json.TryGetProperty("properties", out _).Should().BeFalse();
 	}
 
 	[Fact]
-	public void ToClefJson_AllOptionalFields()
+	public void ToJson_AllOptionalFields()
 	{
 		var vm = Mk(
 			mt: "login {User}",
@@ -58,33 +60,37 @@ public sealed class EventRowViewModelTests
 			sp: "def456",
 			eventId: 7);
 
-		var json = JsonDocument.Parse(vm.ToClefJson()).RootElement;
-		json.GetProperty("@mt").GetString().Should().Be("login {User}");
-		json.GetProperty("@m").GetString().Should().Be("login 'ada'");
-		json.GetProperty("@x").GetString().Should().Contain("boom");
-		json.GetProperty("@tr").GetString().Should().Be("abc123");
-		json.GetProperty("@sp").GetString().Should().Be("def456");
-		json.GetProperty("@i").GetInt32().Should().Be(7);
+		var json = JsonDocument.Parse(vm.ToJson()).RootElement;
+		json.GetProperty("messageTemplate").GetString().Should().Be("login {User}");
+		json.GetProperty("message").GetString().Should().Be("login 'ada'");
+		json.GetProperty("exception").GetString().Should().Contain("boom");
+		json.GetProperty("traceId").GetString().Should().Be("abc123");
+		json.GetProperty("spanId").GetString().Should().Be("def456");
+		json.GetProperty("eventId").GetInt32().Should().Be(7);
 	}
 
 	[Fact]
-	public void ToClefJson_PropertiesFlattened()
+	public void ToJson_PropertiesNestedUnderProperties()
 	{
+		// Nested to avoid collisions with top-level keys (User, Count, Level, …).
 		var props = ImmutableDictionary<string, JsonElement>.Empty
 			.Add("User", Str("ada"))
 			.Add("Count", Num(3));
 		var vm = Mk(props: props);
 
-		var json = JsonDocument.Parse(vm.ToClefJson()).RootElement;
-		json.GetProperty("User").GetString().Should().Be("ada");
-		json.GetProperty("Count").GetInt32().Should().Be(3);
+		var json = JsonDocument.Parse(vm.ToJson()).RootElement;
+		var nested = json.GetProperty("properties");
+		nested.GetProperty("User").GetString().Should().Be("ada");
+		nested.GetProperty("Count").GetInt32().Should().Be(3);
+		// Top-level stays clean.
+		json.TryGetProperty("User", out _).Should().BeFalse();
 	}
 
 	[Fact]
-	public void ToClefJson_SpecialCharsInStrings_NotOverEscaped()
+	public void ToJson_SpecialCharsInStrings_NotOverEscaped()
 	{
 		var vm = Mk(mt: "msg with <angle> & \"quote\"", m: "msg with <angle> & \"quote\"");
-		var raw = vm.ToClefJson();
+		var raw = vm.ToJson();
 
 		// UnsafeRelaxedJsonEscaping keeps < > & readable; " is still JSON-escaped as \".
 		raw.Should().Contain("<angle>");
@@ -93,6 +99,14 @@ public sealed class EventRowViewModelTests
 
 		// Parses as valid JSON regardless.
 		using var doc = JsonDocument.Parse(raw);
-		doc.RootElement.GetProperty("@mt").GetString().Should().Be("msg with <angle> & \"quote\"");
+		doc.RootElement.GetProperty("messageTemplate").GetString().Should().Be("msg with <angle> & \"quote\"");
+	}
+
+	[Fact]
+	public void ToJson_IsIndented()
+	{
+		// Indented output helps when the copied payload is pasted into a ticket / chat.
+		var vm = Mk();
+		vm.ToJson().Should().Contain("\n");
 	}
 }

@@ -68,39 +68,47 @@ public sealed record EventRowViewModel(
 	public static string IsoUtc(DateTimeOffset dt) =>
 		dt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
 
-	// CLEF line: the shape the /api/events/raw endpoint ingests. Round-trippable —
-	// copying an event as CLEF means the user can paste it into any Seq-compatible
-	// client (or back into YobaLog) and get the same event back. Relaxed escaping
-	// keeps Cyrillic / emoji / `<`,`>` etc. readable in the clipboard; Razor still
-	// HTML-encodes the attribute value on render.
-	static readonly JsonWriterOptions ClefJsonOptions = new()
+	// Human-readable shape for clipboard copy. Not CLEF (`@t`/`@l`/…) — the canonical
+	// short keys are great on the wire and unreadable pasted into a ticket / chat.
+	// Properties sit nested under `properties` to avoid collisions with top-level
+	// names (User, Count, Level, …). Relaxed escaping keeps Cyrillic / emoji /
+	// `<`,`>` etc. intact in the clipboard; Razor still HTML-encodes the attribute
+	// value on render, so the data-copy round-trip is safe.
+	static readonly JsonWriterOptions CopyJsonOptions = new()
 	{
 		Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+		Indented = true,
 	};
 
-	public string ToClefJson()
+	public string ToJson()
 	{
 		using var stream = new MemoryStream();
-		using (var w = new Utf8JsonWriter(stream, ClefJsonOptions))
+		using (var w = new Utf8JsonWriter(stream, CopyJsonOptions))
 		{
 			w.WriteStartObject();
-			w.WriteString("@t", IsoUtc(Timestamp));
-			w.WriteString("@l", Level.ToString());
-			w.WriteString("@mt", MessageTemplate);
+			w.WriteString("timestamp", IsoUtc(Timestamp));
+			w.WriteString("level", Level.ToString());
+			w.WriteString("messageTemplate", MessageTemplate);
 			if (!string.Equals(Message, MessageTemplate, StringComparison.Ordinal))
-				w.WriteString("@m", Message);
+				w.WriteString("message", Message);
 			if (Exception is not null)
-				w.WriteString("@x", Exception);
+				w.WriteString("exception", Exception);
 			if (EventId is not null)
-				w.WriteNumber("@i", EventId.Value);
+				w.WriteNumber("eventId", EventId.Value);
 			if (TraceId is not null)
-				w.WriteString("@tr", TraceId);
+				w.WriteString("traceId", TraceId);
 			if (SpanId is not null)
-				w.WriteString("@sp", SpanId);
-			foreach (var (key, value) in Properties)
+				w.WriteString("spanId", SpanId);
+			if (Properties.Count > 0)
 			{
-				w.WritePropertyName(key);
-				value.WriteTo(w);
+				w.WritePropertyName("properties");
+				w.WriteStartObject();
+				foreach (var (key, value) in Properties)
+				{
+					w.WritePropertyName(key);
+					value.WriteTo(w);
+				}
+				w.WriteEndObject();
 			}
 			w.WriteEndObject();
 		}

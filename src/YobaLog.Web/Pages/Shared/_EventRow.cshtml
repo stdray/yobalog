@@ -42,9 +42,9 @@
 			@if (!Model.IsLive)
 			{
 				<button type="button" class="btn btn-ghost btn-xs opacity-40 hover:opacity-100"
-					data-copy="@Model.ToClefJson()"
+					data-copy="@Model.ToJson()"
 					data-testid="event-copy-json"
-					title="Copy event as CLEF JSON">⧉</button>
+					title="Copy event as JSON">⧉</button>
 			}
 		</div>
 		@if (!string.IsNullOrEmpty(Model.Exception))
