@@ -11,111 +11,111 @@ namespace YobaLog.E2ETests.Compat;
 // machinery with the UI tests via KestrelAppHost.
 public sealed class WinstonSeqCompatTests : IAsyncLifetime
 {
-	static readonly string FixtureDir = Path.Combine(
-		AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "winston-seq");
-	static readonly WorkspaceId Ws = WorkspaceId.Parse("compat-winston");
+    static readonly string FixtureDir = Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "winston-seq");
+    static readonly WorkspaceId Ws = WorkspaceId.Parse("compat-winston");
 
-	readonly KestrelAppHost _host = new();
+    readonly KestrelAppHost _host = new();
 
-	public async Task InitializeAsync() =>
-		await _host.StartAsync(s =>
-		{
-			s["ApiKeys:Keys:0:Token"] = "compat-winston-key";
-			s["ApiKeys:Keys:0:Workspace"] = Ws.Value;
-		});
+    public async Task InitializeAsync() =>
+        await _host.StartAsync(s =>
+        {
+            s["ApiKeys:Keys:0:Token"] = "compat-winston-key";
+            s["ApiKeys:Keys:0:Workspace"] = Ws.Value;
+        });
 
-	public async Task DisposeAsync() => await _host.DisposeAsync();
+    public async Task DisposeAsync() => await _host.DisposeAsync();
 
-	[Fact]
-	public async Task WinstonSeq_UnderBun_DeliversStructuredEventsThroughRawEndpoint()
-	{
-		if (!BunAvailable())
-			return; // Silently skip when bun isn't on PATH (local dev without bun).
+    [Fact]
+    public async Task WinstonSeq_UnderBun_DeliversStructuredEventsThroughRawEndpoint()
+    {
+        if (!BunAvailable())
+            return; // Silently skip when bun isn't on PATH (local dev without bun).
 
-		if (!Directory.Exists(Path.Combine(FixtureDir, "node_modules")))
-			await RunBunAsync(FixtureDir, "install");
+        if (!Directory.Exists(Path.Combine(FixtureDir, "node_modules")))
+            await RunBunAsync(FixtureDir, "install");
 
-		var env = new Dictionary<string, string>
-		{
-			["SEQ_URL"] = _host.BaseUrl.TrimEnd('/') + "/compat/seq",
-			["SEQ_API_KEY"] = "compat-winston-key",
-		};
-		await RunBunAsync(FixtureDir, "run emit.ts", env);
+        var env = new Dictionary<string, string>
+        {
+            ["SEQ_URL"] = _host.BaseUrl.TrimEnd('/') + "/compat/seq",
+            ["SEQ_API_KEY"] = "compat-winston-key",
+        };
+        await RunBunAsync(FixtureDir, "run emit.ts", env);
 
-		await WaitForEventsAsync(expected: 3);
+        await WaitForEventsAsync(expected: 3);
 
-		var store = _host.Services.GetRequiredService<ILogStore>();
-		var events = new List<LogEvent>();
-		await foreach (var e in store.QueryAsync(Ws, new LogQuery(PageSize: 10), CancellationToken.None))
-			events.Add(e);
+        var store = _host.Services.GetRequiredService<ILogStore>();
+        var events = new List<LogEvent>();
+        await foreach (var e in store.QueryAsync(Ws, new LogQuery(PageSize: 10), CancellationToken.None))
+            events.Add(e);
 
-		events.Should().HaveCount(3);
-		events.Select(e => e.Level).Should()
-			.Contain(LogLevel.Information).And.Contain(LogLevel.Warning).And.Contain(LogLevel.Error);
+        events.Should().HaveCount(3);
+        events.Select(e => e.Level).Should()
+            .Contain(LogLevel.Information).And.Contain(LogLevel.Warning).And.Contain(LogLevel.Error);
 
-		events.Should().Contain(e => e.MessageTemplate.Contains("hello from", StringComparison.Ordinal));
+        events.Should().Contain(e => e.MessageTemplate.Contains("hello from", StringComparison.Ordinal));
 
-		var info = events.Single(e => e.Level == LogLevel.Information);
-		info.Properties.Should().ContainKey("Source");
-		info.Properties["Source"].GetString().Should().Be("winston-compat");
-	}
+        var info = events.Single(e => e.Level == LogLevel.Information);
+        info.Properties.Should().ContainKey("Source");
+        info.Properties["Source"].GetString().Should().Be("winston-compat");
+    }
 
-	static bool BunAvailable()
-	{
-		try
-		{
-			using var probe = Process.Start(new ProcessStartInfo("bun", "--version")
-			{
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				UseShellExecute = false,
-			});
-			probe?.WaitForExit(3000);
-			return probe?.ExitCode == 0;
-		}
-		catch
-		{
-			return false;
-		}
-	}
+    static bool BunAvailable()
+    {
+        try
+        {
+            using var probe = Process.Start(new ProcessStartInfo("bun", "--version")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+            probe?.WaitForExit(3000);
+            return probe?.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
-	static async Task RunBunAsync(string workingDir, string args, IDictionary<string, string>? env = null)
-	{
-		var psi = new ProcessStartInfo("bun", args)
-		{
-			WorkingDirectory = workingDir,
-			RedirectStandardOutput = true,
-			RedirectStandardError = true,
-			UseShellExecute = false,
-		};
-		if (env is not null)
-			foreach (var (k, v) in env)
-				psi.Environment[k] = v;
+    static async Task RunBunAsync(string workingDir, string args, IDictionary<string, string>? env = null)
+    {
+        var psi = new ProcessStartInfo("bun", args)
+        {
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        if (env is not null)
+            foreach (var (k, v) in env)
+                psi.Environment[k] = v;
 
-		using var proc = Process.Start(psi) ?? throw new InvalidOperationException("bun failed to start");
-		var stdout = proc.StandardOutput.ReadToEndAsync();
-		var stderr = proc.StandardError.ReadToEndAsync();
-		await proc.WaitForExitAsync();
-		var outText = await stdout;
-		var errText = await stderr;
-		if (proc.ExitCode != 0)
-			throw new InvalidOperationException(
-				$"bun {args} exited with {proc.ExitCode}\nstdout: {outText}\nstderr: {errText}");
-		if (!string.IsNullOrWhiteSpace(outText) || !string.IsNullOrWhiteSpace(errText))
-			Console.WriteLine($"bun {args} stdout: {outText}\nstderr: {errText}");
-	}
+        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("bun failed to start");
+        var stdout = proc.StandardOutput.ReadToEndAsync();
+        var stderr = proc.StandardError.ReadToEndAsync();
+        await proc.WaitForExitAsync();
+        var outText = await stdout;
+        var errText = await stderr;
+        if (proc.ExitCode != 0)
+            throw new InvalidOperationException(
+                $"bun {args} exited with {proc.ExitCode}\nstdout: {outText}\nstderr: {errText}");
+        if (!string.IsNullOrWhiteSpace(outText) || !string.IsNullOrWhiteSpace(errText))
+            Console.WriteLine($"bun {args} stdout: {outText}\nstderr: {errText}");
+    }
 
-	async Task WaitForEventsAsync(long expected)
-	{
-		var store = _host.Services.GetRequiredService<ILogStore>();
-		var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
-		while (DateTimeOffset.UtcNow < deadline)
-		{
-			var c = await store.CountAsync(Ws, new LogQuery(PageSize: 1), CancellationToken.None);
-			if (c >= expected) return;
-			await Task.Delay(100);
-		}
-		var final = await store.CountAsync(Ws, new LogQuery(PageSize: 1), CancellationToken.None);
-		throw new TimeoutException($"expected {expected} events, got {final}");
-	}
+    async Task WaitForEventsAsync(long expected)
+    {
+        var store = _host.Services.GetRequiredService<ILogStore>();
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var c = await store.CountAsync(Ws, new LogQuery(PageSize: 1), CancellationToken.None);
+            if (c >= expected) return;
+            await Task.Delay(100);
+        }
+        var final = await store.CountAsync(Ws, new LogQuery(PageSize: 1), CancellationToken.None);
+        throw new TimeoutException($"expected {expected} events, got {final}");
+    }
 }

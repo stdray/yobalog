@@ -12,38 +12,38 @@ namespace YobaLog.E2ETests;
 [Collection(nameof(UiCollection))]
 public sealed class ForwardedHeadersTests
 {
-	readonly WebAppFixture _app;
+    readonly WebAppFixture _app;
 
-	public ForwardedHeadersTests(WebAppFixture app) => _app = app;
+    public ForwardedHeadersTests(WebAppFixture app) => _app = app;
 
-	[Fact]
-	public async Task XForwardedProtoHttps_FromLoopback_FlipsRequestSchemeToHttps()
-	{
-		var ws = FreshWorkspace("fh-proto");
-		await _app.SeedAsync(ws, Event(LogLevel.Information, "forwarded-probe"));
+    [Fact]
+    public async Task XForwardedProtoHttps_FromLoopback_FlipsRequestSchemeToHttps()
+    {
+        var ws = FreshWorkspace("fh-proto");
+        await _app.SeedAsync(ws, Event(LogLevel.Information, "forwarded-probe"));
 
-		using var http = await HttpAuthHelper.AuthenticatedClientAsync(_app);
+        using var http = await HttpAuthHelper.AuthenticatedClientAsync(_app);
 
-		using var req = new HttpRequestMessage(HttpMethod.Post, $"/api/ws/{ws}/share")
-		{
-			Content = JsonContent.Create(new
-			{
-				Kql = "events",
-				TtlHours = 1,
-				Columns = new[] { "Message" },
-				Modes = new Dictionary<string, string>(),
-			}),
-		};
-		req.Headers.Add("X-Forwarded-Proto", "https");
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"/api/ws/{ws}/share")
+        {
+            Content = JsonContent.Create(new
+            {
+                Kql = "events",
+                TtlHours = 1,
+                Columns = new[] { "Message" },
+                Modes = new Dictionary<string, string>(),
+            }),
+        };
+        req.Headers.Add("X-Forwarded-Proto", "https");
 
-		using var resp = await http.SendAsync(req);
-		resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var resp = await http.SendAsync(req);
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
 
-		var body = await resp.Content.ReadFromJsonAsync<ShareResponse>();
-		body.Should().NotBeNull();
-		body!.Url.Should().StartWith("https://",
-			"ForwardedHeaders trusted loopback → rewrote ctx.Request.Scheme → share URL reflects https");
-	}
+        var body = await resp.Content.ReadFromJsonAsync<ShareResponse>();
+        body.Should().NotBeNull();
+        body!.Url.Should().StartWith("https://",
+            "ForwardedHeaders trusted loopback → rewrote ctx.Request.Scheme → share URL reflects https");
+    }
 
-	sealed record ShareResponse(string Url, DateTimeOffset ExpiresAt);
+    sealed record ShareResponse(string Url, DateTimeOffset ExpiresAt);
 }

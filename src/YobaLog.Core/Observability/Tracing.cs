@@ -22,13 +22,13 @@ namespace YobaLog.Core.Observability;
 // resolution (C# picks the namespace first).
 public static class ActivitySources
 {
-	public const string IngestionSourceName = "YobaLog.Ingestion";
-	public const string QuerySourceName = "YobaLog.Query";
-	public const string RetentionSourceName = "YobaLog.Retention";
-	public const string StorageSourceName = "YobaLog.Storage";
+    public const string IngestionSourceName = "YobaLog.Ingestion";
+    public const string QuerySourceName = "YobaLog.Query";
+    public const string RetentionSourceName = "YobaLog.Retention";
+    public const string StorageSourceName = "YobaLog.Storage";
 
-	public static readonly ActivitySource Ingestion = new(IngestionSourceName);
-	public static readonly ActivitySource Query = new(QuerySourceName);
-	public static readonly ActivitySource Retention = new(RetentionSourceName);
-	public static readonly ActivitySource Storage = new(StorageSourceName);
+    public static readonly ActivitySource Ingestion = new(IngestionSourceName);
+    public static readonly ActivitySource Query = new(QuerySourceName);
+    public static readonly ActivitySource Retention = new(RetentionSourceName);
+    public static readonly ActivitySource Storage = new(StorageSourceName);
 }

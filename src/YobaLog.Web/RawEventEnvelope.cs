@@ -9,36 +9,36 @@ namespace YobaLog.Web;
 // to the other so the rest of the pipeline stays CLEF-only.
 static class RawEventEnvelope
 {
-	public static string ToClefLine(JsonElement evt)
-	{
-		using var stream = new MemoryStream();
-		using (var w = new Utf8JsonWriter(stream))
-		{
-			w.WriteStartObject();
+    public static string ToClefLine(JsonElement evt)
+    {
+        using var stream = new MemoryStream();
+        using (var w = new Utf8JsonWriter(stream))
+        {
+            w.WriteStartObject();
 
-			if (evt.TryGetProperty("Timestamp", out var ts) && ts.ValueKind == JsonValueKind.String)
-				w.WriteString("@t", ts.GetString());
+            if (evt.TryGetProperty("Timestamp", out var ts) && ts.ValueKind == JsonValueKind.String)
+                w.WriteString("@t", ts.GetString());
 
-			if (evt.TryGetProperty("Level", out var lvl) && lvl.ValueKind == JsonValueKind.String)
-				w.WriteString("@l", lvl.GetString());
+            if (evt.TryGetProperty("Level", out var lvl) && lvl.ValueKind == JsonValueKind.String)
+                w.WriteString("@l", lvl.GetString());
 
-			if (evt.TryGetProperty("MessageTemplate", out var mt) && mt.ValueKind == JsonValueKind.String)
-				w.WriteString("@mt", mt.GetString());
+            if (evt.TryGetProperty("MessageTemplate", out var mt) && mt.ValueKind == JsonValueKind.String)
+                w.WriteString("@mt", mt.GetString());
 
-			if (evt.TryGetProperty("Exception", out var ex) && ex.ValueKind == JsonValueKind.String)
-				w.WriteString("@x", ex.GetString());
+            if (evt.TryGetProperty("Exception", out var ex) && ex.ValueKind == JsonValueKind.String)
+                w.WriteString("@x", ex.GetString());
 
-			if (evt.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Object)
-			{
-				foreach (var p in props.EnumerateObject())
-				{
-					w.WritePropertyName(p.Name);
-					p.Value.WriteTo(w);
-				}
-			}
+            if (evt.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var p in props.EnumerateObject())
+                {
+                    w.WritePropertyName(p.Name);
+                    p.Value.WriteTo(w);
+                }
+            }
 
-			w.WriteEndObject();
-		}
-		return Encoding.UTF8.GetString(stream.ToArray());
-	}
+            w.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
 }

@@ -12,18 +12,18 @@ namespace YobaLog.Core.Tracing;
 // (AttributesJson / EventsJson / LinksJson columns) — same dynamic-bag approach as
 // LogEvent.Properties. Schema in SpansTable.Definition.
 public sealed record Span(
-	string SpanId,
-	string TraceId,
-	string? ParentSpanId,
-	string Name,
-	SpanKind Kind,
-	DateTimeOffset StartTime,
-	TimeSpan Duration,
-	SpanStatusCode Status,
-	string? StatusDescription,
-	ImmutableDictionary<string, JsonElement> Attributes,
-	ImmutableArray<SpanEvent> Events,
-	ImmutableArray<SpanLink> Links);
+    string SpanId,
+    string TraceId,
+    string? ParentSpanId,
+    string Name,
+    SpanKind Kind,
+    DateTimeOffset StartTime,
+    TimeSpan Duration,
+    SpanStatusCode Status,
+    string? StatusDescription,
+    ImmutableDictionary<string, JsonElement> Attributes,
+    ImmutableArray<SpanEvent> Events,
+    ImmutableArray<SpanLink> Links);
 
 // Mirror of System.Diagnostics.ActivityKind (same integer values) so SystemSpanExporter
 // can cast directly from Activity.Kind. Note: OTLP proto's SpanKind enum is 1-indexed
@@ -31,11 +31,11 @@ public sealed record Span(
 // default to Internal when Unspecified).
 public enum SpanKind
 {
-	Internal = 0,
-	Server = 1,
-	Client = 2,
-	Producer = 3,
-	Consumer = 4,
+    Internal = 0,
+    Server = 1,
+    Client = 2,
+    Producer = 3,
+    Consumer = 4,
 }
 
 // Mirror of OTel's Span.Status.StatusCode. System.Diagnostics.ActivityStatusCode happens to
@@ -43,17 +43,17 @@ public enum SpanKind
 // define our own enum to avoid leaking Activity into Core's public surface.
 public enum SpanStatusCode
 {
-	Unset = 0,
-	Ok = 1,
-	Error = 2,
+    Unset = 0,
+    Ok = 1,
+    Error = 2,
 }
 
 public sealed record SpanEvent(
-	DateTimeOffset Timestamp,
-	string Name,
-	ImmutableDictionary<string, JsonElement> Attributes);
+    DateTimeOffset Timestamp,
+    string Name,
+    ImmutableDictionary<string, JsonElement> Attributes);
 
 public sealed record SpanLink(
-	string TraceId,
-	string SpanId,
-	ImmutableDictionary<string, JsonElement> Attributes);
+    string TraceId,
+    string SpanId,
+    ImmutableDictionary<string, JsonElement> Attributes);

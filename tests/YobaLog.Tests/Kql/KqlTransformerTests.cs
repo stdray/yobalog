@@ -6,152 +6,152 @@ namespace YobaLog.Tests.Kql;
 
 public sealed class KqlTransformerTests
 {
-	static readonly EventRecord[] Rows =
-	[
-		new() { Id = 1, TimestampMs = 100, Level = (int)LogLevel.Information, Message = "hello", TraceId = "t1" },
-		new() { Id = 2, TimestampMs = 200, Level = (int)LogLevel.Error, Message = "boom", TraceId = "t2" },
-		new() { Id = 3, TimestampMs = 300, Level = (int)LogLevel.Warning, Message = "meh", TraceId = "t1" },
-		new() { Id = 4, TimestampMs = 400, Level = (int)LogLevel.Error, Message = "crash", TraceId = null },
-	];
+    static readonly EventRecord[] Rows =
+    [
+        new() { Id = 1, TimestampMs = 100, Level = (int)LogLevel.Information, Message = "hello", TraceId = "t1" },
+        new() { Id = 2, TimestampMs = 200, Level = (int)LogLevel.Error, Message = "boom", TraceId = "t2" },
+        new() { Id = 3, TimestampMs = 300, Level = (int)LogLevel.Warning, Message = "meh", TraceId = "t1" },
+        new() { Id = 4, TimestampMs = 400, Level = (int)LogLevel.Error, Message = "crash", TraceId = null },
+    ];
 
-	static IQueryable<EventRecord> Src() => Rows.AsQueryable();
+    static IQueryable<EventRecord> Src() => Rows.AsQueryable();
 
-	static KustoCode Parse(string kql) => KustoCode.Parse(kql);
+    static KustoCode Parse(string kql) => KustoCode.Parse(kql);
 
-	[Fact]
-	public void Where_LevelEqualsInt_FiltersByRank()
-	{
-		var ast = Parse("events | where Level == 4");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Where_LevelEqualsInt_FiltersByRank()
+    {
+        var ast = Parse("events | where Level == 4");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
-	}
+        result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
+    }
 
-	[Fact]
-	public void Where_LevelOrdering_Works()
-	{
-		var ast = Parse("events | where Level >= 3");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Where_LevelOrdering_Works()
+    {
+        var ast = Parse("events | where Level >= 3");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 3L, 4L]);
-	}
+        result.Select(r => r.Id).Should().BeEquivalentTo([2L, 3L, 4L]);
+    }
 
-	[Fact]
-	public void Where_LevelNameEquals_FiltersByName()
-	{
-		var ast = Parse("events | where LevelName == 'Error'");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Where_LevelNameEquals_FiltersByName()
+    {
+        var ast = Parse("events | where LevelName == 'Error'");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
-	}
+        result.Select(r => r.Id).Should().BeEquivalentTo([2L, 4L]);
+    }
 
-	[Fact]
-	public void Where_TraceIdEquals_Filters()
-	{
-		var ast = Parse("events | where TraceId == 't1'");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Where_TraceIdEquals_Filters()
+    {
+        var ast = Parse("events | where TraceId == 't1'");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Select(r => r.Id).Should().BeEquivalentTo([1L, 3L]);
-	}
+        result.Select(r => r.Id).Should().BeEquivalentTo([1L, 3L]);
+    }
 
-	[Fact]
-	public void Where_MessageEquals_Filters()
-	{
-		var ast = Parse("events | where Message == 'boom'");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Where_MessageEquals_Filters()
+    {
+        var ast = Parse("events | where Message == 'boom'");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Single().Id.Should().Be(2);
-	}
+        result.Single().Id.Should().Be(2);
+    }
 
-	[Fact]
-	public void Take_LimitsRows()
-	{
-		var ast = Parse("events | take 2");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Take_LimitsRows()
+    {
+        var ast = Parse("events | take 2");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Should().HaveCount(2);
-	}
+        result.Should().HaveCount(2);
+    }
 
-	[Fact]
-	public void Where_Then_Take_Composes()
-	{
-		var ast = Parse("events | where Level == 4 | take 1");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
+    [Fact]
+    public void Where_Then_Take_Composes()
+    {
+        var ast = Parse("events | where Level == 4 | take 1");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
 
-		result.Should().HaveCount(1);
-		result.Single().Level.Should().Be((int)LogLevel.Error);
-	}
+        result.Should().HaveCount(1);
+        result.Single().Level.Should().Be((int)LogLevel.Error);
+    }
 
-	[Fact]
-	public void UnknownTable_Throws()
-	{
-		var ast = Parse("WrongTable | where Level == 4");
-		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*WrongTable*");
-	}
+    [Fact]
+    public void UnknownTable_Throws()
+    {
+        var ast = Parse("WrongTable | where Level == 4");
+        var act = () => KqlTransformer.Apply(Src(), ast).ToList();
+        act.Should().Throw<UnsupportedKqlException>().WithMessage("*WrongTable*");
+    }
 
-	[Fact]
-	public void UnknownOperator_Throws()
-	{
-		var ast = Parse("events | summarize count()");
-		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*not supported*");
-	}
+    [Fact]
+    public void UnknownOperator_Throws()
+    {
+        var ast = Parse("events | summarize count()");
+        var act = () => KqlTransformer.Apply(Src(), ast).ToList();
+        act.Should().Throw<UnsupportedKqlException>().WithMessage("*not supported*");
+    }
 
-	[Fact]
-	public void UnknownColumn_Throws()
-	{
-		var ast = Parse("events | where Nonexistent == 'x'");
-		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Nonexistent*");
-	}
+    [Fact]
+    public void UnknownColumn_Throws()
+    {
+        var ast = Parse("events | where Nonexistent == 'x'");
+        var act = () => KqlTransformer.Apply(Src(), ast).ToList();
+        act.Should().Throw<UnsupportedKqlException>().WithMessage("*Nonexistent*");
+    }
 
-	[Fact]
-	public void LevelWithStringLiteral_Throws()
-	{
-		var ast = Parse("events | where Level == 'Error'");
-		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*integer literal*");
-	}
+    [Fact]
+    public void LevelWithStringLiteral_Throws()
+    {
+        var ast = Parse("events | where Level == 'Error'");
+        var act = () => KqlTransformer.Apply(Src(), ast).ToList();
+        act.Should().Throw<UnsupportedKqlException>().WithMessage("*integer literal*");
+    }
 
-	[Fact]
-	public void OrderBy_DefaultDescending()
-	{
-		var ast = Parse("events | order by Id");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
-		result.Select(r => r.Id).Should().ContainInOrder(4L, 3L, 2L, 1L);
-	}
+    [Fact]
+    public void OrderBy_DefaultDescending()
+    {
+        var ast = Parse("events | order by Id");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
+        result.Select(r => r.Id).Should().ContainInOrder(4L, 3L, 2L, 1L);
+    }
 
-	[Fact]
-	public void OrderBy_AscendingExplicit()
-	{
-		var ast = Parse("events | order by Id asc");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
-		result.Select(r => r.Id).Should().ContainInOrder(1L, 2L, 3L, 4L);
-	}
+    [Fact]
+    public void OrderBy_AscendingExplicit()
+    {
+        var ast = Parse("events | order by Id asc");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
+        result.Select(r => r.Id).Should().ContainInOrder(1L, 2L, 3L, 4L);
+    }
 
-	[Fact]
-	public void OrderBy_MultipleColumns_ThenBy()
-	{
-		var ast = Parse("events | order by Level asc, Id desc");
-		var result = KqlTransformer.Apply(Src(), ast).ToList();
-		// Level asc: Info(2)=1, Warning(3)=3, Error(4)=2,4. Id desc within Error: 4, 2.
-		result.Select(r => r.Id).Should().ContainInOrder(1L, 3L, 4L, 2L);
-	}
+    [Fact]
+    public void OrderBy_MultipleColumns_ThenBy()
+    {
+        var ast = Parse("events | order by Level asc, Id desc");
+        var result = KqlTransformer.Apply(Src(), ast).ToList();
+        // Level asc: Info(2)=1, Warning(3)=3, Error(4)=2,4. Id desc within Error: 4, 2.
+        result.Select(r => r.Id).Should().ContainInOrder(1L, 3L, 4L, 2L);
+    }
 
-	[Fact]
-	public void OrderBy_UnknownColumn_Throws()
-	{
-		var ast = Parse("events | order by Bogus");
-		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*Bogus*");
-	}
+    [Fact]
+    public void OrderBy_UnknownColumn_Throws()
+    {
+        var ast = Parse("events | order by Bogus");
+        var act = () => KqlTransformer.Apply(Src(), ast).ToList();
+        act.Should().Throw<UnsupportedKqlException>().WithMessage("*Bogus*");
+    }
 
-	[Fact]
-	public void ParseError_Throws()
-	{
-		var ast = Parse("events | where Level ==");
-		var act = () => KqlTransformer.Apply(Src(), ast).ToList();
-		act.Should().Throw<UnsupportedKqlException>().WithMessage("*parse error*");
-	}
+    [Fact]
+    public void ParseError_Throws()
+    {
+        var ast = Parse("events | where Level ==");
+        var act = () => KqlTransformer.Apply(Src(), ast).ToList();
+        act.Should().Throw<UnsupportedKqlException>().WithMessage("*parse error*");
+    }
 }

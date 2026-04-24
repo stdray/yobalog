@@ -4,9 +4,9 @@ namespace YobaLog.Core.Sharing;
 
 public sealed record FieldMaskingPolicy(ImmutableDictionary<string, MaskMode> Modes)
 {
-	public static readonly FieldMaskingPolicy Empty =
-		new(ImmutableDictionary<string, MaskMode>.Empty.WithComparers(StringComparer.Ordinal));
+    public static readonly FieldMaskingPolicy Empty =
+        new(ImmutableDictionary<string, MaskMode>.Empty.WithComparers(StringComparer.Ordinal));
 
-	public MaskMode ModeFor(string path) =>
-		Modes.TryGetValue(path, out var m) ? m : MaskMode.Keep;
+    public MaskMode ModeFor(string path) =>
+        Modes.TryGetValue(path, out var m) ? m : MaskMode.Keep;
 }

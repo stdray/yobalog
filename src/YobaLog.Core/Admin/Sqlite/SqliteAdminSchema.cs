@@ -4,14 +4,14 @@ namespace YobaLog.Core.Admin.Sqlite;
 // api-keys, users, retention policies). Keeps per-workspace .meta.db files narrow.
 static class SqliteAdminSchema
 {
-	public const string CreateWorkspaces = """
+    public const string CreateWorkspaces = """
 		CREATE TABLE IF NOT EXISTS Workspaces (
 			Id          TEXT PRIMARY KEY,
 			CreatedAtMs INTEGER NOT NULL
 		);
 		""";
 
-	public const string CreateUsers = """
+    public const string CreateUsers = """
 		CREATE TABLE IF NOT EXISTS Users (
 			Username     TEXT PRIMARY KEY,
 			PasswordHash TEXT NOT NULL,
@@ -19,7 +19,7 @@ static class SqliteAdminSchema
 		);
 		""";
 
-	public const string CreateRetentionPolicies = """
+    public const string CreateRetentionPolicies = """
 		CREATE TABLE IF NOT EXISTS RetentionPolicies (
 			Workspace   TEXT NOT NULL,
 			SavedQuery  TEXT NOT NULL,
@@ -28,10 +28,10 @@ static class SqliteAdminSchema
 		);
 		""";
 
-	public static readonly IReadOnlyList<string> AllStatements =
-	[
-		CreateWorkspaces,
-		CreateUsers,
-		CreateRetentionPolicies,
-	];
+    public static readonly IReadOnlyList<string> AllStatements =
+    [
+        CreateWorkspaces,
+        CreateUsers,
+        CreateRetentionPolicies,
+    ];
 }

@@ -7,12 +7,12 @@ namespace YobaLog.Core.Tracing;
 // ParentSpanId IS NULL (or the earliest span if no clear root, e.g. cross-process
 // trace where the parent is in another service's span store).
 public sealed record TraceSummary(
-	string TraceId,
-	string RootName,
-	DateTimeOffset StartTime,
-	TimeSpan Duration,
-	int SpanCount,
-	SpanStatusCode WorstStatus);
+    string TraceId,
+    string RootName,
+    DateTimeOffset StartTime,
+    TimeSpan Duration,
+    int SpanCount,
+    SpanStatusCode WorstStatus);
 
 // Parameters for listing-page queries. Two axes beyond pagination:
 //   - Filter: optional `spans | where …` KustoCode. Applied to individual spans
@@ -22,8 +22,8 @@ public sealed record TraceSummary(
 //     unix-ns. Used by the incremental auto-refresh flow (htmx polls with the
 //     topmost row's StartUnixNs and gets only the new ones prepended).
 public sealed record TracesQuery(
-	int PageSize = 50,
-	long? CursorStartUnixNs = null,
-	string? CursorTraceId = null,
-	long? SinceStartUnixNs = null,
-	KustoCode? Filter = null);
+    int PageSize = 50,
+    long? CursorStartUnixNs = null,
+    string? CursorTraceId = null,
+    long? SinceStartUnixNs = null,
+    KustoCode? Filter = null);

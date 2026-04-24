@@ -2,7 +2,7 @@ namespace YobaLog.Core.Sharing.Sqlite;
 
 static class SqliteShareLinkSchema
 {
-	public const string CreateTable = """
+    public const string CreateTable = """
 		CREATE TABLE IF NOT EXISTS ShareLinks (
 			Id          TEXT PRIMARY KEY,
 			Kql         TEXT NOT NULL,
@@ -14,12 +14,12 @@ static class SqliteShareLinkSchema
 		);
 		""";
 
-	public const string CreateExpiresIndex =
-		"CREATE INDEX IF NOT EXISTS ix_sharelinks_expires ON ShareLinks(ExpiresAtMs);";
+    public const string CreateExpiresIndex =
+        "CREATE INDEX IF NOT EXISTS ix_sharelinks_expires ON ShareLinks(ExpiresAtMs);";
 
-	public static readonly IReadOnlyList<string> AllStatements =
-	[
-		CreateTable,
-		CreateExpiresIndex,
-	];
+    public static readonly IReadOnlyList<string> AllStatements =
+    [
+        CreateTable,
+        CreateExpiresIndex,
+    ];
 }

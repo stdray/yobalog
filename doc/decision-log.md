@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-04-24 — Индентация C#: дефолт форматтера (4 пробела) вместо tab/width=2
+
+**Решение:** из `.editorconfig` в `[*]`-секции убраны `indent_style = tab`, `tab_width = 2`, `indent_size = 2`. `dotnet format` теперь использует встроенный C#-дефолт (4 пробела). TS/JS продолжает форматироваться biome'ом (его дефолт — таб). Остальные поля `[*]` (charset, EOL, final newline, trim trailing ws) остались.
+
+**Причина:**
+
+- **2-wide tab — не стандарт C#.** `dotnet format` по умолчанию и большинство open-source .NET-проектов используют 4 пробела; подтянутый дефолт снижает диффы при рефакторингах и миграциях SDK.
+- **Локальные AI-агенты (pi-coding-agent с Qwen3.6-35B / Qwen3.5-27B) эмпирически ломают `Edit`-диффы чаще на non-standard whitespace.** Experiment 2026-04-24 по yobaconf (`D:\my\scripts\llama.cpp\reports\pi_run_10_35b_vs_27b.md`): после переформатирования 35B-A3B закрыл полный таск одним коммитом за 15 минут. Решение переносится на yobalog зеркально — общий стиль кода для обоих репо.
+
+**Откатили:** запись 2026-04-19 "`.editorconfig`: `indent_size = 2` вместо `indent_size = tab`" — сам override отменён, запись помечена superseded. Сохранена как исторический контекст: тот момент объяснял, почему `indent_size = 2` работал в связке с dotnet format при включённом `indent_style = tab`; сегодня это просто не нужно.
+
+**Scope:** C#-файлы переформатированы одним `dotnet format` без поведенческих изменений. Razor/TS не тронуты.
+
+---
+
 ## 2026-04-21 — Caddy on host as HTTPS terminator; yobalog deploys first
 
 **Решение:** HTTPS для yobalog реализуется через **Caddy**, установленный на shared хост как systemd-сервис. Caddy на `:443` терминирует TLS и реверс-прокси'т на `127.0.0.1:8082`, куда биндится контейнер yobalog. Deploy независим от других сервисов стека — собственный CI (`build.cake --target=DockerPush` + SSH → `docker run -d -p 127.0.0.1:8082:8080`). Никакого docker-compose поверх. Зеркалит решение yobaconf (`D:\my\prj\yobaconf\doc\decision-log.md` запись того же дня, commit `3f06f3e`) — один host, общий Caddy, каждый проект деплоится сам по себе.
@@ -303,6 +318,7 @@ Phase H (traces + waterfall UI) gate'ится на G proving useful: если te
 **Решение:** финальная конфигурация `.editorconfig` — `indent_style = tab`, `tab_width = 2`, `indent_size = 2` (число, не `tab`).
 **Причина:** `indent_size = tab` по спеке editorconfig значит "одна ступень = tab_width пробелов, пишется табом" → 1 уровень = 1 таб. `dotnet format` интерпретирует иначе: `indent_size` — это ширина ступени в символах отступа, а `indent_style = tab` → пиши это число символов табами 1-к-1. Получалось 2 таба на уровень (4 пробела отображения) вместо 1. С `indent_size = 2` + `tab_width = 2` format корректно даёт 1 таб на уровень (2 пробела). Biome тоже перестаёт падать на парсинге (он не понимает `indent_size = tab`).
 **Откатили:** `indent_size = tab` — формально правильно по спеке, но нерабочая интеграция с dotnet format.
+**Superseded 2026-04-24:** сам tabs-4-ширины-2 override отменён, см. запись от 2026-04-24.
 
 ## 2026-04-19 — Biome вместо ESLint + Prettier для TS
 **Решение:** линтер и форматтер для TypeScript — Biome (единый конфиг `biome.json`). ESLint+Prettier не ставим.

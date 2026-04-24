@@ -4,7 +4,7 @@ namespace YobaLog.Core.Auth.Sqlite;
 // When the workspace is dropped, the file is deleted and these rows go with it.
 static class SqliteApiKeySchema
 {
-	public const string CreateApiKeys = """
+    public const string CreateApiKeys = """
 		CREATE TABLE IF NOT EXISTS ApiKeys (
 			Id          TEXT PRIMARY KEY,
 			TokenHash   TEXT NOT NULL UNIQUE,
@@ -14,8 +14,8 @@ static class SqliteApiKeySchema
 		);
 		""";
 
-	public static readonly IReadOnlyList<string> AllStatements =
-	[
-		CreateApiKeys,
-	];
+    public static readonly IReadOnlyList<string> AllStatements =
+    [
+        CreateApiKeys,
+    ];
 }

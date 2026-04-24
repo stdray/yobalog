@@ -7,21 +7,21 @@ namespace YobaLog.Web.Pages;
 
 public sealed class IndexModel : PageModel
 {
-	readonly IApiKeyStore _apiKeys;
+    readonly IApiKeyStore _apiKeys;
 
-	public IndexModel(IApiKeyStore apiKeys)
-	{
-		_apiKeys = apiKeys;
-	}
+    public IndexModel(IApiKeyStore apiKeys)
+    {
+        _apiKeys = apiKeys;
+    }
 
-	public ImmutableArray<WorkspaceId> Workspaces { get; private set; } = [];
+    public ImmutableArray<WorkspaceId> Workspaces { get; private set; } = [];
 
-	public void OnGet()
-	{
-		Workspaces =
-		[
-			WorkspaceId.System,
-			.. _apiKeys.ConfiguredWorkspaces.OrderBy(w => w.Value, StringComparer.Ordinal),
-		];
-	}
+    public void OnGet()
+    {
+        Workspaces =
+        [
+            WorkspaceId.System,
+            .. _apiKeys.ConfiguredWorkspaces.OrderBy(w => w.Value, StringComparer.Ordinal),
+        ];
+    }
 }

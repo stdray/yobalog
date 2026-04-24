@@ -8,14 +8,14 @@ namespace YobaLog.Core.Retention;
 // RetentionService's consumer reads DB when non-empty, config when DB is empty.
 public interface IRetentionPolicyStore
 {
-	ValueTask InitializeAsync(CancellationToken ct);
+    ValueTask InitializeAsync(CancellationToken ct);
 
-	ValueTask<IReadOnlyList<RetentionPolicy>> ListAsync(CancellationToken ct);
+    ValueTask<IReadOnlyList<RetentionPolicy>> ListAsync(CancellationToken ct);
 
-	ValueTask<IReadOnlyList<RetentionPolicy>> ListByWorkspaceAsync(WorkspaceId workspace, CancellationToken ct);
+    ValueTask<IReadOnlyList<RetentionPolicy>> ListByWorkspaceAsync(WorkspaceId workspace, CancellationToken ct);
 
-	ValueTask UpsertAsync(RetentionPolicy policy, CancellationToken ct);
+    ValueTask UpsertAsync(RetentionPolicy policy, CancellationToken ct);
 
-	// False if no row matched (Workspace, SavedQuery).
-	ValueTask<bool> DeleteAsync(WorkspaceId workspace, string savedQuery, CancellationToken ct);
+    // False if no row matched (Workspace, SavedQuery).
+    ValueTask<bool> DeleteAsync(WorkspaceId workspace, string savedQuery, CancellationToken ct);
 }

@@ -10,71 +10,71 @@ namespace YobaLog.Core.Ingestion;
 
 public sealed class InMemoryTailBroadcaster : ITailBroadcaster
 {
-	readonly ConcurrentDictionary<WorkspaceId, ImmutableList<ChannelWriter<LogEventCandidate>>> _subscribers = new();
+    readonly ConcurrentDictionary<WorkspaceId, ImmutableList<ChannelWriter<LogEventCandidate>>> _subscribers = new();
 
-	public int WindowSize { get; init; } = 100;
+    public int WindowSize { get; init; } = 100;
 
-	public async IAsyncEnumerable<LogEventCandidate> Subscribe(
-		WorkspaceId workspaceId,
-		KustoCode query,
-		[EnumeratorCancellation] CancellationToken ct)
-	{
-		ArgumentNullException.ThrowIfNull(query);
-		var predicate = CompilePredicate(query);
+    public async IAsyncEnumerable<LogEventCandidate> Subscribe(
+        WorkspaceId workspaceId,
+        KustoCode query,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var predicate = CompilePredicate(query);
 
-		var channel = Channel.CreateBounded<LogEventCandidate>(new BoundedChannelOptions(WindowSize)
-		{
-			FullMode = BoundedChannelFullMode.DropOldest,
-			SingleReader = true,
-			SingleWriter = false,
-		});
+        var channel = Channel.CreateBounded<LogEventCandidate>(new BoundedChannelOptions(WindowSize)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false,
+        });
 
-		_subscribers.AddOrUpdate(
-			workspaceId,
-			_ => [channel.Writer],
-			(_, list) => list.Add(channel.Writer));
+        _subscribers.AddOrUpdate(
+            workspaceId,
+            _ => [channel.Writer],
+            (_, list) => list.Add(channel.Writer));
 
-		try
-		{
-			await foreach (var candidate in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
-			{
-				if (predicate(candidate))
-					yield return candidate;
-			}
-		}
-		finally
-		{
-			_subscribers.AddOrUpdate(
-				workspaceId,
-				_ => [],
-				(_, list) => list.Remove(channel.Writer));
-			channel.Writer.TryComplete();
-		}
-	}
+        try
+        {
+            await foreach (var candidate in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                if (predicate(candidate))
+                    yield return candidate;
+            }
+        }
+        finally
+        {
+            _subscribers.AddOrUpdate(
+                workspaceId,
+                _ => [],
+                (_, list) => list.Remove(channel.Writer));
+            channel.Writer.TryComplete();
+        }
+    }
 
-	public void Publish(WorkspaceId workspaceId, IReadOnlyList<LogEventCandidate> batch)
-	{
-		if (batch.Count == 0)
-			return;
-		if (!_subscribers.TryGetValue(workspaceId, out var writers) || writers.Count == 0)
-			return;
+    public void Publish(WorkspaceId workspaceId, IReadOnlyList<LogEventCandidate> batch)
+    {
+        if (batch.Count == 0)
+            return;
+        if (!_subscribers.TryGetValue(workspaceId, out var writers) || writers.Count == 0)
+            return;
 
-		foreach (var writer in writers)
-		{
-			foreach (var candidate in batch)
-				writer.TryWrite(candidate);
-		}
-	}
+        foreach (var writer in writers)
+        {
+            foreach (var candidate in batch)
+                writer.TryWrite(candidate);
+        }
+    }
 
-	static Func<LogEventCandidate, bool> CompilePredicate(KustoCode query)
-	{
-		// Eagerly validate the query — failure surfaces at subscribe time, not per-event.
-		_ = KqlTransformer.Apply(Array.Empty<EventRecord>().AsQueryable(), query).ToList();
+    static Func<LogEventCandidate, bool> CompilePredicate(KustoCode query)
+    {
+        // Eagerly validate the query — failure surfaces at subscribe time, not per-event.
+        _ = KqlTransformer.Apply(Array.Empty<EventRecord>().AsQueryable(), query).ToList();
 
-		return candidate =>
-		{
-			var record = EventRecord.FromCandidate(candidate);
-			return KqlTransformer.Apply(new[] { record }.AsQueryable(), query).Any();
-		};
-	}
+        return candidate =>
+        {
+            var record = EventRecord.FromCandidate(candidate);
+            return KqlTransformer.Apply(new[] { record }.AsQueryable(), query).Any();
+        };
+    }
 }
