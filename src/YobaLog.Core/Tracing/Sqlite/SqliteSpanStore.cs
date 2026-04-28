@@ -1,10 +1,7 @@
-using System.Collections.Concurrent;
 using Kusto.Language;
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Kql;
 using YobaLog.Core.Observability;
 using YobaLog.Core.Storage;
@@ -17,37 +14,29 @@ namespace YobaLog.Core.Tracing.Sqlite;
 // writer-lock means spans in the same file as events would let trace-ingest bursts block
 // log-read latency (measured 66× penalty under mixed workload), and it enables asymmetric
 // retention (logs 30d / spans 7d, typical ask).
-//
-// Reuses SqliteLogStoreOptions.DataDirectory — traces live alongside logs on disk, just
-// under a different file-suffix. If we ever want to separate the disk locations (fast SSD
-// for traces, big-cheap-disk for logs), that's a new option property; not today.
 public sealed class SqliteSpanStore : ISpanStore
 {
-    readonly SqliteLogStoreOptions _options;
-    readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteSpanStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteSpanStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
 
-    string PathFor(WorkspaceId ws) =>
-        _pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.traces.db"));
-
-    DataConnection Open(WorkspaceId ws) =>
-        SQLiteTools.CreateDataConnection($"Data Source={PathFor(ws)};Cache=Shared");
+    DataConnection Open(WorkspaceId ws) => _connections.OpenWorkspaceTraces(ws);
 
     public ValueTask InitializeAsync(CancellationToken ct)
     {
         // Per-workspace schema is created on first CreateWorkspaceAsync; no global init needed.
         // Kept on the interface for symmetry with the meta-stores pattern.
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
         return ValueTask.CompletedTask;
     }
 
     public async ValueTask CreateWorkspaceAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
         await using var db = Open(workspaceId);
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
@@ -62,7 +51,7 @@ public sealed class SqliteSpanStore : ISpanStore
         GC.Collect();
         GC.WaitForPendingFinalizers();
 
-        var path = PathFor(workspaceId);
+        var path = _connections.WorkspaceTracesPath(workspaceId);
         if (File.Exists(path))
             File.Delete(path);
         foreach (var suffix in (ReadOnlySpan<string>)["-wal", "-shm", "-journal"])
@@ -71,7 +60,6 @@ public sealed class SqliteSpanStore : ISpanStore
             if (File.Exists(extra))
                 File.Delete(extra);
         }
-        _pathCache.TryRemove(workspaceId, out _);
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 

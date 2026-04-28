@@ -1,31 +1,35 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.SelfLogging;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.SelfLogging;
 
 public sealed class SystemLogFlusherTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteLogStore _store;
 
     public SystemLogFlusherTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-self-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteLogStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteLogStore>();
     }
 
     public async Task InitializeAsync() =>
         await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), CancellationToken.None);
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]

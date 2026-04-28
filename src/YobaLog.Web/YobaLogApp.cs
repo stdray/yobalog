@@ -30,6 +30,7 @@ using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 using YobaLog.Core.Tracing;
 using YobaLog.Core.Tracing.Sqlite;
+using YobaLog.Web.Endpoints;
 using YobaLog.Web.Observability;
 
 namespace YobaLog.Web;
@@ -87,6 +88,7 @@ public static class YobaLogApp
             o.KnownProxies.Add(IPAddress.IPv6Loopback);
         });
 
+        builder.Services.AddSingleton<SqliteConnectionFactory>();
         builder.Services.AddSingleton<ILogStore, SqliteLogStore>();
         builder.Services.AddSingleton<ISpanStore, SqliteSpanStore>();
         builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
@@ -95,6 +97,12 @@ public static class YobaLogApp
         builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
         builder.Services.AddSingleton<IUserStore, SqliteUserStore>();
         builder.Services.AddSingleton<IRetentionPolicyStore, SqliteRetentionPolicyStore>();
+        // AdminTokenStore: same backing $system.meta.db, same singleton lifetime as the
+        // other admin stores. Both interfaces are served by the same impl (validate hot path
+        // + admin CRUD).
+        builder.Services.AddSingleton<SqliteAdminTokenStore>();
+        builder.Services.AddSingleton<IAdminTokenStore>(sp => sp.GetRequiredService<SqliteAdminTokenStore>());
+        builder.Services.AddSingleton<IAdminTokenAdmin>(sp => sp.GetRequiredService<SqliteAdminTokenStore>());
 
         // Two-tier api-key stack: ConfigApiKeyStore (appsettings, admin backdoor — no UI)
         // and SqliteApiKeyStore (per-workspace `.meta.db`, managed via /ws/{id}/admin/api-keys).
@@ -271,6 +279,13 @@ public static class YobaLogApp
         // works as long as the suffix stays. Users configure their client base URL as
         // `https://yobalog/compat/seq` — the client produces `…/compat/seq/api/events/raw`.
         app.MapPost("/compat/seq/api/events/raw", IngestionHandlers.CleF).AllowAnonymous();
+
+        // /v1/admin/* — JSON CRUD for scripting/automation. Auth = personal admin tokens
+        // (Bearer / X-YobaLog-AdminToken / ?adminToken=). See doc/admin-api.md.
+        var adminGroup = app.MapGroup("/v1/admin").RequireAdminToken();
+        adminGroup.MapAdminWorkspaces();
+        adminGroup.MapAdminApiKeys();
+        adminGroup.MapAdminRetention();
 
         app.MapPost("/Logout", async (HttpContext ctx) =>
         {

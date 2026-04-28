@@ -1,34 +1,25 @@
-using System.Collections.Concurrent;
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Storage.Sqlite;
 
 namespace YobaLog.Core.SavedQueries.Sqlite;
 
 public sealed class SqliteSavedQueryStore : ISavedQueryStore
 {
-    readonly SqliteLogStoreOptions _options;
-    readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteSavedQueryStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteSavedQueryStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
-
-    string PathFor(WorkspaceId ws) =>
-        _pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.meta.db"));
-
-    DataConnection Open(WorkspaceId ws) =>
-        SQLiteTools.CreateDataConnection($"Data Source={PathFor(ws)};Cache=Shared");
 
     public async ValueTask InitializeWorkspaceAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         foreach (var stmt in SqliteSavedQuerySchema.AllStatements)
@@ -40,7 +31,7 @@ public sealed class SqliteSavedQueryStore : ISavedQueryStore
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(kql);
 
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var table = db.GetTable<SavedQueryRecord>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -81,7 +72,7 @@ public sealed class SqliteSavedQueryStore : ISavedQueryStore
 
     public async ValueTask<SavedQuery?> GetAsync(WorkspaceId workspaceId, long id, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var row = await db.GetTable<SavedQueryRecord>()
             .FirstOrDefaultAsync(q => q.Id == id, ct)
             .ConfigureAwait(false);
@@ -90,7 +81,7 @@ public sealed class SqliteSavedQueryStore : ISavedQueryStore
 
     public async ValueTask<SavedQuery?> GetByNameAsync(WorkspaceId workspaceId, string name, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var row = await db.GetTable<SavedQueryRecord>()
             .FirstOrDefaultAsync(q => q.Name == name, ct)
             .ConfigureAwait(false);
@@ -99,16 +90,17 @@ public sealed class SqliteSavedQueryStore : ISavedQueryStore
 
     public async ValueTask<IReadOnlyList<SavedQuery>> ListAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
-        var rows = new List<SavedQuery>();
-        await foreach (var r in db.GetTable<SavedQueryRecord>().OrderBy(q => q.Name).AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
-            rows.Add(ToModel(r));
-        return rows;
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
+        var rows = await db.GetTable<SavedQueryRecord>()
+            .OrderBy(q => q.Name)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return rows.Select(ToModel).ToList();
     }
 
     public async ValueTask<bool> DeleteAsync(WorkspaceId workspaceId, long id, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var deleted = await db.GetTable<SavedQueryRecord>()
             .Where(q => q.Id == id)
             .DeleteAsync(ct)
@@ -122,7 +114,7 @@ public sealed class SqliteSavedQueryStore : ISavedQueryStore
         GC.Collect();
         GC.WaitForPendingFinalizers();
 
-        var path = PathFor(workspaceId);
+        var path = _connections.WorkspaceMetaPath(workspaceId);
         if (File.Exists(path))
             File.Delete(path);
         foreach (var suffix in (ReadOnlySpan<string>)["-wal", "-shm", "-journal"])
@@ -131,7 +123,6 @@ public sealed class SqliteSavedQueryStore : ISavedQueryStore
             if (File.Exists(extra))
                 File.Delete(extra);
         }
-        _pathCache.TryRemove(workspaceId, out _);
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 

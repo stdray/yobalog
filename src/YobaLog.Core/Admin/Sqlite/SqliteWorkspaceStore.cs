@@ -1,7 +1,5 @@
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Auth;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
@@ -13,7 +11,7 @@ namespace YobaLog.Core.Admin.Sqlite;
 
 public sealed class SqliteWorkspaceStore : IWorkspaceStore
 {
-    readonly SqliteLogStoreOptions _options;
+    readonly SqliteConnectionFactory _connections;
     readonly ILogStore _logStore;
     readonly ISpanStore _spans;
     readonly IApiKeyAdmin _apiKeyAdmin;
@@ -22,7 +20,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
     readonly IShareLinkStore _shareLinks;
 
     public SqliteWorkspaceStore(
-        IOptions<SqliteLogStoreOptions> options,
+        SqliteConnectionFactory connections,
         ILogStore logStore,
         ISpanStore spans,
         IApiKeyAdmin apiKeyAdmin,
@@ -30,7 +28,8 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         IFieldMaskingPolicyStore maskingPolicies,
         IShareLinkStore shareLinks)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
         _logStore = logStore;
         _spans = spans;
         _apiKeyAdmin = apiKeyAdmin;
@@ -39,16 +38,11 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         _shareLinks = shareLinks;
     }
 
-    string AdminDbPath => Path.Combine(_options.DataDirectory, $"{WorkspaceId.System.Value}.meta.db");
-
-    DataConnection OpenAdmin() =>
-        SQLiteTools.CreateDataConnection($"Data Source={AdminDbPath};Cache=Shared");
-
     public async ValueTask InitializeAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using var db = OpenAdmin();
+        await using var db = _connections.OpenAdmin();
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         foreach (var stmt in SqliteAdminSchema.AllStatements)
@@ -57,16 +51,17 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 
     public async ValueTask<IReadOnlyList<WorkspaceInfo>> ListAsync(CancellationToken ct)
     {
-        await using var db = OpenAdmin();
-        var rows = new List<WorkspaceInfo>();
-        await foreach (var row in db.GetTable<WorkspaceRecord>().OrderBy(r => r.Id).AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
-            rows.Add(ToModel(row));
-        return rows;
+        await using var db = _connections.OpenAdmin();
+        var rows = await db.GetTable<WorkspaceRecord>()
+            .OrderBy(r => r.Id)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return rows.Select(ToModel).ToList();
     }
 
     public async ValueTask<WorkspaceInfo?> GetAsync(WorkspaceId id, CancellationToken ct)
     {
-        await using var db = OpenAdmin();
+        await using var db = _connections.OpenAdmin();
         var idValue = id.Value;
         var row = await db.GetTable<WorkspaceRecord>().FirstOrDefaultAsync(r => r.Id == idValue, ct).ConfigureAwait(false);
         return row is null ? null : ToModel(row);
@@ -75,7 +70,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
     public async ValueTask<WorkspaceInfo> CreateAsync(WorkspaceId id, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        await using (var db = OpenAdmin())
+        await using (var db = _connections.OpenAdmin())
         {
             await db.InsertAsync(new WorkspaceRecord
             {
@@ -103,7 +98,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             throw new InvalidOperationException("cannot delete the $system workspace");
 
         int deleted;
-        await using (var db = OpenAdmin())
+        await using (var db = _connections.OpenAdmin())
         {
             var idValue = id.Value;
             deleted = await db.GetTable<WorkspaceRecord>()

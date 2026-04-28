@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using YobaLog.Core.Admin;
@@ -11,12 +12,14 @@ using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
 using YobaLog.Core.Tracing.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Retention;
 
 public sealed class RetentionServiceTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteLogStore _store;
     readonly SqliteSpanStore _spans;
     readonly SqliteSavedQueryStore _savedQueries;
@@ -29,12 +32,12 @@ public sealed class RetentionServiceTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-ret-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        var storeOpts = Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir });
-        _store = new SqliteLogStore(storeOpts);
-        _spans = new SqliteSpanStore(storeOpts);
-        _savedQueries = new SqliteSavedQueryStore(storeOpts);
-        _shareLinks = new SqliteShareLinkStore(storeOpts);
-        _policyStore = new SqliteRetentionPolicyStore(storeOpts);
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteLogStore>();
+        _spans = _services.GetRequiredService<SqliteSpanStore>();
+        _savedQueries = _services.GetRequiredService<SqliteSavedQueryStore>();
+        _shareLinks = _services.GetRequiredService<SqliteShareLinkStore>();
+        _policyStore = _services.GetRequiredService<SqliteRetentionPolicyStore>();
         _workspaces = new InMemoryWorkspaceStore(UserWs);
     }
 
@@ -48,11 +51,11 @@ public sealed class RetentionServiceTests : IAsyncLifetime
         await _policyStore.InitializeAsync(CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     static LogEventCandidate Candidate(DateTimeOffset ts, LogLevel level = LogLevel.Information, string msg = "m") => new(

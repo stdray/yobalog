@@ -1,13 +1,14 @@
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Retention;
 using YobaLog.Core.Retention.Sqlite;
-using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Retention;
 
 public sealed class SqliteRetentionPolicyStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteRetentionPolicyStore _store;
     static readonly WorkspaceId WsA = WorkspaceId.Parse("rp-a");
     static readonly WorkspaceId WsB = WorkspaceId.Parse("rp-b");
@@ -16,16 +17,17 @@ public sealed class SqliteRetentionPolicyStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-retpol-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteRetentionPolicyStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteRetentionPolicyStore>();
     }
 
     public async Task InitializeAsync() => await _store.InitializeAsync(CancellationToken.None);
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]

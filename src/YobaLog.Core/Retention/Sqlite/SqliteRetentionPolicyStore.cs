@@ -1,7 +1,5 @@
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Admin.Sqlite;
 using YobaLog.Core.Storage.Sqlite;
 
@@ -9,23 +7,19 @@ namespace YobaLog.Core.Retention.Sqlite;
 
 public sealed class SqliteRetentionPolicyStore : IRetentionPolicyStore
 {
-    readonly SqliteLogStoreOptions _options;
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteRetentionPolicyStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteRetentionPolicyStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
-
-    string AdminDbPath => Path.Combine(_options.DataDirectory, $"{WorkspaceId.System.Value}.meta.db");
-
-    DataConnection Open() =>
-        SQLiteTools.CreateDataConnection($"Data Source={AdminDbPath};Cache=Shared");
 
     public async ValueTask InitializeAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         // Idempotent: Workspaces/Users/RetentionPolicies live in the same DB — SqliteWorkspaceStore
@@ -36,30 +30,24 @@ public sealed class SqliteRetentionPolicyStore : IRetentionPolicyStore
 
     public async ValueTask<IReadOnlyList<RetentionPolicy>> ListAsync(CancellationToken ct)
     {
-        await using var db = Open();
-        var rows = new List<RetentionPolicy>();
-        await foreach (var r in db.GetTable<RetentionPolicyRecord>()
+        await using var db = _connections.OpenAdmin();
+        var rows = await db.GetTable<RetentionPolicyRecord>()
             .OrderBy(r => r.Workspace).ThenBy(r => r.SavedQuery)
-            .AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
-        {
-            rows.Add(ToModel(r));
-        }
-        return rows;
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return rows.Select(ToModel).ToList();
     }
 
     public async ValueTask<IReadOnlyList<RetentionPolicy>> ListByWorkspaceAsync(WorkspaceId workspace, CancellationToken ct)
     {
         var wsValue = workspace.Value;
-        await using var db = Open();
-        var rows = new List<RetentionPolicy>();
-        await foreach (var r in db.GetTable<RetentionPolicyRecord>()
+        await using var db = _connections.OpenAdmin();
+        var rows = await db.GetTable<RetentionPolicyRecord>()
             .Where(r => r.Workspace == wsValue)
             .OrderBy(r => r.SavedQuery)
-            .AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
-        {
-            rows.Add(ToModel(r));
-        }
-        return rows;
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return rows.Select(ToModel).ToList();
     }
 
     public async ValueTask UpsertAsync(RetentionPolicy policy, CancellationToken ct)
@@ -69,7 +57,7 @@ public sealed class SqliteRetentionPolicyStore : IRetentionPolicyStore
         if (string.IsNullOrEmpty(policy.SavedQuery)) throw new ArgumentException("saved query required", nameof(policy));
         if (policy.RetainDays <= 0) throw new ArgumentException("retain days must be positive", nameof(policy));
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         await db.InsertOrReplaceAsync(new RetentionPolicyRecord
         {
             Workspace = policy.Workspace,
@@ -83,7 +71,7 @@ public sealed class SqliteRetentionPolicyStore : IRetentionPolicyStore
         ArgumentException.ThrowIfNullOrEmpty(savedQuery);
 
         var wsValue = workspace.Value;
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         var deleted = await db.GetTable<RetentionPolicyRecord>()
             .Where(r => r.Workspace == wsValue && r.SavedQuery == savedQuery)
             .DeleteAsync(ct)

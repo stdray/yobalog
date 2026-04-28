@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
-using YobaLog.Core.Storage.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Tracing;
 using YobaLog.Core.Tracing.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Tracing;
 
@@ -12,6 +12,7 @@ namespace YobaLog.Tests.Tracing;
 public sealed class SqliteSpanStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteSpanStore _store;
     static readonly WorkspaceId Ws = WorkspaceId.Parse("spans-test");
 
@@ -19,7 +20,8 @@ public sealed class SqliteSpanStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-spans-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteSpanStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteSpanStore>();
     }
 
     public async Task InitializeAsync()
@@ -28,11 +30,11 @@ public sealed class SqliteSpanStoreTests : IAsyncLifetime
         await _store.CreateWorkspaceAsync(Ws, CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     static Span MakeSpan(

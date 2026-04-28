@@ -1,13 +1,14 @@
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.SavedQueries.Sqlite;
-using YobaLog.Core.Storage.Sqlite;
-using MsOptions = Microsoft.Extensions.Options.Options;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.SavedQueries;
 
 public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteSavedQueryStore _store;
     static readonly WorkspaceId Ws = WorkspaceId.Parse("test-sq");
 
@@ -15,7 +16,8 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-sq-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteSavedQueryStore(MsOptions.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteSavedQueryStore>();
     }
 
     public async Task InitializeAsync()
@@ -23,11 +25,11 @@ public sealed class SqliteSavedQueryStoreTests : IAsyncLifetime
         await _store.InitializeWorkspaceAsync(Ws, CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]

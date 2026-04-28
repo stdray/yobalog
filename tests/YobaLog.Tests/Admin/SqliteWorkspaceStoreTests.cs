@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Admin;
 using YobaLog.Core.Admin.Sqlite;
 using YobaLog.Core.Auth.Sqlite;
@@ -8,15 +8,14 @@ using YobaLog.Core.Sharing;
 using YobaLog.Core.Sharing.Sqlite;
 using YobaLog.Core.Storage.Sqlite;
 using YobaLog.Core.Tracing.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Admin;
 
 public sealed class SqliteWorkspaceStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
-    readonly SqliteLogStoreOptions _options;
-    readonly SqliteLogStore _logStore;
-    readonly SqliteSpanStore _spans;
+    readonly ServiceProvider _services;
     readonly SqliteApiKeyStore _apiKeys;
     readonly SqliteSavedQueryStore _savedQueries;
     readonly SqliteFieldMaskingPolicyStore _masking;
@@ -28,24 +27,21 @@ public sealed class SqliteWorkspaceStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-ws-admin-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _options = new SqliteLogStoreOptions { DataDirectory = _tempDir };
-        var opts = Options.Create(_options);
-        _logStore = new SqliteLogStore(opts);
-        _spans = new SqliteSpanStore(opts);
-        _apiKeys = new SqliteApiKeyStore(opts);
-        _savedQueries = new SqliteSavedQueryStore(opts);
-        _masking = new SqliteFieldMaskingPolicyStore(opts);
-        _shareLinks = new SqliteShareLinkStore(opts);
-        _store = new SqliteWorkspaceStore(opts, _logStore, _spans, _apiKeys, _savedQueries, _masking, _shareLinks);
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _apiKeys = _services.GetRequiredService<SqliteApiKeyStore>();
+        _savedQueries = _services.GetRequiredService<SqliteSavedQueryStore>();
+        _masking = _services.GetRequiredService<SqliteFieldMaskingPolicyStore>();
+        _shareLinks = _services.GetRequiredService<SqliteShareLinkStore>();
+        _store = _services.GetRequiredService<SqliteWorkspaceStore>();
     }
 
     public async Task InitializeAsync() => await _store.InitializeAsync(CancellationToken.None);
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]

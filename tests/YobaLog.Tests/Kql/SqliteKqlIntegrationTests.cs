@@ -1,15 +1,17 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Kusto.Language;
-using MsOptions = Microsoft.Extensions.Options.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Kql;
 
 public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteLogStore _store;
     static readonly WorkspaceId Ws = WorkspaceId.Parse("kql-integration");
 
@@ -17,7 +19,8 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-kql-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteLogStore(MsOptions.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteLogStore>();
     }
 
     public async Task InitializeAsync()
@@ -26,11 +29,11 @@ public sealed class SqliteKqlIntegrationTests : IAsyncLifetime
         await _store.AppendBatchAsync(Ws, Seed, CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     static readonly IReadOnlyList<LogEventCandidate> Seed =

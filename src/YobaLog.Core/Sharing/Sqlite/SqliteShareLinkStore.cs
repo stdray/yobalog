@@ -1,37 +1,28 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text.Json;
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Storage.Sqlite;
 
 namespace YobaLog.Core.Sharing.Sqlite;
 
 public sealed class SqliteShareLinkStore : IShareLinkStore
 {
-    readonly SqliteLogStoreOptions _options;
-    readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteShareLinkStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteShareLinkStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
-
-    string PathFor(WorkspaceId ws) =>
-        _pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.meta.db"));
-
-    DataConnection Open(WorkspaceId ws) =>
-        SQLiteTools.CreateDataConnection($"Data Source={PathFor(ws)};Cache=Shared");
 
     public async ValueTask InitializeWorkspaceAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         foreach (var stmt in SqliteShareLinkSchema.AllStatements)
@@ -53,7 +44,7 @@ public sealed class SqliteShareLinkStore : IShareLinkStore
         var columnsArr = columns.IsDefault ? [] : columns.ToArray();
         var modesDict = modes.ToDictionary(kv => kv.Key, kv => (int)kv.Value);
 
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         await db.InsertAsync(new ShareLinkRecord
         {
             Id = id,
@@ -70,7 +61,7 @@ public sealed class SqliteShareLinkStore : IShareLinkStore
 
     public async ValueTask<ShareLink?> GetAsync(WorkspaceId workspaceId, string id, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var row = await db.GetTable<ShareLinkRecord>()
             .FirstOrDefaultAsync(r => r.Id == id, ct)
             .ConfigureAwait(false);
@@ -79,7 +70,7 @@ public sealed class SqliteShareLinkStore : IShareLinkStore
 
     public async ValueTask<bool> DeleteAsync(WorkspaceId workspaceId, string id, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var deleted = await db.GetTable<ShareLinkRecord>()
             .Where(r => r.Id == id)
             .DeleteAsync(ct)
@@ -89,7 +80,7 @@ public sealed class SqliteShareLinkStore : IShareLinkStore
 
     public async ValueTask<int> DeleteExpiredAsync(WorkspaceId workspaceId, DateTimeOffset now, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var cutoff = now.ToUnixTimeMilliseconds();
         return await db.GetTable<ShareLinkRecord>()
             .Where(r => r.ExpiresAtMs < cutoff)
@@ -103,7 +94,7 @@ public sealed class SqliteShareLinkStore : IShareLinkStore
         GC.Collect();
         GC.WaitForPendingFinalizers();
 
-        var path = PathFor(workspaceId);
+        var path = _connections.WorkspaceMetaPath(workspaceId);
         if (File.Exists(path))
             File.Delete(path);
         foreach (var suffix in (ReadOnlySpan<string>)["-wal", "-shm", "-journal"])
@@ -112,7 +103,6 @@ public sealed class SqliteShareLinkStore : IShareLinkStore
             if (File.Exists(extra))
                 File.Delete(extra);
         }
-        _pathCache.TryRemove(workspaceId, out _);
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 

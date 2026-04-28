@@ -1,12 +1,9 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Admin;
 using YobaLog.Core.Storage.Sqlite;
 
@@ -20,23 +17,17 @@ namespace YobaLog.Core.Auth.Sqlite;
 // identification. Plaintext is returned exactly once from CreateAsync.
 public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
 {
-    readonly SqliteLogStoreOptions _options;
-    readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
+    readonly SqliteConnectionFactory _connections;
     readonly Lock _sync = new();
 
     ImmutableDictionary<string, WorkspaceId> _tokensByHash = ImmutableDictionary<string, WorkspaceId>.Empty;
     ImmutableHashSet<WorkspaceId> _workspaces = ImmutableHashSet<WorkspaceId>.Empty;
 
-    public SqliteApiKeyStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteApiKeyStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
-
-    string PathFor(WorkspaceId ws) =>
-        _pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.meta.db"));
-
-    DataConnection Open(WorkspaceId ws) =>
-        SQLiteTools.CreateDataConnection($"Data Source={PathFor(ws)};Cache=Shared");
 
     public IReadOnlyCollection<WorkspaceId> ConfiguredWorkspaces => _workspaces;
 
@@ -53,9 +44,9 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
 
     public async ValueTask InitializeWorkspaceAsync(WorkspaceId workspace, CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using (var db = Open(workspace))
+        await using (var db = _connections.OpenWorkspaceMeta(workspace))
         {
             await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
             await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
@@ -68,11 +59,12 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
 
     public async ValueTask<IReadOnlyList<ApiKeyInfo>> ListAsync(WorkspaceId workspace, CancellationToken ct)
     {
-        await using var db = Open(workspace);
-        var rows = new List<ApiKeyInfo>();
-        await foreach (var r in db.GetTable<ApiKeyRecord>().OrderBy(r => r.CreatedAtMs).AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
-            rows.Add(ToModel(workspace, r));
-        return rows;
+        await using var db = _connections.OpenWorkspaceMeta(workspace);
+        var rows = await db.GetTable<ApiKeyRecord>()
+            .OrderBy(r => r.CreatedAtMs)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return rows.Select(r => ToModel(workspace, r)).ToList();
     }
 
     public async ValueTask<ApiKeyCreated> CreateAsync(WorkspaceId workspace, string? title, CancellationToken ct)
@@ -84,7 +76,7 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
         var normalizedTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
         var now = DateTimeOffset.UtcNow;
 
-        await using (var db = Open(workspace))
+        await using (var db = _connections.OpenWorkspaceMeta(workspace))
         {
             await db.InsertAsync(new ApiKeyRecord
             {
@@ -112,7 +104,7 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
         string? hashToEvict = null;
         bool noKeysLeft;
 
-        await using (var db = Open(workspace))
+        await using (var db = _connections.OpenWorkspaceMeta(workspace))
         {
             var row = await db.GetTable<ApiKeyRecord>()
                 .FirstOrDefaultAsync(r => r.Id == id, ct)
@@ -146,7 +138,7 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
         GC.Collect();
         GC.WaitForPendingFinalizers();
 
-        var path = PathFor(workspace);
+        var path = _connections.WorkspaceMetaPath(workspace);
         if (File.Exists(path))
             File.Delete(path);
         foreach (var suffix in (ReadOnlySpan<string>)["-wal", "-shm", "-journal"])
@@ -155,7 +147,6 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
             if (File.Exists(extra))
                 File.Delete(extra);
         }
-        _pathCache.TryRemove(workspace, out _);
 
         lock (_sync)
         {
@@ -172,7 +163,7 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
 
     async Task MergeWorkspaceIntoCacheAsync(WorkspaceId workspace, CancellationToken ct)
     {
-        await using var db = Open(workspace);
+        await using var db = _connections.OpenWorkspaceMeta(workspace);
         var rows = await db.GetTable<ApiKeyRecord>().ToListAsync(ct).ConfigureAwait(false);
 
         lock (_sync)

@@ -1,15 +1,16 @@
 using System.Collections.Immutable;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core;
 using YobaLog.Core.Sharing;
 using YobaLog.Core.Sharing.Sqlite;
-using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Sharing;
 
 public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteShareLinkStore _store;
     static readonly WorkspaceId Ws = WorkspaceId.Parse("share-store");
 
@@ -17,7 +18,8 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-sharestore-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteShareLinkStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteShareLinkStore>();
     }
 
     public async Task InitializeAsync()
@@ -25,11 +27,11 @@ public sealed class SqliteShareLinkStoreTests : IAsyncLifetime
         await _store.InitializeWorkspaceAsync(Ws, CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]

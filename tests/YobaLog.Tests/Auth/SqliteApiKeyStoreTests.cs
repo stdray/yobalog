@@ -1,12 +1,13 @@
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Auth.Sqlite;
-using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Auth;
 
 public sealed class SqliteApiKeyStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteApiKeyStore _store;
     static readonly WorkspaceId WsA = WorkspaceId.Parse("keys-a");
     static readonly WorkspaceId WsB = WorkspaceId.Parse("keys-b");
@@ -15,7 +16,8 @@ public sealed class SqliteApiKeyStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-apikeys-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteApiKeyStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteApiKeyStore>();
     }
 
     public async Task InitializeAsync()
@@ -24,11 +26,11 @@ public sealed class SqliteApiKeyStoreTests : IAsyncLifetime
         await _store.InitializeWorkspaceAsync(WsB, CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]
@@ -138,7 +140,8 @@ public sealed class SqliteApiKeyStoreTests : IAsyncLifetime
         var created = await _store.CreateAsync(WsA, "persisted", CancellationToken.None);
 
         // Simulate process restart — new store instance over the same data directory.
-        var reopened = new SqliteApiKeyStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        await using var reopenedServices = TestServices.BuildSqliteStores(_tempDir);
+        var reopened = reopenedServices.GetRequiredService<SqliteApiKeyStore>();
         await reopened.InitializeWorkspaceAsync(WsA, CancellationToken.None);
 
         var r = await reopened.ValidateAsync(created.Plaintext, CancellationToken.None);

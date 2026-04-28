@@ -27,7 +27,7 @@ public class IngestionPipelineBenchmark
     {
         _dir = Path.Combine(Path.GetTempPath(), "yobalog-pipe-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_dir);
-        _store = new SqliteLogStore(MsOptions.Create(new SqliteLogStoreOptions { DataDirectory = _dir }));
+        _store = new SqliteLogStore(new SqliteConnectionFactory(MsOptions.Create(new SqliteLogStoreOptions { DataDirectory = _dir })));
 
         _batch = new LogEventCandidate[TotalEvents];
         var baseTs = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

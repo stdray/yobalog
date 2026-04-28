@@ -1,35 +1,26 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Storage.Sqlite;
 
 namespace YobaLog.Core.Sharing.Sqlite;
 
 public sealed class SqliteFieldMaskingPolicyStore : IFieldMaskingPolicyStore
 {
-    readonly SqliteLogStoreOptions _options;
-    readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteFieldMaskingPolicyStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteFieldMaskingPolicyStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
-
-    string PathFor(WorkspaceId ws) =>
-        _pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.meta.db"));
-
-    DataConnection Open(WorkspaceId ws) =>
-        SQLiteTools.CreateDataConnection($"Data Source={PathFor(ws)};Cache=Shared");
 
     public async ValueTask InitializeWorkspaceAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         foreach (var stmt in SqliteMaskingPolicySchema.AllStatements)
@@ -38,9 +29,12 @@ public sealed class SqliteFieldMaskingPolicyStore : IFieldMaskingPolicyStore
 
     public async ValueTask<FieldMaskingPolicy> GetAsync(WorkspaceId workspaceId, CancellationToken ct)
     {
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
+        var rows = await db.GetTable<MaskingPolicyRecord>()
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
         var builder = ImmutableDictionary.CreateBuilder<string, MaskMode>(StringComparer.Ordinal);
-        await foreach (var row in db.GetTable<MaskingPolicyRecord>().AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
+        foreach (var row in rows)
             builder[row.Path] = (MaskMode)row.Mode;
         return new FieldMaskingPolicy(builder.ToImmutable());
     }
@@ -50,7 +44,7 @@ public sealed class SqliteFieldMaskingPolicyStore : IFieldMaskingPolicyStore
         if (modes.Count == 0)
             return;
 
-        await using var db = Open(workspaceId);
+        await using var db = _connections.OpenWorkspaceMeta(workspaceId);
         var table = db.GetTable<MaskingPolicyRecord>();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -81,7 +75,7 @@ public sealed class SqliteFieldMaskingPolicyStore : IFieldMaskingPolicyStore
         GC.Collect();
         GC.WaitForPendingFinalizers();
 
-        var path = PathFor(workspaceId);
+        var path = _connections.WorkspaceMetaPath(workspaceId);
         if (File.Exists(path))
             File.Delete(path);
         foreach (var suffix in (ReadOnlySpan<string>)["-wal", "-shm", "-journal"])
@@ -90,7 +84,6 @@ public sealed class SqliteFieldMaskingPolicyStore : IFieldMaskingPolicyStore
             if (File.Exists(extra))
                 File.Delete(extra);
         }
-        _pathCache.TryRemove(workspaceId, out _);
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 }

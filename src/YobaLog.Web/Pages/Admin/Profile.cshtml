@@ -1,0 +1,101 @@
+@page "/admin/profile"
+@model YobaLog.Web.Pages.Admin.ProfileModel
+@{
+	ViewData["Title"] = "Admin — Profile";
+}
+
+<div class="flex flex-wrap gap-3 items-center mb-4">
+	<a asp-page="/Index" class="hover:opacity-100 opacity-60 text-sm">← workspaces</a>
+	<h1 class="font-semibold text-2xl">Admin — Profile</h1>
+</div>
+
+<p class="mb-4 opacity-70 text-sm" data-testid="profile-username">
+	Logged in as <code class="font-mono">@Model.Username</code>.
+</p>
+
+@if (Model.RevealedToken is not null)
+{
+	<div class="alert alert-warning flex-col gap-2 items-start mb-4" data-testid="profile-plaintext-alert">
+		<div class="font-semibold">Copy this token now — it will NOT be shown again.</div>
+		@if (!string.IsNullOrWhiteSpace(Model.RevealedDescription))
+		{
+			<div class="opacity-70 text-xs">Description: <span class="font-mono">@Model.RevealedDescription</span></div>
+		}
+		<div class="join max-w-xl w-full">
+			<input type="text" readonly value="@Model.RevealedToken"
+				data-testid="profile-plaintext"
+				class="font-mono input input-bordered input-sm join-item text-xs w-full" />
+			<button type="button" class="btn btn-sm join-item"
+				data-copy="@Model.RevealedToken"
+				data-testid="profile-copy-token">Copy</button>
+		</div>
+	</div>
+}
+else if (Model.FlashMessage is not null)
+{
+	<div class="alert alert-success mb-4 text-sm">@Model.FlashMessage</div>
+}
+@if (Model.ErrorMessage is not null)
+{
+	<div class="alert alert-error mb-4 text-sm" data-testid="profile-error">@Model.ErrorMessage</div>
+}
+
+<section class="mb-6">
+	<h2 class="mb-2 opacity-70 text-sm uppercase">Create admin token</h2>
+	<p class="mb-3 opacity-60 text-xs">
+		Personal access tokens for the JSON admin API at <code class="font-mono">/v1/admin/*</code>.
+		Use one token per script / machine for granular revoke. Token grants the same rights as your cookie session.
+	</p>
+	<form method="post" asp-page-handler="create" autocomplete="off"
+		class="flex flex-wrap gap-2 items-center"
+		data-testid="profile-create-form">
+		<input type="text" name="description" required maxlength="120"
+			placeholder="description (e.g. 'laptop dev', 'ci-deploy')"
+			autocomplete="off"
+			data-testid="profile-create-description"
+			class="input input-bordered input-sm w-72" />
+		<button type="submit" data-testid="profile-create-submit" class="btn btn-primary btn-sm">Create token</button>
+	</form>
+</section>
+
+<section>
+	<h2 class="mb-2 opacity-70 text-sm uppercase">Active tokens (@Model.Tokens.Count)</h2>
+	@if (Model.Tokens.Count == 0)
+	{
+		<div class="alert text-sm" data-testid="profile-tokens-empty">No tokens yet. Create one above.</div>
+	}
+	else
+	{
+		<div class="bg-base-200 border border-base-300 overflow-x-auto rounded-box" data-testid="profile-tokens-list">
+			<table class="table table-sm">
+				<thead>
+					<tr>
+						<th class="w-40">Prefix</th>
+						<th>Description</th>
+						<th class="w-48">Updated (UTC)</th>
+						<th class="w-32"></th>
+					</tr>
+				</thead>
+				<tbody>
+					@foreach (var t in Model.Tokens)
+					{
+						<tr data-testid="profile-token-row" data-token-id="@t.Id">
+							<td class="font-mono" data-testid="profile-token-prefix">@t.TokenPrefix<span class="opacity-40">…</span></td>
+							<td data-testid="profile-token-description">@t.Description</td>
+							<td class="font-mono opacity-70 text-xs">
+								<time class="local-time" datetime="@EventRowViewModel.IsoUtc(t.UpdatedAt)" title="UTC: @EventRowViewModel.IsoUtc(t.UpdatedAt)">@EventRowViewModel.IsoUtc(t.UpdatedAt)</time>
+							</td>
+							<td>
+								<form method="post" asp-page-handler="revoke">
+									<input type="hidden" name="id" value="@t.Id" />
+									<button type="submit" data-testid="profile-token-revoke" class="btn btn-ghost btn-xs text-error"
+										onclick="return confirm('Revoke token @t.TokenPrefix… (@t.Description)? Existing scripts using this token will get 401 immediately.');">Revoke</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+</section>

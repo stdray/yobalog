@@ -1,28 +1,30 @@
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Admin.Sqlite;
-using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Admin;
 
 public sealed class SqliteUserStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteUserStore _store;
 
     public SqliteUserStoreTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-users-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteUserStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteUserStore>();
     }
 
     public async Task InitializeAsync() => await _store.InitializeAsync(CancellationToken.None);
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     [Fact]

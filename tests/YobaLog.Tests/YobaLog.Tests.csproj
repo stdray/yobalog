@@ -3,6 +3,9 @@
 	<PropertyGroup>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
+		<!-- CA1001: xUnit's IAsyncLifetime is the disposal pattern; the analyzer only detects IDisposable.
+		     Mirrors the YobaLog.E2ETests project's suppression for the same reason. -->
+		<NoWarn>$(NoWarn);CA1001</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

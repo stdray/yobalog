@@ -28,10 +28,29 @@ static class SqliteAdminSchema
 		);
 		""";
 
+    // Personal access tokens for `/v1/admin/*`. Lives in $system.meta.db next to Users so the
+    // cascade-on-user-delete handler can run both deletes in a single transaction.
+    public const string CreateAdminTokens = """
+		CREATE TABLE IF NOT EXISTS AdminTokens (
+			Id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			Username      TEXT NOT NULL,
+			TokenHash     TEXT NOT NULL UNIQUE,
+			TokenPrefix   TEXT NOT NULL,
+			Description   TEXT NOT NULL,
+			UpdatedAtMs   INTEGER NOT NULL,
+			IsDeleted     INTEGER NOT NULL DEFAULT 0
+		);
+		""";
+
+    public const string CreateAdminTokensUsernameIndex =
+        "CREATE INDEX IF NOT EXISTS IX_AdminTokens_Username ON AdminTokens(Username);";
+
     public static readonly IReadOnlyList<string> AllStatements =
     [
         CreateWorkspaces,
         CreateUsers,
         CreateRetentionPolicies,
+        CreateAdminTokens,
+        CreateAdminTokensUsernameIndex,
     ];
 }

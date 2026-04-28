@@ -1,14 +1,16 @@
 using System.Collections.Immutable;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using YobaLog.Core.Storage;
 using YobaLog.Core.Storage.Sqlite;
+using YobaLog.Tests.Fakes;
 
 namespace YobaLog.Tests.Sqlite;
 
 public sealed class SqliteLogStoreTests : IAsyncLifetime
 {
     readonly string _tempDir;
+    readonly ServiceProvider _services;
     readonly SqliteLogStore _store;
     static readonly WorkspaceId Ws = WorkspaceId.Parse("test-ws");
 
@@ -16,7 +18,8 @@ public sealed class SqliteLogStoreTests : IAsyncLifetime
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "yobalog-tests-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_tempDir);
-        _store = new SqliteLogStore(Options.Create(new SqliteLogStoreOptions { DataDirectory = _tempDir }));
+        _services = TestServices.BuildSqliteStores(_tempDir);
+        _store = _services.GetRequiredService<SqliteLogStore>();
     }
 
     public async Task InitializeAsync()
@@ -24,11 +27,11 @@ public sealed class SqliteLogStoreTests : IAsyncLifetime
         await _store.CreateWorkspaceAsync(Ws, new WorkspaceSchema(), CancellationToken.None);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        await _services.DisposeAsync();
         try { Directory.Delete(_tempDir, recursive: true); }
         catch { /* best effort */ }
-        return Task.CompletedTask;
     }
 
     static LogEventCandidate Candidate(

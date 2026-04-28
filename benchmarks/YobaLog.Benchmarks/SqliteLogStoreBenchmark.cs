@@ -29,7 +29,7 @@ public class SqliteLogStoreBenchmark
     {
         _dir = Path.Combine(Path.GetTempPath(), "yobalog-bench-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_dir);
-        _store = new SqliteLogStore(MsOptions.Create(new SqliteLogStoreOptions { DataDirectory = _dir }));
+        _store = new SqliteLogStore(new SqliteConnectionFactory(MsOptions.Create(new SqliteLogStoreOptions { DataDirectory = _dir })));
         _store.CreateWorkspaceAsync(Ws, new WorkspaceSchema(), CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
         _batch = new LogEventCandidate[FixtureSize];

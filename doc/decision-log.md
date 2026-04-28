@@ -4,6 +4,55 @@
 
 ---
 
+## 2026-04-28 — Admin API: personal admin tokens, JSON CRUD под `/v1/admin/*`
+
+**Решение:** новая поверхность `/v1/admin/*` за token-auth для scripting/automation. Tokens — отдельная сущность `AdminTokens(Id, Username, TokenHash UNIQUE, TokenPrefix, Description, UpdatedAtMs, IsDeleted)` живёт в `$system.meta.db` рядом с `Users`. Auth — любой из: `Authorization: Bearer <token>` (primary, HTTP-стандарт), `X-YobaLog-AdminToken: <token>` (equivalent), `?adminToken=` query (fallback). Конфликт двух разных значений в Bearer + custom header → 400 `ambiguous_auth`. Эндпоинты в MVP: `/workspaces` (PUT idempotent / GET / DELETE), `/workspaces/{ws}/api-keys` (PUT / GET / DELETE), `/workspaces/{ws}/retention` (GET / PUT / DELETE per saved query). UI для self-service токенов — `/admin/profile` (per-user, plaintext-once, soft-delete = revoke).
+
+**Use case-триггер:** self-host bundle (yobapub миграция на `yobaconf+yobalog`, `D:\my\prj\yobapub\doc\plan.md`). Compose-up должен поднять рабочий стек без UI-кликов: `docker compose up` → bash-скрипт через admin-API создаёт workspace + ingest-key + retention для consumer'а. Без admin-API self-host quickstart обязан включать ручной "залогинься в yobalog → создай workspace → создай ключ" — ломает zero-touch обещание. Yobaconf уже закрыл этот функционал commit `43fb02a` (2026-04-26); yobalog следующий в очереди по плану yobapub Stage 1.
+
+**Зеркалит yobaconf один-в-один с минимальными правками:**
+
+- **Async signature.** Yobalog-core API — `ValueTask<T> ...Async(CancellationToken)`; в yobaconf Validate синхронный (там hot-path синхронный). Yobalog держит async через всю иерархию (`IAdminTokenStore.ValidateAsync`, `IAdminTokenAdmin.{Create,List,SoftDelete,HardDeleteByUsername}Async`).
+- **Scope админ-токена.** В yobaconf admin-token = full CRUD на bindings/api-keys (workspace-сущности нет). В yobalog admin-token = full CRUD на workspaces/api-keys/retention/saved-queries — глобальный scope, не per-workspace. Multi-admin equal-rights остаётся.
+- **Endpoints structure.** Yobaconf: `/v1/admin/bindings`, `/v1/admin/api-keys`. Yobalog: всё привязано к workspace (`/workspaces/{ws}/api-keys`, `/workspaces/{ws}/retention`) — workspace фундаментальная сущность.
+- **Bearer header name.** `X-YobaLog-AdminToken` (не `X-YobaConf-`).
+- **Retention model отличается.** В yobalog retention per-`(workspace, savedQuery)` (см. `Pages/Admin/Retention.cshtml`), не один `retainDays` на workspace. PUT body — `{"savedQuery":"errors-only","retainDays":60}`. Spec из `doc/admin-api-task.md` показывал упрощённый `{"retainDays":60}`-shape — выровняли по реальной data-модели.
+- **Audit-log не пишется.** Yobalog audit отложен (`doc/plan.md` open question); admin-token writes тихие, audit-actor строка добавится когда AuditLog появится. Yobaconf пишет `<Username>:admin-token:<TokenPrefix>` через `SqliteAuditLogStore.Append` в той же транзакции.
+
+**Cascade-deletion при `IUserStore.DeleteAsync(username)`:**
+
+- **Hard-delete токенов** одной транзакцией с hard-delete user'а. `IsDeleted` flag в AdminTokens используется только для self-revoke через `/admin/profile` (живой user гасит свой токен, row остаётся для истории).
+- Reasoning: Users hard-delete'ятся (нет `IsDeleted` на User entity); token, переживший user'а, реактивирован быть не может — нет на что вернуть привязку. Альтернатива "soft-delete cascade" (token-row остаётся с IsDeleted=1) отвергнута: оставляет zombie row'ы со сломанной семантикой `Username`. Альтернатива "block user-delete если есть live-tokens" отвергнута как лишний ручной шаг — UI confirm-dialog достаточно.
+- SQL FK constraint **не ставим** (паттерн yobaconf'а). Integrity обеспечивается handler'ом `SqliteUserStore.DeleteAsync`: одна транзакция `DELETE FROM AdminTokens WHERE Username=?` → `DELETE FROM Users WHERE Username=?`.
+
+**Почему отдельная таблица, а не reuse `ApiKeys`:**
+
+- Per-workspace `ApiKeys` семантически — "ingest scope = workspace". Admin tokens — "роль user'а: full CRUD across all workspaces". Поле `Workspace` (FK → Workspaces) к admin tokens неприменимо; `Username` (FK → Users) к ingest keys неприменимо.
+- Single-table-with-flag (`IsAdminToken bool`) — генерация багов класса "забыл проверить флаг — admin token прошёл валидацию ingest-endpoint'а как api-key и наоборот". Type-safety через separate tables.
+- Storage — `$system.meta.db` (рядом с `Users`/`Workspaces`/`RetentionPolicies`), не per-workspace `<ws>.meta.db`. Admin tokens глобальные.
+
+**Отложено:**
+
+- Per-token scope (scoped admin tokens, RBAC). MVP — все админ-токены full-rights.
+- Token last-used / per-token rate-limit. Полезно для отладки "какой скрипт юзает этот токен", не блокирует.
+- Bulk-batch endpoints (массовое создание workspace'ов одним запросом). Sequential PUT'ов хватает для pet-scale.
+- Users / Saved Queries CRUD через API. UI-only пока (как в yobaconf 2026-04-26).
+- Audit-actor строка в audit-log записях (зависит от появления audit pipeline'а в yobalog).
+
+**Cross-refs:**
+
+- `src/YobaLog.Core/Auth/AdminToken.cs` — entity + interfaces (`IAdminTokenStore`, `IAdminTokenAdmin`).
+- `src/YobaLog.Core/Auth/Sqlite/SqliteAdminTokenStore.cs` — sha256 hash + constant-time compare.
+- `src/YobaLog.Core/Admin/Sqlite/SqliteAdminSchema.cs` — `CreateAdminTokens` DDL + `IX_AdminTokens_Username`.
+- `src/YobaLog.Core/Admin/Sqlite/SqliteUserStore.cs` — cascade-delete в одной транзакции.
+- `src/YobaLog.Web/Endpoints/AdminTokenAuth.cs` — endpoint filter, три транспорта, ambiguous_auth.
+- `src/YobaLog.Web/Endpoints/AdminWorkspacesEndpoint.cs` / `AdminApiKeysEndpoint.cs` / `AdminRetentionEndpoint.cs` — JSON handlers.
+- `src/YobaLog.Web/Pages/Admin/Profile.cshtml(.cs)` — per-user UI CRUD.
+- `doc/admin-api.md` — операционная документация.
+- yobaconf reference: commit `43fb02a` 2026-04-26 + `D:\my\prj\yobaconf\doc\admin-api.md`.
+
+---
+
 ## 2026-04-24 — Индентация C#: дефолт форматтера (4 пробела) вместо tab/width=2
 
 **Решение:** из `.editorconfig` в `[*]`-секции убраны `indent_style = tab`, `tab_width = 2`, `indent_size = 2`. `dotnet format` теперь использует встроенный C#-дефолт (4 пробела). TS/JS продолжает форматироваться biome'ом (его дефолт — таб). Остальные поля `[*]` (charset, EOL, final newline, trim trailing ws) остались.

@@ -1,46 +1,45 @@
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Auth;
+using YobaLog.Core.Auth.Sqlite;
 using YobaLog.Core.Storage.Sqlite;
 
 namespace YobaLog.Core.Admin.Sqlite;
 
 public sealed class SqliteUserStore : IUserStore
 {
-    readonly SqliteLogStoreOptions _options;
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteUserStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteUserStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
-
-    string AdminDbPath => Path.Combine(_options.DataDirectory, $"{WorkspaceId.System.Value}.meta.db");
-
-    DataConnection Open() =>
-        SQLiteTools.CreateDataConnection($"Data Source={AdminDbPath};Cache=Shared");
 
     public async ValueTask InitializeAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         // Users live in $system.meta.db alongside Workspaces — SqliteWorkspaceStore.InitializeAsync
         // runs AllStatements (including CreateUsers) on the same DB, so this call is redundant in
         // practice. Kept idempotent so the store can be used standalone (tests, tooling).
         await db.ExecuteAsync(SqliteAdminSchema.CreateUsers, ct).ConfigureAwait(false);
+        // DeleteAsync cascade-removes admin tokens for the deleted user; ensure the table exists
+        // even when this store is brought up standalone (without SqliteWorkspaceStore having run).
+        await db.ExecuteAsync(SqliteAdminSchema.CreateAdminTokens, ct).ConfigureAwait(false);
     }
 
     public async ValueTask<IReadOnlyList<UserInfo>> ListAsync(CancellationToken ct)
     {
-        await using var db = Open();
-        var rows = new List<UserInfo>();
-        await foreach (var row in db.GetTable<UserRecord>().OrderBy(r => r.Username).AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(false))
-            rows.Add(ToModel(row));
-        return rows;
+        await using var db = _connections.OpenAdmin();
+        var rows = await db.GetTable<UserRecord>()
+            .OrderBy(r => r.Username)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return rows.Select(ToModel).ToList();
     }
 
     public async ValueTask<bool> VerifyAsync(string username, string password, CancellationToken ct)
@@ -48,7 +47,7 @@ public sealed class SqliteUserStore : IUserStore
         ArgumentException.ThrowIfNullOrEmpty(username);
         ArgumentNullException.ThrowIfNull(password);
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         var row = await db.GetTable<UserRecord>().FirstOrDefaultAsync(r => r.Username == username, ct).ConfigureAwait(false);
         // AdminPasswordHasher.Verify is constant-time on matching-length hashes; we still want a
         // dummy verify on the miss path so timing doesn't leak whether the username exists.
@@ -62,7 +61,7 @@ public sealed class SqliteUserStore : IUserStore
         ArgumentException.ThrowIfNullOrEmpty(username);
         ArgumentException.ThrowIfNullOrEmpty(password);
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         var existing = await db.GetTable<UserRecord>().FirstOrDefaultAsync(r => r.Username == username, ct).ConfigureAwait(false);
         if (existing is not null)
             throw new InvalidOperationException($"user '{username}' already exists");
@@ -82,7 +81,7 @@ public sealed class SqliteUserStore : IUserStore
         ArgumentException.ThrowIfNullOrEmpty(username);
         ArgumentException.ThrowIfNullOrEmpty(newPassword);
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
         var hash = AdminPasswordHasher.Hash(newPassword);
         var updated = await db.GetTable<UserRecord>()
             .Where(r => r.Username == username)
@@ -97,11 +96,21 @@ public sealed class SqliteUserStore : IUserStore
     {
         ArgumentException.ThrowIfNullOrEmpty(username);
 
-        await using var db = Open();
+        await using var db = _connections.OpenAdmin();
+        // One transaction: AdminTokens cascade hard-delete + Users delete commit or rollback
+        // together. No SQL FK — handler-level integrity (decision-log 2026-04-28). Tokens go
+        // first so a failure in the cascade doesn't leave behind orphan rows after the user is
+        // already gone.
+        await using var tx = await db.BeginTransactionAsync(ct).ConfigureAwait(false);
+        await db.GetTable<AdminTokenRecord>()
+            .Where(r => r.Username == username)
+            .DeleteAsync(ct)
+            .ConfigureAwait(false);
         var deleted = await db.GetTable<UserRecord>()
             .Where(r => r.Username == username)
             .DeleteAsync(ct)
             .ConfigureAwait(false);
+        await tx.CommitAsync(ct).ConfigureAwait(false);
         return deleted > 0;
     }
 

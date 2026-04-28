@@ -21,6 +21,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
     readonly IRetentionPolicyStore _retentionPolicies;
     readonly IApiKeyStore _apiKeys;
     readonly IApiKeyAdmin _apiKeyAdmin;
+    readonly IAdminTokenAdmin _adminTokens;
     readonly ILogger<WorkspaceBootstrapper> _logger;
 
     public WorkspaceBootstrapper(
@@ -34,6 +35,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         IRetentionPolicyStore retentionPolicies,
         IApiKeyStore apiKeys,
         IApiKeyAdmin apiKeyAdmin,
+        IAdminTokenAdmin adminTokens,
         ILogger<WorkspaceBootstrapper> logger)
     {
         _store = store;
@@ -46,6 +48,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         _retentionPolicies = retentionPolicies;
         _apiKeys = apiKeys;
         _apiKeyAdmin = apiKeyAdmin;
+        _adminTokens = adminTokens;
         _logger = logger;
     }
 
@@ -54,6 +57,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         await _workspaceStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _userStore.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _retentionPolicies.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await _adminTokens.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _spans.InitializeAsync(cancellationToken).ConfigureAwait(false);
 
         await InitMetaAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);

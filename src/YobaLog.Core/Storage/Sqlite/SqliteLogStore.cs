@@ -1,13 +1,10 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Kusto.Language;
 using LinqToDB;
 using LinqToDB.Data;
-using LinqToDB.DataProvider.SQLite;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using YobaLog.Core.Kql;
 using YobaLog.Core.Observability;
 
@@ -15,13 +12,15 @@ namespace YobaLog.Core.Storage.Sqlite;
 
 public sealed class SqliteLogStore : ILogStore
 {
-    readonly SqliteLogStoreOptions _options;
-    readonly ConcurrentDictionary<WorkspaceId, string> _pathCache = new();
+    readonly SqliteConnectionFactory _connections;
 
-    public SqliteLogStore(IOptions<SqliteLogStoreOptions> options)
+    public SqliteLogStore(SqliteConnectionFactory connections)
     {
-        _options = options.Value;
+        ArgumentNullException.ThrowIfNull(connections);
+        _connections = connections;
     }
+
+    DataConnection Open(WorkspaceId ws) => _connections.OpenWorkspaceLogs(ws);
 
     public async IAsyncEnumerable<LogEvent> QueryKqlAsync(
         WorkspaceId workspaceId,
@@ -96,15 +95,9 @@ public sealed class SqliteLogStore : ILogStore
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    string PathFor(WorkspaceId ws) =>
-        _pathCache.GetOrAdd(ws, w => Path.Combine(_options.DataDirectory, $"{w.Value}.logs.db"));
-
-    DataConnection Open(WorkspaceId ws) =>
-        SQLiteTools.CreateDataConnection($"Data Source={PathFor(ws)};Cache=Shared");
-
     public async ValueTask CreateWorkspaceAsync(WorkspaceId workspaceId, WorkspaceSchema schema, CancellationToken ct)
     {
-        Directory.CreateDirectory(_options.DataDirectory);
+        _connections.EnsureDataDirectory();
 
         await using var db = Open(workspaceId);
         await db.ExecuteAsync("PRAGMA journal_mode=WAL;", ct).ConfigureAwait(false);
@@ -119,7 +112,7 @@ public sealed class SqliteLogStore : ILogStore
         GC.Collect();
         GC.WaitForPendingFinalizers();
 
-        var path = PathFor(workspaceId);
+        var path = _connections.WorkspaceLogsPath(workspaceId);
         if (File.Exists(path))
             File.Delete(path);
         foreach (var suffix in (ReadOnlySpan<string>)["-wal", "-shm", "-journal"])
@@ -128,7 +121,6 @@ public sealed class SqliteLogStore : ILogStore
             if (File.Exists(extra))
                 File.Delete(extra);
         }
-        _pathCache.TryRemove(workspaceId, out _);
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
@@ -238,7 +230,7 @@ public sealed class SqliteLogStore : ILogStore
             ? (long?)null
             : await table.MinAsync(e => e.TimestampMs, ct).ConfigureAwait(false);
 
-        var path = PathFor(workspaceId);
+        var path = _connections.WorkspaceLogsPath(workspaceId);
         var size = File.Exists(path) ? new FileInfo(path).Length : 0;
 
         return new WorkspaceStats(
