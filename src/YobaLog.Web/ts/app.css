@@ -39,4 +39,10 @@
 			border-color: unset;
 		}
 	}
+
+	/* Substituted template value in event message — background tint + monospace
+	   to visually distinguish filled-in placeholders from literal text. */
+	.msg-sub {
+		text-wrap: nowrap;
+	}
 }

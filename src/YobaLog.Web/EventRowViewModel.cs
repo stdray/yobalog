@@ -1,7 +1,10 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Html;
 using YobaLog.Core;
 using LogLevel = YobaLog.Core.LogLevel;
 
@@ -45,6 +48,76 @@ public sealed record EventRowViewModel(
         c.EventId,
         c.Properties,
         IsLive: true);
+
+    // RenderedMessage substitutes {PropertyName} placeholders with actual values from
+    // Properties when the sender left Message == MessageTemplate (no pre-rendered @m).
+    // Substituted values are wrapped in <mark class="msg-sub …"> for visual distinction.
+    // When the sender already rendered Message, it is HTML-encoded and used as-is.
+    public HtmlString RenderedMessage => Message == MessageTemplate
+        ? RenderMessageTemplate(MessageTemplate, Properties)
+        : new HtmlString(HtmlEncoder.Default.Encode(Message));
+
+    static readonly Regex _placeholderRegex = new(@"\{([@$]?)([^{}]+)\}", RegexOptions.Compiled);
+
+    static HtmlString RenderMessageTemplate(string template, ImmutableDictionary<string, JsonElement> properties)
+    {
+        if (string.IsNullOrEmpty(template))
+            return HtmlString.Empty;
+
+        var sb = new StringBuilder(template.Length * 2);
+        var pos = 0;
+
+        foreach (Match m in _placeholderRegex.Matches(template))
+        {
+            if (m.Index > pos)
+                AppendLiteral(sb, template[pos..m.Index]);
+
+            var key = m.Groups[2].Value;
+
+            if (properties.TryGetValue(key, out var value))
+            {
+                var display = PropertyForDisplay(value).Display;
+                sb.Append("<mark class=\"msg-sub bg-primary/20 rounded px-0.5 font-mono text-xs\">");
+                sb.Append(HtmlEncoder.Default.Encode(display));
+                sb.Append("</mark>");
+            }
+            else
+            {
+                sb.Append(HtmlEncoder.Default.Encode(m.Value));
+            }
+
+            pos = m.Index + m.Length;
+        }
+
+        if (pos < template.Length)
+            AppendLiteral(sb, template[pos..]);
+
+        return new HtmlString(sb.ToString());
+    }
+
+    static void AppendLiteral(StringBuilder sb, string literal)
+    {
+        var encoded = HtmlEncoder.Default.Encode(literal);
+        // Serilog: {{ → {, }} → }
+        for (var i = 0; i < encoded.Length; i++)
+        {
+            var c = encoded[i];
+            if (c == '{' && i + 1 < encoded.Length && encoded[i + 1] == '{')
+            {
+                sb.Append('{');
+                i++;
+            }
+            else if (c == '}' && i + 1 < encoded.Length && encoded[i + 1] == '}')
+            {
+                sb.Append('}');
+                i++;
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+    }
 
     public static string LevelBadge(LogLevel l) => l switch
     {

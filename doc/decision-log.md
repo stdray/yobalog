@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-06 — Message template rendering on back-end; configurable ForwardedHeaders trusted proxies
+
+**Message template rendering.** Когда отправитель CLEF не передаёт `@m` (rendered message) или `@m == @mt`, на странице отображаются сырые плейсхолдеры вроде `GetDiagnostics: uri={Uri}, textLen={Len}`. Пользователь предложил решать это на фронте; анализ показал, что back-end вариант (компонент `RenderedMessage` в `EventRowViewModel`) покрывает и SSR (`_RowsFragment`), и SSE (`LiveTailResult` → та же `_EventRow` partial) без дополнительного JS, без дублирования логики и без гонок htmx-DOM.
+
+**Реализация:** regex `\{([@$]?)([^{}]+)\}` по оригинальному шаблону, подстановка значений из `Properties` с оборачиванием в `<mark class="msg-sub ...">`. `{{`/`}}` → `{`/`}` (Serilog escape). Триггер — только когда `Message == MessageTemplate`; если отправитель уже отрендерил `@m`, сообщение выводится как есть.
+
+**ForwardedHeaders config.** Docker port-mapping (Caddy на хосте → `127.0.0.1:8082` → контейнер `:8080`) меняет source IP на шлюз Docker bridge (обычно `172.17.0.1`), не loopback. `ForwardedHeadersOptions` раньше доверял только `127.0.0.1` и `::1` → `X-Forwarded-Proto: https` от Caddy игнорировался → share-ссылки генерировались с `http://`. Добавлена конфигурируемость через `appsettings.json` (секция `ForwardedHeaders:KnownProxies` / `KnownNetworks`) — loopback остаётся жёстко зашитым, дополнительные IP/сети читаются из конфига.
+
+---
+
 ## 2026-04-28 — Admin API: personal admin tokens, JSON CRUD под `/v1/admin/*`
 
 **Решение:** новая поверхность `/v1/admin/*` за token-auth для scripting/automation. Tokens — отдельная сущность `AdminTokens(Id, Username, TokenHash UNIQUE, TokenPrefix, Description, UpdatedAtMs, IsDeleted)` живёт в `$system.meta.db` рядом с `Users`. Auth — любой из: `Authorization: Bearer <token>` (primary, HTTP-стандарт), `X-YobaLog-AdminToken: <token>` (equivalent), `?adminToken=` query (fallback). Конфликт двух разных значений в Bearer + custom header → 400 `ambiguous_auth`. Эндпоинты в MVP: `/workspaces` (PUT idempotent / GET / DELETE), `/workspaces/{ws}/api-keys` (PUT / GET / DELETE), `/workspaces/{ws}/retention` (GET / PUT / DELETE per saved query). UI для self-service токенов — `/admin/profile` (per-user, plaintext-once, soft-delete = revoke).

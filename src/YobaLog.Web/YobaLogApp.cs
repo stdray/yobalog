@@ -74,18 +74,31 @@ public static class YobaLogApp
         builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection("Admin"));
         builder.Services.Configure<ShareOptions>(builder.Configuration.GetSection("Share"));
 
-        // Caddy on the host terminates TLS on :443 and reverse-proxies to 127.0.0.1:8082
-        // (see doc/spec.md §11). Without this wiring HttpContext.Request.IsHttps is false
-        // behind the loopback proxy — UseHttpsRedirection loops 307, cookie Secure-flag is
-        // computed wrong, share-link URLs rendered with http://. Defaults are cleared
-        // so we only trust 127.0.0.1; any other X-Forwarded-* source is ignored.
+        // Caddy on the host terminates TLS on :443 and reverse-proxies to the
+        // container. Without ForwardedHeaders middleware HttpContext.Request.IsHttps is
+        // false behind the proxy — UseHttpsRedirection loops 307, cookie Secure-flag is
+        // computed wrong, share-link URLs rendered with http://.
+        // Loopback is always trusted; additional proxies / networks come from appsettings
+        // (e.g. Docker bridge gateway 172.17.0.1 when the container uses port-mapping).
         builder.Services.Configure<ForwardedHeadersOptions>(o =>
         {
             o.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor;
-            o.KnownIPNetworks.Clear();
             o.KnownProxies.Clear();
+            o.KnownIPNetworks.Clear();
             o.KnownProxies.Add(IPAddress.Loopback);
             o.KnownProxies.Add(IPAddress.IPv6Loopback);
+
+            var section = builder.Configuration.GetSection("ForwardedHeaders");
+            foreach (var proxy in section.GetSection("KnownProxies").Get<string[]>() ?? [])
+            {
+                if (IPAddress.TryParse(proxy, out var ip))
+                    o.KnownProxies.Add(ip);
+            }
+            foreach (var network in section.GetSection("KnownNetworks").Get<string[]>() ?? [])
+            {
+                if (System.Net.IPNetwork.TryParse(network, out var net))
+                    o.KnownIPNetworks.Add(net);
+            }
         });
 
         builder.Services.AddSingleton<SqliteConnectionFactory>();
