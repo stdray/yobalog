@@ -1,3 +1,7 @@
+@{
+	var ver = Environment.GetEnvironmentVariable("APP_VERSION") ?? "dev";
+	var sha = Environment.GetEnvironmentVariable("GIT_SHORT_SHA") ?? "local";
+}
 <!DOCTYPE html>
 <html lang="en" data-theme="dark" class="h-full">
 <head>
@@ -9,7 +13,7 @@
 	<script src="~/js/htmx-ext-sse.js" asp-append-version="true"></script>
 	<script type="module" src="~/js/admin.js" asp-append-version="true"></script>
 </head>
-<body class="min-h-full">
+<body class="min-h-full flex flex-col">
 	<div class="navbar bg-base-200 border-b border-base-300">
 		<div class="mx-auto max-w-6xl w-full px-4 flex gap-6 items-center">
 			<a class="text-lg font-semibold" asp-page="/Index">YobaLog</a>
@@ -18,9 +22,6 @@
 			{
 				<a class="text-sm opacity-70 hover:opacity-100" asp-page="/Admin/Workspaces">Admin</a>
 				<a class="text-sm opacity-70 hover:opacity-100" asp-page="/Admin/AgentKey">Agent</a>
-			}
-			@if (User.Identity?.IsAuthenticated == true)
-			{
 				<form method="post" action="/Logout" class="ml-auto flex items-center gap-3">
 					<a asp-page="/Admin/Profile" data-testid="profile-link" class="text-sm opacity-70 hover:opacity-100">@User.Identity.Name</a>
 					<button type="submit" data-testid="logout-submit" class="btn btn-xs btn-ghost">Sign out</button>
@@ -28,9 +29,16 @@
 			}
 		</div>
 	</div>
-	<main class="mx-auto max-w-6xl px-4 py-6">
+	<main class="mx-auto max-w-6xl px-4 py-6 flex-1 w-full">
 		@RenderBody()
 	</main>
+	<footer class="border-t border-base-300 text-center py-3 text-xs opacity-40 font-mono">
+		@ver
+		@if (!string.IsNullOrEmpty(sha) && sha != "local")
+		{
+			<text>· @sha</text>
+		}
+	</footer>
 	@await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
