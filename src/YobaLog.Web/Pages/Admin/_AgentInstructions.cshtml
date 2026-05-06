@@ -1,0 +1,100 @@
+@model YobaLog.Web.Pages.Admin.AgentKeyModel
+# YobaLog Agent: `@Model.Title`
+
+## Token
+
+```
+X-Seq-ApiKey: @Model.AgentToken
+```
+
+This token is **wildcard** — it can write to and read from any workspace.
+New workspaces are created lazily on first ingest.
+
+## Creation window: @Model.WindowText
+
+You can create new workspaces for **@Model.WindowText** from now.
+**Create all workspaces you need immediately** — after the window, creation
+is blocked and you'll only be able to read/write existing workspaces.
+
+**Plan your spaces before writing logs.** Think: separate per-bug-investigation?
+Per-component? One space with KQL filters? Prefer fewer spaces with rich
+`@@mt` + properties over many spaces.
+
+## Logging: ingest
+
+```
+POST https://yobalog.3po.su/api/v1/ingest/clef?workspace=<slug>&description=<url-encoded>
+X-Seq-ApiKey: @Model.AgentToken
+Content-Type: text/plain
+
+{ "@@t":"...ISO8601...","@@l":"Debug","@@mt":"Lookup: name={Name}, found={Count}","Name":"MacroPhase","Count":0 }
+{ "@@t":"...ISO8601...","@@l":"Information","@@mt":"Phase: {Phase}","Phase":"BeforeInheritance" }
+```
+
+- `?workspace=` — **required for wildcard key.** Slug: `[a-z0-9][a-z0-9-]{1,39}`
+- `?description=` — **required when creating new workspace.** Be specific.
+- `?group=` — optional grouping name for UI (default: key title)
+- Body: CLEF format, NDJSON (one JSON object per line)
+- Fields: `@@t` (ISO 8601), `@@l` (Debug/Information/Warning/Error/Fatal), `@@mt` (message template), extra keys = properties
+
+### Log well — think about what properties go in the event
+
+Bad: `Log("got here")`
+Good: `Log("FoldConstants: sym={Sym}, result={R}", symName, result)`
+
+Bad: `Log("loop: {i}", i)`
+Good: `Log("Inheritance pass {Pass} of {Total}: type={Type}", pass, total, typeName)`
+
+**Properties are your debugging breadcrumbs.** Name them well: `SourceContext`,
+`SymbolId`, `Phase`, `Qid`, `Result`. Don't stuff everything into Message.
+
+## Query: read logs
+
+```
+GET https://yobalog.3po.su/api/v1/query?workspace=<slug>&kql=<url-encoded>&cursor=<prev-cursor>
+X-Seq-ApiKey: @Model.AgentToken
+```
+
+POST for long KQL:
+```json
+{"workspace":"<slug>","kql":"events | where ...","cursor":null}
+```
+
+**Response:** `{"columns":[...],"rows":[[...],...],"cursor":"...","truncated":false}`
+- `columns` — list of field names (always includes `Properties` as JSON object)
+- `rows[i][j]` — null/string/number/ISO-8601/JSON-object
+- `cursor` — opaque, pass as-is for next page. null = no more pages.
+- All KQL operators: `where`, `order by`, `take`, `project`, `extend`, `summarize`, `count`
+
+### Query examples
+
+```
+events | where Level >= 4 | take 50
+events | where Properties.SourceContext == "ConstantFolder" | take 100
+events | where TraceId == "abc123" | order by Timestamp asc
+events | summarize Count = count() by SourceContext
+events | project Timestamp, Message, Result
+```
+
+## Share: give a link to a human
+
+```
+POST https://yobalog.3po.su/api/v1/share
+X-Seq-ApiKey: @Model.AgentToken
+Content-Type: application/json
+
+{"workspace":"<slug>","kql":"events | where ... | order by ...","ttlHours":24}
+```
+
+Returns `{"url": ".../share/kql/<id>", "expiresAt": "..."}`.
+
+- **Browser** → HTML page with editable KQL, the human can explore further.
+- **Curl / agent** → TSV dump.
+
+## Tips
+
+1. **Create workspaces early.** The window is short.
+2. **Log with properties, not just messages.** `@@mt = "call: {a}, {b}, {c}"` beats `@@m = "call x with y giving z"`.
+3. **One workspace, many investigations** — filter with `where SourceContext == "..."`.
+4. **Don't guess — query.** Re-run is expensive, query is cheap.
+5. **Share before you explain.** KQL link = the human sees your exact view.

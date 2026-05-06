@@ -1,0 +1,54 @@
+@page "/admin/agent"
+@model YobaLog.Web.Pages.Admin.AgentKeyModel
+@{
+    ViewData["Title"] = "Agent Key";
+}
+
+<h1 class="text-2xl font-semibold mb-2">Agent Key</h1>
+<p class="text-sm opacity-60 mb-4">Generate a wildcard token + instructions file for an AI coding agent.</p>
+
+@if (Model.AgentToken is null)
+{
+    <form method="post" class="flex flex-wrap gap-3 items-end mb-6">
+        <div>
+            <label class="label text-xs opacity-60 pb-1">Agent name (key title)</label>
+            <input type="text" name="Title" value="@Model.Title" maxlength="80"
+                placeholder="e.g. opencode, pi-mono, claude"
+                class="input input-bordered input-sm w-64" />
+        </div>
+        <div>
+            <label class="label text-xs opacity-60 pb-1">Creation window (hours)</label>
+            <input type="number" name="CreateWindowHours" value="@Model.CreateWindowHours"
+                min="1" max="720"
+                class="input input-bordered input-sm w-24" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Generate</button>
+    </form>
+}
+else
+{
+    <div class="alert alert-warning flex-col gap-2 items-start mb-4">
+        <div class="font-semibold">Copy this token — it will NOT be shown again.</div>
+        <div class="join max-w-xl w-full">
+            <input type="text" readonly
+                value="@Model.AgentToken"
+                class="font-mono input input-bordered input-sm join-item text-xs w-full" />
+            <button type="button" class="btn btn-sm join-item"
+                data-copy="@Model.AgentToken">Copy</button>
+        </div>
+    </div>
+
+    <div class="alert flex-col gap-2 items-start mb-4">
+        <div class="font-semibold text-sm">Instructions for the agent</div>
+        <p class="text-xs opacity-60">This file self-destructs in 5 minutes. Send the URL to your agent.</p>
+        <div class="join max-w-xl w-full">
+            <input type="text" readonly
+                value="@Model.AgentUrl"
+                class="font-mono input input-bordered input-sm join-item text-xs w-full" />
+            <button type="button" class="btn btn-sm join-item"
+                data-copy="@Model.AgentUrl">Copy</button>
+        </div>
+    </div>
+
+    <a asp-page="/Admin/AgentKey" class="text-sm opacity-60 hover:opacity-100">← Generate another</a>
+}
