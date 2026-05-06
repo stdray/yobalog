@@ -77,7 +77,7 @@ public sealed record EventRowViewModel(
             if (properties.TryGetValue(key, out var value))
             {
                 var display = PropertyForDisplay(value).Display;
-                sb.Append("<mark class=\"msg-sub bg-primary/20 rounded px-0.5 font-mono text-xs\">");
+                sb.Append("<mark class=\"msg-sub\">");
                 sb.Append(HtmlEncoder.Default.Encode(display));
                 sb.Append("</mark>");
             }

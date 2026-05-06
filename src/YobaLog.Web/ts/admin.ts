@@ -511,6 +511,7 @@ document.addEventListener("change", (event) => {
 	container.id = containerId;
 	container.setAttribute("hx-ext", "sse");
 	container.setAttribute("sse-connect", url);
+	container.setAttribute("sse-retry", "3000");
 	container.innerHTML = '<div sse-swap="event" hx-target="#events-body" hx-swap="afterbegin"></div>';
 	tbody.parentElement.parentElement?.insertBefore(container, tbody.parentElement);
 	window.htmx?.process(container);
