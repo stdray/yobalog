@@ -39,22 +39,24 @@
 			border-color: unset;
 		}
 	}
+}
 
-	/* Substituted template value in event message — subtle background tint + monospace
-	   to visually distinguish filled-in placeholders from literal text.
-	   Long values are truncated to ~18 chars with an ellipsis. */
-	.msg-sub {
-		text-wrap: nowrap;
-		max-width: 18ch;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		display: inline-block;
-		vertical-align: text-bottom;
-		background-color: oklch(var(--p) / 0.10);
-		border-radius: 0.25rem;
-		padding-inline: 0.125rem;
-		font-family: theme(fontFamily.mono);
-		font-size: theme(fontSize.xs);
-	}
+/* Substituted template value in event message — subtle background tint + monospace
+   to visually distinguish filled-in placeholders from literal text.
+   Long values are truncated to ~18 chars with an ellipsis.
+   Outside @layer so Tailwind JIT doesn't tree-shake it (referenced only in C# strings). */
+.msg-sub {
+	text-wrap: nowrap;
+	max-width: 18ch;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	display: inline-block;
+	vertical-align: text-bottom;
+	background-color: oklch(var(--p) / 0.08);
+	border-radius: 0.25rem;
+	padding-inline: 0.125rem;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 0.75rem;
+	line-height: 1rem;
 }
