@@ -22,8 +22,8 @@ public sealed class IndexModel : PageModel
         var user = all.Where(w => !w.Id.IsSystem).OrderBy(w => w.Id.Value, StringComparer.Ordinal).ToList();
 
         Groups = [.. user
-            .GroupBy(w => string.IsNullOrEmpty(w.GroupName) ? "Ungrouped" : w.GroupName)
-            .OrderBy(g => g.Key == "Ungrouped" ? "zzzzz" : g.Key)];
+            .GroupBy(w => string.IsNullOrEmpty(w.GroupName) ? "user" : w.GroupName)
+            .OrderBy(g => g.Key == "user" ? "zzzzz" : g.Key)];
 
         Workspaces = [..user];
     }
