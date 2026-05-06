@@ -7,6 +7,14 @@
 <div class="mb-4 flex items-center gap-3 flex-wrap">
 	<a asp-page="/Index" class="text-sm opacity-60 hover:opacity-100">← workspaces</a>
 	<h1 class="text-2xl font-semibold font-mono @(Model.Workspace.IsSystem ? "text-secondary" : "")">@Model.Workspace.Value</h1>
+	@if (!string.IsNullOrEmpty(Model.WorkspaceDescription))
+	{
+		<span class="text-sm opacity-50 max-w-md truncate" title="@Model.WorkspaceDescription">@Model.WorkspaceDescription</span>
+	}
+	@if (!string.IsNullOrEmpty(Model.WorkspaceAgent))
+	{
+		<span class="badge badge-sm badge-ghost font-mono">agent: @Model.WorkspaceAgent</span>
+	}
 	@if (Model.ActiveSavedName is not null)
 	{
 		<span class="badge badge-primary font-mono">saved: @Model.ActiveSavedName</span>

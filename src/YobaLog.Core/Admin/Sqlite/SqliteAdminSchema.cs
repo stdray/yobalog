@@ -7,9 +7,19 @@ static class SqliteAdminSchema
     public const string CreateWorkspaces = """
 		CREATE TABLE IF NOT EXISTS Workspaces (
 			Id          TEXT PRIMARY KEY,
-			CreatedAtMs INTEGER NOT NULL
+			CreatedAtMs INTEGER NOT NULL,
+			Description TEXT NOT NULL DEFAULT '',
+			Agent       TEXT NOT NULL DEFAULT '',
+			GroupName   TEXT NOT NULL DEFAULT ''
 		);
 		""";
+
+    public static readonly IReadOnlyList<(string Column, string Sql)> MigrateWorkspaceMetadataMap =
+    [
+        ("Description", "ALTER TABLE Workspaces ADD COLUMN Description TEXT NOT NULL DEFAULT '';"),
+        ("Agent",       "ALTER TABLE Workspaces ADD COLUMN Agent       TEXT NOT NULL DEFAULT '';"),
+        ("GroupName",   "ALTER TABLE Workspaces ADD COLUMN GroupName   TEXT NOT NULL DEFAULT '';"),
+    ];
 
     public const string CreateUsers = """
 		CREATE TABLE IF NOT EXISTS Users (

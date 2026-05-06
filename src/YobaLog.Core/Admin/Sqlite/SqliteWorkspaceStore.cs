@@ -1,5 +1,6 @@
 using LinqToDB;
 using LinqToDB.Data;
+using Microsoft.Data.Sqlite;
 using YobaLog.Core.Auth;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
@@ -47,6 +48,22 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         await db.ExecuteAsync("PRAGMA synchronous=NORMAL;", ct).ConfigureAwait(false);
         foreach (var stmt in SqliteAdminSchema.AllStatements)
             await db.ExecuteAsync(stmt, ct).ConfigureAwait(false);
+
+        await MigrateWorkspaceMetadataAsync(ct).ConfigureAwait(false);
+    }
+
+    async ValueTask MigrateWorkspaceMetadataAsync(CancellationToken ct)
+    {
+        await using var db = _connections.OpenAdmin();
+        foreach (var (column, sql) in SqliteAdminSchema.MigrateWorkspaceMetadataMap)
+        {
+            var existingCount = db.Query<int>(
+                "SELECT COUNT(*) FROM pragma_table_info($table) WHERE name = $col",
+                new DataParameter("$table", "Workspaces"),
+                new DataParameter("$col", column));
+            if (existingCount.FirstOrDefault() == 0)
+                await db.ExecuteAsync(sql, ct).ConfigureAwait(false);
+        }
     }
 
     public async ValueTask<IReadOnlyList<WorkspaceInfo>> ListAsync(CancellationToken ct)
@@ -67,7 +84,12 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         return row is null ? null : ToModel(row);
     }
 
-    public async ValueTask<WorkspaceInfo> CreateAsync(WorkspaceId id, CancellationToken ct)
+    public async ValueTask<WorkspaceInfo> CreateAsync(
+        WorkspaceId id,
+        string description = "",
+        string agent = "",
+        string groupName = "",
+        CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
         await using (var db = _connections.OpenAdmin())
@@ -76,20 +98,40 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             {
                 Id = id.Value,
                 CreatedAtMs = now.ToUnixTimeMilliseconds(),
+                Description = description ?? "",
+                Agent = agent ?? "",
+                GroupName = groupName ?? "",
             }, token: ct).ConfigureAwait(false);
         }
 
         await _logStore.CreateWorkspaceAsync(id, new WorkspaceSchema(), ct).ConfigureAwait(false);
         await _spans.CreateWorkspaceAsync(id, ct).ConfigureAwait(false);
-        // All meta tables live in `<ws>.meta.db` — init all four stores so the first UI navigation
-        // to the new workspace doesn't explode on a missing SavedQueries / Sharing / Masking table.
-        // Mirrors WorkspaceBootstrapper.InitMetaAsync; the overlap is intentional since the
-        // bootstrapper handles $system + restart-idempotency, and CreateAsync handles runtime creates.
         await _savedQueries.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
         await _maskingPolicies.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
         await _shareLinks.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
         await _apiKeyAdmin.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
-        return new WorkspaceInfo(id, now);
+        return new WorkspaceInfo(id, now, description ?? "", agent ?? "", groupName ?? "");
+    }
+
+    public async ValueTask<WorkspaceInfo> GetOrCreateAsync(
+        WorkspaceId id,
+        string description,
+        string agent,
+        string groupName,
+        CancellationToken ct)
+    {
+        var existing = await GetAsync(id, ct).ConfigureAwait(false);
+        if (existing is not null)
+            return existing;
+
+        try
+        {
+            return await CreateAsync(id, description, agent, groupName, ct).ConfigureAwait(false);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT
+        {
+            return (await GetAsync(id, ct).ConfigureAwait(false))!;
+        }
     }
 
     public async ValueTask<bool> DeleteAsync(WorkspaceId id, CancellationToken ct)
@@ -118,5 +160,10 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
     }
 
     static WorkspaceInfo ToModel(WorkspaceRecord r) =>
-        new(WorkspaceId.Parse(r.Id), DateTimeOffset.FromUnixTimeMilliseconds(r.CreatedAtMs));
+        new(
+            WorkspaceId.Parse(r.Id),
+            DateTimeOffset.FromUnixTimeMilliseconds(r.CreatedAtMs),
+            r.Description ?? "",
+            r.Agent ?? "",
+            r.GroupName ?? "");
 }

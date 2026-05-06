@@ -1,5 +1,6 @@
 using System.Text.Json;
 using YobaLog.Core;
+using YobaLog.Core.Admin;
 using YobaLog.Core.Auth;
 using YobaLog.Core.Ingestion;
 using YobaLog.Core.Tracing;
@@ -19,13 +20,14 @@ static class IngestionHandlers
     public static async Task<IResult> CleF(
         HttpContext ctx,
         IApiKeyStore apiKeys,
+        IWorkspaceStore workspaces,
         IIngestionPipeline pipeline,
         ICleFParser parser,
         CancellationToken ct)
     {
-        var scope = await ResolveScopeAsync(ctx, apiKeys, ct);
-        if (scope is null)
-            return Results.Unauthorized();
+        var (scope, error) = await ResolveScopeAsync(ctx, apiKeys, workspaces, ct);
+        if (error is not null)
+            return error;
 
         var candidates = new List<LogEventCandidate>();
         var errorCount = 0;
@@ -67,7 +69,7 @@ static class IngestionHandlers
         }
 
         if (candidates.Count > 0)
-            await pipeline.IngestAsync(scope.Value, candidates, ct);
+            await pipeline.IngestAsync(scope!.Value, candidates, ct);
 
         return Results.Created(ctx.Request.Path.Value, new IngestResponse(candidates.Count, errorCount));
     }
@@ -78,12 +80,13 @@ static class IngestionHandlers
     public static async Task<IResult> OtlpLogs(
         HttpContext ctx,
         IApiKeyStore apiKeys,
+        IWorkspaceStore workspaces,
         IIngestionPipeline pipeline,
         CancellationToken ct)
     {
-        var scope = await ResolveScopeAsync(ctx, apiKeys, ct);
-        if (scope is null)
-            return Results.Unauthorized();
+        var (scope, error) = await ResolveScopeAsync(ctx, apiKeys, workspaces, ct);
+        if (error is not null)
+            return error;
 
         // Buffer the whole body before handing it to the proto parser. OTLP batches are
         // capped client-side (typical 512KB-2MB export window) so fully-buffered decode is
@@ -96,7 +99,7 @@ static class IngestionHandlers
             return Results.BadRequest("malformed OTLP protobuf");
 
         if (result.Candidates.Count > 0)
-            await pipeline.IngestAsync(scope.Value, result.Candidates, ct);
+            await pipeline.IngestAsync(scope!.Value, result.Candidates, ct);
 
         // OTLP spec says collectors respond 200 with ExportLogsServiceResponse. The standard
         // body is {"partialSuccess": {"rejectedLogRecords": N, "errorMessage": "..."}}} but
@@ -111,12 +114,13 @@ static class IngestionHandlers
     public static async Task<IResult> OtlpTraces(
         HttpContext ctx,
         IApiKeyStore apiKeys,
+        IWorkspaceStore workspaces,
         ISpanStore spans,
         CancellationToken ct)
     {
-        var scope = await ResolveScopeAsync(ctx, apiKeys, ct);
-        if (scope is null)
-            return Results.Unauthorized();
+        var (scope, error) = await ResolveScopeAsync(ctx, apiKeys, workspaces, ct);
+        if (error is not null)
+            return error;
 
         using var ms = new MemoryStream();
         await ctx.Request.Body.CopyToAsync(ms, ct);
@@ -126,19 +130,58 @@ static class IngestionHandlers
             return Results.BadRequest("malformed OTLP protobuf");
 
         if (result.Spans.Count > 0)
-            await spans.AppendBatchAsync(scope.Value, result.Spans, ct);
+            await spans.AppendBatchAsync(scope!.Value, result.Spans, ct);
 
         // Symmetric with /v1/logs — Created(201) with received/errors count. OTel SDK clients
         // treat any 2xx as success regardless of body shape.
         return Results.Created(ctx.Request.Path.Value, new IngestResponse(result.Spans.Count, result.Errors));
     }
 
-    static async Task<WorkspaceId?> ResolveScopeAsync(HttpContext ctx, IApiKeyStore apiKeys, CancellationToken ct)
+    static async Task<(WorkspaceId? Scope, IResult? Error)> ResolveScopeAsync(
+        HttpContext ctx, IApiKeyStore apiKeys, IWorkspaceStore workspaces, CancellationToken ct)
     {
         var token = ctx.Request.Headers["X-Seq-ApiKey"].FirstOrDefault()
             ?? ctx.Request.Query["apiKey"].FirstOrDefault();
         var validation = await apiKeys.ValidateAsync(token, ct);
-        return validation.IsValid ? validation.Scope : null;
+
+        if (!validation.IsValid)
+            return (null, Results.Unauthorized());
+
+        if (!validation.IsWildcard)
+            return (validation.Scope, null);
+
+        // Wildcard key: resolve target workspace from ?workspace= query parameter.
+        var wsParam = ctx.Request.Query["workspace"].FirstOrDefault();
+        if (string.IsNullOrEmpty(wsParam))
+            return (null, Results.BadRequest("wildcard key requires ?workspace="));
+
+        if (!WorkspaceId.TryParse(wsParam, out var ws))
+            return (null, Results.BadRequest($"invalid workspace name: {wsParam}"));
+
+        // Check if workspace already exists.
+        var existing = await workspaces.GetAsync(ws, ct);
+        if (existing is not null)
+            return (existing.Id, null);
+
+        // Workspace doesn't exist — can we create it?
+        if (!validation.CanCreate)
+            return (null, Results.Json("workspace not found and key cannot create",
+                statusCode: StatusCodes.Status403Forbidden));
+
+        if (validation.CreateDeadline is { } deadline && DateTimeOffset.UtcNow > deadline)
+            return (null, Results.Json("creation window expired; use existing workspace",
+                statusCode: StatusCodes.Status403Forbidden));
+
+        // Create the workspace.
+        var description = ctx.Request.Query["description"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(description))
+            return (null, Results.BadRequest("description required for workspace creation"));
+
+        var agent = validation.Title ?? "unknown";
+        var groupName = ctx.Request.Query["group"].FirstOrDefault() ?? agent;
+
+        var info = await workspaces.GetOrCreateAsync(ws, description, agent, groupName, ct);
+        return (info.Id, null);
     }
 
     static void AccumulateResult(CleFLineResult line, List<LogEventCandidate> candidates, ref int errorCount)

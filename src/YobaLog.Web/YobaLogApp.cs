@@ -107,6 +107,7 @@ public static class YobaLogApp
         builder.Services.AddSingleton<ISavedQueryStore, SqliteSavedQueryStore>();
         builder.Services.AddSingleton<IFieldMaskingPolicyStore, SqliteFieldMaskingPolicyStore>();
         builder.Services.AddSingleton<IShareLinkStore, SqliteShareLinkStore>();
+        builder.Services.AddSingleton<IKqlShareLinkStore, SqliteKqlShareLinkStore>();
         builder.Services.AddSingleton<IWorkspaceStore, SqliteWorkspaceStore>();
         builder.Services.AddSingleton<IUserStore, SqliteUserStore>();
         builder.Services.AddSingleton<IRetentionPolicyStore, SqliteRetentionPolicyStore>();
@@ -284,6 +285,16 @@ public static class YobaLogApp
         // land in ISpanStore.AppendBatchAsync ({workspace}.traces.db), not the log store.
         app.MapPost("/ingest/otlp/v1/traces", IngestionHandlers.OtlpTraces).AllowAnonymous();
         app.MapPost("/v1/traces", IngestionHandlers.OtlpTraces).AllowAnonymous();
+
+        // Agent query API — KQL → JSON. GET for short queries, POST for long ones.
+        // Auth via X-Seq-ApiKey (wildcard or scoped). Returns event-shaped or shape-changing
+        // results (project/extend/summarize) with cursor pagination for event-shaped queries.
+        app.MapGet("/api/v1/query", QueryHandlers.GetAsync);
+        app.MapPost("/api/v1/query", QueryHandlers.PostAsync);
+
+        // Interactive KQL share: create via API key, view anonymously.
+        app.MapPost("/api/v1/share", ShareHandlers.CreateAsync);
+        app.MapGet("/share/kql/{id}/rows", ShareHandlers.RowsFragmentAsync).AllowAnonymous();
 
         // Compatibility surface for third-party clients. Each vendor gets its own slot under
         // /compat/<tech>/ so a future HEC / statsd / GELF receiver doesn't share the seq

@@ -40,12 +40,16 @@ public sealed class WorkspaceApiKeysModel : PageModel
     public async Task<IActionResult> OnPostCreateAsync(
         string id,
         [FromForm(Name = "title")] string? title,
-        CancellationToken ct)
+        [FromForm(Name = "isWildcard")] bool isWildcard = false,
+        [FromForm(Name = "canCreate")] bool canCreate = false,
+        [FromForm(Name = "createWindowHours")] int createWindowHours = 0,
+        CancellationToken ct = default)
     {
         if (!WorkspaceId.TryParse(id, out var ws) || ws.IsSystem)
             return NotFound();
 
-        var created = await _admin.CreateAsync(ws, title, ct);
+        var created = await _admin.CreateAsync(ws, title, ct,
+            isWildcard: isWildcard, canCreate: canCreate, createWindowHours: createWindowHours);
         RevealedToken = created.Plaintext;
         RevealedTitle = created.Info.Title;
         FlashMessage = $"Created API key {created.Info.Prefix}…";

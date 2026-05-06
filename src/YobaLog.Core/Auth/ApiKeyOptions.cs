@@ -10,4 +10,6 @@ public sealed record ApiKeyConfig
     public string Token { get; init; } = "";
     public string Workspace { get; init; } = "";
     public string? Title { get; init; }
+    public bool CanCreate { get; init; }
+    public int CreateWindowHours { get; init; }
 }

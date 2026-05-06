@@ -42,6 +42,7 @@ static class TestServices
         services.AddSingleton<SqliteSpanStore>();
         services.AddSingleton<SqliteSavedQueryStore>();
         services.AddSingleton<SqliteShareLinkStore>();
+        services.AddSingleton<SqliteKqlShareLinkStore>();
         services.AddSingleton<SqliteFieldMaskingPolicyStore>();
         services.AddSingleton<SqliteApiKeyStore>();
         services.AddSingleton<SqliteAdminTokenStore>();
@@ -56,6 +57,7 @@ static class TestServices
         services.AddSingleton<ISpanStore>(sp => sp.GetRequiredService<SqliteSpanStore>());
         services.AddSingleton<ISavedQueryStore>(sp => sp.GetRequiredService<SqliteSavedQueryStore>());
         services.AddSingleton<IShareLinkStore>(sp => sp.GetRequiredService<SqliteShareLinkStore>());
+        services.AddSingleton<IKqlShareLinkStore>(sp => sp.GetRequiredService<SqliteKqlShareLinkStore>());
         services.AddSingleton<IFieldMaskingPolicyStore>(sp => sp.GetRequiredService<SqliteFieldMaskingPolicyStore>());
         services.AddSingleton<IApiKeyAdmin>(sp => sp.GetRequiredService<SqliteApiKeyStore>());
         services.AddSingleton<IAdminTokenStore>(sp => sp.GetRequiredService<SqliteAdminTokenStore>());

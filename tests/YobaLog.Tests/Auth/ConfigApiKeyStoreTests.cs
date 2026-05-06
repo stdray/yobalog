@@ -76,4 +76,45 @@ public sealed class ConfigApiKeyStoreTests
 
         store.ConfiguredWorkspaces.Should().BeEquivalentTo([WorkspaceId.Parse("ok")]);
     }
+
+    [Fact]
+    public async Task WildcardWorkspace_Asterisk()
+    {
+        var store = Create(new ApiKeyConfig { Token = "wk", Workspace = "*", Title = "agent" });
+        var r = await store.ValidateAsync("wk", CancellationToken.None);
+
+        r.IsValid.Should().BeTrue();
+        r.IsWildcard.Should().BeTrue();
+        r.Scope.Should().BeNull();
+        r.Title.Should().Be("agent");
+    }
+
+    [Fact]
+    public async Task WildcardWithCreateWindow()
+    {
+        var store = Create(new ApiKeyConfig
+        {
+            Token = "wk",
+            Workspace = "*",
+            CanCreate = true,
+            CreateWindowHours = 4,
+            Title = "agent",
+        });
+        var r = await store.ValidateAsync("wk", CancellationToken.None);
+
+        r.IsValid.Should().BeTrue();
+        r.IsWildcard.Should().BeTrue();
+        r.CanCreate.Should().BeTrue();
+        r.Title.Should().Be("agent");
+    }
+
+    [Fact]
+    public void WildcardKeys_NotInConfiguredWorkspaces()
+    {
+        var store = Create(
+            new ApiKeyConfig { Token = "wk", Workspace = "*", Title = "agent" },
+            new ApiKeyConfig { Token = "k1", Workspace = "ws-a" });
+
+        store.ConfiguredWorkspaces.Should().BeEquivalentTo([WorkspaceId.Parse("ws-a")]);
+    }
 }

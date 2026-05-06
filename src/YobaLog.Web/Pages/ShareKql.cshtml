@@ -1,0 +1,98 @@
+@page "/share/kql/{id}"
+@using YobaLog.Core
+@using YobaLog.Web
+@model YobaLog.Web.Pages.ShareKqlModel
+@{
+    ViewData["Title"] = Model.Workspace.Value;
+}
+
+@if (Model.IsExpired)
+{
+    <div class="max-w-2xl mx-auto mt-20 text-center">
+        <h1 class="text-xl font-semibold mb-2">Share link expired</h1>
+        <p class="opacity-60">This share link is no longer valid.</p>
+    </div>
+    return;
+}
+
+<div class="mb-3">
+    <div class="flex items-center gap-3 flex-wrap">
+        <h1 class="text-xl font-semibold font-mono">@Model.Workspace.Value</h1>
+        @if (Model.Agent is not null)
+        {
+            <span class="badge badge-sm badge-ghost font-mono">agent: @Model.Agent</span>
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(Model.WorkspaceDescription))
+    {
+        <p class="text-sm opacity-60">@Model.WorkspaceDescription</p>
+    }
+    @if (!string.IsNullOrEmpty(Model.Error))
+    {
+        <div class="alert alert-error mt-2 text-sm">@Model.Error</div>
+    }
+</div>
+
+<div class="mb-3 flex gap-2 items-start">
+    <div class="flex-1">
+        <textarea id="share-kql" class="textarea textarea-bordered w-full font-mono text-sm"
+            rows="3" spellcheck="false"
+            hx-get="@Url.Page("/ShareKql", new { id = Model.Id })"
+            hx-trigger="keyup changed delay:500ms"
+            hx-include="this"
+            hx-target="#events-body"
+            hx-swap="innerHTML"
+            hx-indicator="#share-spinner"
+            name="kql">@Model.UserKql</textarea>
+    </div>
+    <button type="button" class="btn btn-sm btn-ghost"
+        data-copy="@Model.ShareUrl"
+        title="Copy link">⧉</button>
+    <span id="share-spinner" class="loading loading-spinner loading-sm htmx-indicator mt-2"></span>
+</div>
+
+<div class="overflow-x-auto">
+    <table class="table table-xs">
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Level</th>
+                <th>Message</th>
+                <th>Trace</th>
+            </tr>
+        </thead>
+        <tbody id="events-body">
+            @if (Model.IsShapeChanged)
+            {
+                @foreach (var row in Model.KqlRows)
+                {
+                    <tr>
+                        @foreach (var value in row.Values)
+                        {
+                            <td class="text-xs break-all">@value</td>
+                        }
+                    </tr>
+                }
+            }
+            else
+            {
+                @foreach (var e in Model.Events)
+                {
+                    <partial name="_EventRow" model="EventRowViewModel.FromStored(e)" />
+                }
+                @if (Model.NextCursor is not null)
+                {
+                    <tr data-testid="events-sentinel"
+                        hx-get="@Url.Page("/ShareKql", new { id = Model.Id, kql = Model.UserKql, cursor = Model.NextCursor })"
+                        hx-trigger="intersect once"
+                        hx-swap="outerHTML"
+                        hx-target="this">
+                        <td colspan="4" class="text-center text-xs opacity-50 py-4">
+                            <span class="loading loading-spinner loading-xs"></span> Loading older…
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>

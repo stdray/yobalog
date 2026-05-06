@@ -1,27 +1,30 @@
 using System.Collections.Immutable;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using YobaLog.Core;
-using YobaLog.Core.Auth;
+using YobaLog.Core.Admin;
 
 namespace YobaLog.Web.Pages;
 
 public sealed class IndexModel : PageModel
 {
-    readonly IApiKeyStore _apiKeys;
+    readonly IWorkspaceStore _workspaces;
 
-    public IndexModel(IApiKeyStore apiKeys)
+    public IndexModel(IWorkspaceStore workspaces)
     {
-        _apiKeys = apiKeys;
+        _workspaces = workspaces;
     }
 
-    public ImmutableArray<WorkspaceId> Workspaces { get; private set; } = [];
+    public ImmutableArray<WorkspaceInfo> Workspaces { get; private set; } = [];
+    public ImmutableArray<IGrouping<string, WorkspaceInfo>> Groups { get; private set; } = [];
 
-    public void OnGet()
+    public async Task OnGetAsync()
     {
-        Workspaces =
-        [
-            WorkspaceId.System,
-            .. _apiKeys.ConfiguredWorkspaces.OrderBy(w => w.Value, StringComparer.Ordinal),
-        ];
+        var all = await _workspaces.ListAsync(HttpContext.RequestAborted);
+        var user = all.Where(w => !w.Id.IsSystem).OrderBy(w => w.Id.Value, StringComparer.Ordinal).ToList();
+
+        Groups = [.. user
+            .GroupBy(w => string.IsNullOrEmpty(w.GroupName) ? "Ungrouped" : w.GroupName)
+            .OrderBy(g => g.Key == "Ungrouped" ? "zzzzz" : g.Key)];
+
+        Workspaces = [..user];
     }
 }

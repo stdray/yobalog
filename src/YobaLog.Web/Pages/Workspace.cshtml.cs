@@ -3,6 +3,7 @@ using System.Text;
 using Kusto.Language;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using YobaLog.Core.Admin;
 using YobaLog.Core;
 using YobaLog.Core.Kql;
 using YobaLog.Core.Observability;
@@ -20,20 +21,26 @@ public sealed class WorkspaceModel : PageModel
     readonly ISavedQueryStore _savedQueries;
     readonly IFieldMaskingPolicyStore _maskingPolicies;
     readonly IRetentionPolicyStore _retentionPolicies;
+    readonly IWorkspaceStore _workspaceStore;
 
     public WorkspaceModel(
         ILogStore store,
         ISavedQueryStore savedQueries,
         IFieldMaskingPolicyStore maskingPolicies,
-        IRetentionPolicyStore retentionPolicies)
+        IRetentionPolicyStore retentionPolicies,
+        IWorkspaceStore workspaceStore)
     {
         _store = store;
         _savedQueries = savedQueries;
         _maskingPolicies = maskingPolicies;
         _retentionPolicies = retentionPolicies;
+        _workspaceStore = workspaceStore;
     }
 
     public WorkspaceId Workspace { get; private set; }
+    public string? WorkspaceDescription { get; private set; }
+    public string? WorkspaceAgent { get; private set; }
+    public string? WorkspaceGroup { get; private set; }
 
     [BindProperty(SupportsGet = true)]
     public string? Cursor { get; set; }
@@ -82,6 +89,11 @@ public sealed class WorkspaceModel : PageModel
 
         Workspace = ws;
         SavedQueries = await _savedQueries.ListAsync(ws, ct);
+
+        var wsInfo = await _workspaceStore.GetAsync(ws, ct);
+        WorkspaceDescription = wsInfo?.Description;
+        WorkspaceAgent = wsInfo?.Agent;
+        WorkspaceGroup = wsInfo?.GroupName;
 
         if (!string.IsNullOrWhiteSpace(SavedName))
         {

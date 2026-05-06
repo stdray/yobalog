@@ -15,12 +15,23 @@ namespace YobaLog.Core.Auth.Sqlite;
 //
 // Plaintext tokens are never stored — only sha256(token) as hex + a 6-char prefix for UI
 // identification. Plaintext is returned exactly once from CreateAsync.
+//
+// Wildcard keys (IsWildcard=1) are not scoped to a single workspace — they can authenticate
+// to any workspace specified in ?workspace= on the request. CanCreate + CreateWindowHours
+// control whether the key can lazily create new workspaces.
 public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
 {
     readonly SqliteConnectionFactory _connections;
     readonly Lock _sync = new();
 
-    ImmutableDictionary<string, WorkspaceId> _tokensByHash = ImmutableDictionary<string, WorkspaceId>.Empty;
+    sealed record CacheEntry(
+        WorkspaceId? Scope,
+        bool IsWildcard,
+        bool CanCreate,
+        DateTimeOffset? CreateDeadline,
+        string? Title);
+
+    ImmutableDictionary<string, CacheEntry> _tokensByHash = ImmutableDictionary<string, CacheEntry>.Empty;
     ImmutableHashSet<WorkspaceId> _workspaces = ImmutableHashSet<WorkspaceId>.Empty;
 
     public SqliteApiKeyStore(SqliteConnectionFactory connections)
@@ -37,9 +48,13 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
             return ValueTask.FromResult(ApiKeyValidation.Invalid("missing api key"));
 
         var hash = HashToken(token);
-        return _tokensByHash.TryGetValue(hash, out var ws)
-            ? ValueTask.FromResult(ApiKeyValidation.Valid(ws))
-            : ValueTask.FromResult(ApiKeyValidation.Invalid("unknown api key"));
+        if (!_tokensByHash.TryGetValue(hash, out var entry))
+            return ValueTask.FromResult(ApiKeyValidation.Invalid("unknown api key"));
+
+        if (!entry.IsWildcard)
+            return ValueTask.FromResult(ApiKeyValidation.Valid(entry.Scope!.Value, entry.Title));
+
+        return ValueTask.FromResult(ApiKeyValidation.Wildcard(entry.CanCreate, entry.CreateDeadline, entry.Title));
     }
 
     public async ValueTask InitializeWorkspaceAsync(WorkspaceId workspace, CancellationToken ct)
@@ -54,7 +69,26 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
                 await db.ExecuteAsync(stmt, ct).ConfigureAwait(false);
         }
 
+        // Migration: add wildcard columns for existing databases that predate this feature.
+        await MigrateWildcardColumnsAsync(workspace, ct).ConfigureAwait(false);
+
         await MergeWorkspaceIntoCacheAsync(workspace, ct).ConfigureAwait(false);
+    }
+
+    async ValueTask MigrateWildcardColumnsAsync(WorkspaceId workspace, CancellationToken ct)
+    {
+        // Use PRAGMA table_info to check whether each column exists before running
+        // ALTER TABLE ADD COLUMN — avoids exception-based control flow for idempotency.
+        await using var db = _connections.OpenWorkspaceMeta(workspace);
+        foreach (var (column, sql) in SqliteApiKeySchema.MigrateWildcardColumnMap)
+        {
+            var existingCount = db.Query<int>(
+                "SELECT COUNT(*) FROM pragma_table_info($table) WHERE name = $col",
+                new DataParameter("$table", "ApiKeys"),
+                new DataParameter("$col", column));
+            if (existingCount.FirstOrDefault() == 0)
+                await db.ExecuteAsync(sql, ct).ConfigureAwait(false);
+        }
     }
 
     public async ValueTask<IReadOnlyList<ApiKeyInfo>> ListAsync(WorkspaceId workspace, CancellationToken ct)
@@ -67,7 +101,13 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
         return rows.Select(r => ToModel(workspace, r)).ToList();
     }
 
-    public async ValueTask<ApiKeyCreated> CreateAsync(WorkspaceId workspace, string? title, CancellationToken ct)
+    public async ValueTask<ApiKeyCreated> CreateAsync(
+        WorkspaceId workspace,
+        string? title,
+        CancellationToken ct,
+        bool isWildcard = false,
+        bool canCreate = false,
+        int createWindowHours = 0)
     {
         var plaintext = ShortGuid.NewShortGuid().ToString();
         var hash = HashToken(plaintext);
@@ -85,12 +125,21 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
                 Prefix = prefix,
                 Title = normalizedTitle,
                 CreatedAtMs = now.ToUnixTimeMilliseconds(),
+                IsWildcard = isWildcard ? 1 : 0,
+                CanCreate = canCreate ? 1 : 0,
+                CreateWindowHours = createWindowHours,
             }, token: ct).ConfigureAwait(false);
         }
 
+        var deadline = isWildcard && canCreate && createWindowHours > 0
+            ? now.AddHours(createWindowHours)
+            : (DateTimeOffset?)null;
+
         lock (_sync)
         {
-            _tokensByHash = _tokensByHash.SetItem(hash, workspace);
+            _tokensByHash = isWildcard
+                ? _tokensByHash.SetItem(hash, new CacheEntry(null, true, canCreate, deadline, normalizedTitle))
+                : _tokensByHash.SetItem(hash, new CacheEntry(workspace, false, false, null, normalizedTitle));
             _workspaces = _workspaces.Add(workspace);
         }
 
@@ -151,8 +200,8 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
         lock (_sync)
         {
             var tokens = _tokensByHash.ToBuilder();
-            foreach (var (hash, ws) in _tokensByHash)
-                if (ws == workspace)
+            foreach (var (hash, entry) in _tokensByHash)
+                if (entry.Scope == workspace)
                     tokens.Remove(hash);
             _tokensByHash = tokens.ToImmutable();
             _workspaces = _workspaces.Remove(workspace);
@@ -169,12 +218,25 @@ public sealed class SqliteApiKeyStore : IApiKeyStore, IApiKeyAdmin
         lock (_sync)
         {
             var tokens = _tokensByHash.ToBuilder();
-            foreach (var (hash, ws) in _tokensByHash)
-                if (ws == workspace)
+            foreach (var (hash, entry) in _tokensByHash)
+                if (entry.Scope == workspace)
                     tokens.Remove(hash);
 
             foreach (var r in rows)
-                tokens[r.TokenHash] = workspace;
+            {
+                var isWildcard = r.IsWildcard != 0;
+                if (isWildcard)
+                {
+                    var deadlines = r.CanCreate != 0 && r.CreateWindowHours > 0
+                        ? DateTimeOffset.FromUnixTimeMilliseconds(r.CreatedAtMs).AddHours(r.CreateWindowHours)
+                        : (DateTimeOffset?)null;
+                    tokens[r.TokenHash] = new CacheEntry(null, true, r.CanCreate != 0, deadlines, r.Title);
+                }
+                else
+                {
+                    tokens[r.TokenHash] = new CacheEntry(workspace, false, false, null, r.Title);
+                }
+            }
 
             _tokensByHash = tokens.ToImmutable();
             _workspaces = rows.Count > 0 ? _workspaces.Add(workspace) : _workspaces.Remove(workspace);

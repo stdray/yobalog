@@ -39,7 +39,7 @@ public static class AdminWorkspacesEndpoint
             return Results.Json(new { id = existing.Id.Value, createdAt = existing.CreatedAt },
                 statusCode: StatusCodes.Status200OK);
 
-        var created = await store.CreateAsync(ws, ct).ConfigureAwait(false);
+        var created = await store.CreateAsync(ws, ct: ct).ConfigureAwait(false);
         return Results.Json(new { id = created.Id.Value, createdAt = created.CreatedAt },
             statusCode: StatusCodes.Status201Created);
     }

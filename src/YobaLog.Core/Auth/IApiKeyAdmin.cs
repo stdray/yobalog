@@ -12,7 +12,15 @@ public interface IApiKeyAdmin
     ValueTask<IReadOnlyList<ApiKeyInfo>> ListAsync(WorkspaceId workspace, CancellationToken ct);
 
     // Returns plaintext exactly once — caller must surface it immediately and never persist.
-    ValueTask<ApiKeyCreated> CreateAsync(WorkspaceId workspace, string? title, CancellationToken ct);
+    // Optional wildcard params control agent keys: IsWildcard=true means the key is not scoped
+    // to a single workspace, CanCreate + CreateWindowHours control lazy workspace creation.
+    ValueTask<ApiKeyCreated> CreateAsync(
+        WorkspaceId workspace,
+        string? title,
+        CancellationToken ct,
+        bool isWildcard = false,
+        bool canCreate = false,
+        int createWindowHours = 0);
 
     ValueTask<bool> DeleteAsync(WorkspaceId workspace, string id, CancellationToken ct);
 

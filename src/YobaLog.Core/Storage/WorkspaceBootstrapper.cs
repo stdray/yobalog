@@ -16,6 +16,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
     readonly ISavedQueryStore _savedQueries;
     readonly IFieldMaskingPolicyStore _maskingPolicies;
     readonly IShareLinkStore _shareLinks;
+    readonly IKqlShareLinkStore _kqlShareLinks;
     readonly IWorkspaceStore _workspaceStore;
     readonly IUserStore _userStore;
     readonly IRetentionPolicyStore _retentionPolicies;
@@ -30,6 +31,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         ISavedQueryStore savedQueries,
         IFieldMaskingPolicyStore maskingPolicies,
         IShareLinkStore shareLinks,
+        IKqlShareLinkStore kqlShareLinks,
         IWorkspaceStore workspaceStore,
         IUserStore userStore,
         IRetentionPolicyStore retentionPolicies,
@@ -43,6 +45,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         _savedQueries = savedQueries;
         _maskingPolicies = maskingPolicies;
         _shareLinks = shareLinks;
+        _kqlShareLinks = kqlShareLinks;
         _workspaceStore = workspaceStore;
         _userStore = userStore;
         _retentionPolicies = retentionPolicies;
@@ -59,6 +62,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         await _retentionPolicies.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _adminTokens.InitializeAsync(cancellationToken).ConfigureAwait(false);
         await _spans.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await _kqlShareLinks.InitializeAsync(cancellationToken).ConfigureAwait(false);
 
         await InitMetaAsync(WorkspaceId.System, cancellationToken).ConfigureAwait(false);
         await _store.CreateWorkspaceAsync(WorkspaceId.System, new WorkspaceSchema(), cancellationToken).ConfigureAwait(false);
@@ -71,7 +75,7 @@ public sealed class WorkspaceBootstrapper : IHostedService
         if (known.Count == 0 && _apiKeys.ConfiguredWorkspaces.Count > 0)
         {
             foreach (var ws in _apiKeys.ConfiguredWorkspaces)
-                await _workspaceStore.CreateAsync(ws, cancellationToken).ConfigureAwait(false);
+                await _workspaceStore.CreateAsync(ws, ct: cancellationToken).ConfigureAwait(false);
             known = await _workspaceStore.ListAsync(cancellationToken).ConfigureAwait(false);
         }
 

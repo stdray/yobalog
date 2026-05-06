@@ -18,6 +18,7 @@ public sealed class RetentionService : BackgroundService
     readonly ISpanStore _spans;
     readonly ISavedQueryStore _savedQueries;
     readonly IShareLinkStore _shareLinks;
+    readonly IKqlShareLinkStore _kqlShareLinks;
     readonly IWorkspaceStore _workspaces;
     readonly IRetentionPolicyStore _policyStore;
     readonly RetentionOptions _options;
@@ -29,6 +30,7 @@ public sealed class RetentionService : BackgroundService
         ISpanStore spans,
         ISavedQueryStore savedQueries,
         IShareLinkStore shareLinks,
+        IKqlShareLinkStore kqlShareLinks,
         IWorkspaceStore workspaces,
         IRetentionPolicyStore policyStore,
         IOptions<RetentionOptions> options,
@@ -39,6 +41,7 @@ public sealed class RetentionService : BackgroundService
         _spans = spans;
         _savedQueries = savedQueries;
         _shareLinks = shareLinks;
+        _kqlShareLinks = kqlShareLinks;
         _workspaces = workspaces;
         _policyStore = policyStore;
         _options = options.Value;
@@ -82,6 +85,7 @@ public sealed class RetentionService : BackgroundService
 
         await SweepSystemAsync(now, ct).ConfigureAwait(false);
         await SweepShareLinksAsync(WorkspaceId.System, now, ct).ConfigureAwait(false);
+        await SweepKqlShareLinksAsync(now, ct).ConfigureAwait(false);
         await SweepSpansAsync(WorkspaceId.System, now - TimeSpan.FromDays(_options.SystemSpansRetainDays), ct).ConfigureAwait(false);
     }
 
@@ -109,6 +113,20 @@ public sealed class RetentionService : BackgroundService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RetentionLog.ShareLinksFailed(_logger, ex, ws);
+        }
+    }
+
+    async Task SweepKqlShareLinksAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        try
+        {
+            var deleted = await _kqlShareLinks.DeleteExpiredAsync(now, ct).ConfigureAwait(false);
+            if (deleted > 0)
+                RetentionLog.SweptShareLinks(_logger, WorkspaceId.System, deleted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RetentionLog.ShareLinksFailed(_logger, ex, WorkspaceId.System);
         }
     }
 

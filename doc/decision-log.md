@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-05-06 — Agent-oriented features: wildcard keys, JSON query API, KQL interactive share, UI folders
+
+**Wildcard API keys.** API-ключи с `IsWildcard=true` не привязаны к одному workspace — агент указывает `?workspace=` в query string ingest-запроса. `CanCreate` + `CreateWindowHours` контролируют ленивое создание workspace: в течение окна от создания ключа агент может создавать workspace при первом ingest'е, после окна — только read/write в существующие. `?description=` обязателен при создании. Agent/GrоupName берутся из Title ключа / `?group=` параметра. Модель: `ApiKeyValidation(Wildcard|Valid|Invalid factory)`, in-memory кеш `CacheEntry` в `SqliteApiKeyStore`, `GetOrCreateAsync` с обработкой гонок через `SQLITE_CONSTRAINT` в `SqliteWorkspaceStore`.
+
+**JSON query API.** `GET/POST /api/v1/query` — KQL → JSON rows с cursor-пагинацией. Поддерживает shape-changing KQL (`project`/`extend`/`summarize`), Properties всегда в event-shaped ответах как JSON-объект. Cursor — непрозрачный base64 (Timestamp + Id). Ответ: `{columns, rows, cursor, truncated}`.
+
+**KQL interactive share.** Новый тип share-ссылки: `POST /api/v1/share` → `GET /share/kql/{id}` (anonymous). KQL textarea редактируемая, все операторы KQL доступны. По умолчанию (curl/агент) — TSV, браузер — HTML-страница. Хранится в `$system.meta.db` (кросс-workspace). Retention sweep в `RetentionService.RunPassAsync`.
+
+**UI: папки на главной.** `Index.cshtml` группирует workspace по `GroupName` в collapsible секции. `Workspace.cshtml` показывает description + agent. Admin-форма API-ключей получила wildcard/canCreate/windowHours поля.
+
+**Миграции БД.** PRAGMA `table_info` проверка перед `ALTER TABLE ADD COLUMN` — без exception swallowing. Миграции: `ApiKeys(IsWildcard, CanCreate, CreateWindowHours)`, `Workspaces(Description, Agent, GroupName)`, новая таблица `KqlShareLinks`.
+
+**Тесты:** 13 новых unit-тестов (3 ConfigApiKeyStore wildcard, 7 SqliteApiKeyStore wildcard/deadline, 3 SqliteWorkspaceStore GetOrCreateAsync/race). Totals: 522 green.
+
+---
+
 ## 2026-05-06 — Message template rendering on back-end; configurable ForwardedHeaders trusted proxies
 
 **Message template rendering.** Когда отправитель CLEF не передаёт `@m` (rendered message) или `@m == @mt`, на странице отображаются сырые плейсхолдеры вроде `GetDiagnostics: uri={Uri}, textLen={Len}`. Пользователь предложил решать это на фронте; анализ показал, что back-end вариант (компонент `RenderedMessage` в `EventRowViewModel`) покрывает и SSR (`_RowsFragment`), и SSE (`LiveTailResult` → та же `_EventRow` partial) без дополнительного JS, без дублирования логики и без гонок htmx-DOM.

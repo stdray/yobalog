@@ -24,6 +24,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
     readonly SqliteSpanStore _spans;
     readonly SqliteSavedQueryStore _savedQueries;
     readonly SqliteShareLinkStore _shareLinks;
+    readonly SqliteKqlShareLinkStore _kqlShareLinks;
     readonly SqliteRetentionPolicyStore _policyStore;
     readonly InMemoryWorkspaceStore _workspaces;
     static readonly WorkspaceId UserWs = WorkspaceId.Parse("retention-test");
@@ -37,6 +38,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
         _spans = _services.GetRequiredService<SqliteSpanStore>();
         _savedQueries = _services.GetRequiredService<SqliteSavedQueryStore>();
         _shareLinks = _services.GetRequiredService<SqliteShareLinkStore>();
+        _kqlShareLinks = _services.GetRequiredService<SqliteKqlShareLinkStore>();
         _policyStore = _services.GetRequiredService<SqliteRetentionPolicyStore>();
         _workspaces = new InMemoryWorkspaceStore(UserWs);
     }
@@ -72,6 +74,7 @@ public sealed class RetentionServiceTests : IAsyncLifetime
             _spans,
             _savedQueries,
             _shareLinks,
+            _kqlShareLinks,
             workspaces ?? _workspaces,
             _policyStore,
             Options.Create(new RetentionOptions
@@ -308,7 +311,20 @@ sealed class InMemoryWorkspaceStore(params WorkspaceId[] ids) : IWorkspaceStore
     public ValueTask<WorkspaceInfo?> GetAsync(WorkspaceId id, CancellationToken ct) =>
         new(_infos.FirstOrDefault(w => w.Id == id));
 
-    public ValueTask<WorkspaceInfo> CreateAsync(WorkspaceId id, CancellationToken ct) =>
+    public ValueTask<WorkspaceInfo> CreateAsync(
+        WorkspaceId id,
+        string description = "",
+        string agent = "",
+        string groupName = "",
+        CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public ValueTask<WorkspaceInfo> GetOrCreateAsync(
+        WorkspaceId id,
+        string description,
+        string agent,
+        string groupName,
+        CancellationToken ct) =>
         throw new NotSupportedException();
 
     public ValueTask<bool> DeleteAsync(WorkspaceId id, CancellationToken ct) =>

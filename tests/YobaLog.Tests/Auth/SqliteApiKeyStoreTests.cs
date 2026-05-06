@@ -148,4 +148,96 @@ public sealed class SqliteApiKeyStoreTests : IAsyncLifetime
         r.IsValid.Should().BeTrue();
         r.Scope.Should().Be(WsA);
     }
+
+    [Fact]
+    public async Task WildcardKey_ValidatesWithoutScope()
+    {
+        var created = await _store.CreateAsync(WsA, "agent-key", CancellationToken.None,
+            isWildcard: true, canCreate: true, createWindowHours: 4);
+
+        var r = await _store.ValidateAsync(created.Plaintext, CancellationToken.None);
+        r.IsValid.Should().BeTrue();
+        r.IsWildcard.Should().BeTrue();
+        r.CanCreate.Should().BeTrue();
+        r.Scope.Should().BeNull();
+        r.Title.Should().Be("agent-key");
+    }
+
+    [Fact]
+    public async Task WildcardKey_CreateWindowDeadline()
+    {
+        var created = await _store.CreateAsync(WsA, "agent", CancellationToken.None,
+            isWildcard: true, canCreate: true, createWindowHours: 1);
+
+        var r = await _store.ValidateAsync(created.Plaintext, CancellationToken.None);
+        r.IsValid.Should().BeTrue();
+        r.CreateDeadline.Should().NotBeNull();
+        r.CreateDeadline!.Value.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(1), TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task WildcardKey_CanCreateFalse_DeadlineNull()
+    {
+        var created = await _store.CreateAsync(WsA, "agent", CancellationToken.None,
+            isWildcard: true, canCreate: false, createWindowHours: 4);
+
+        var r = await _store.ValidateAsync(created.Plaintext, CancellationToken.None);
+        r.IsValid.Should().BeTrue();
+        r.CanCreate.Should().BeFalse();
+        r.CreateDeadline.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WildcardKey_RegularKey_NotWildcard()
+    {
+        var created = await _store.CreateAsync(WsA, "normal-key", CancellationToken.None);
+
+        var r = await _store.ValidateAsync(created.Plaintext, CancellationToken.None);
+        r.IsValid.Should().BeTrue();
+        r.IsWildcard.Should().BeFalse();
+        r.Scope.Should().Be(WsA);
+        r.CanCreate.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WildcardKey_PersistsAcrossReinitialize()
+    {
+        var created = await _store.CreateAsync(WsA, "persist-agent", CancellationToken.None,
+            isWildcard: true, canCreate: true, createWindowHours: 4);
+
+        await using var reopenedServices = TestServices.BuildSqliteStores(_tempDir);
+        var reopened = reopenedServices.GetRequiredService<SqliteApiKeyStore>();
+        await reopened.InitializeWorkspaceAsync(WsA, CancellationToken.None);
+
+        var r = await reopened.ValidateAsync(created.Plaintext, CancellationToken.None);
+        r.IsValid.Should().BeTrue();
+        r.IsWildcard.Should().BeTrue();
+        r.CanCreate.Should().BeTrue();
+        r.Title.Should().Be("persist-agent");
+    }
+
+    [Fact]
+    public async Task WildcardKey_Delete_EvictsFromCache()
+    {
+        var created = await _store.CreateAsync(WsA, "agent", CancellationToken.None,
+            isWildcard: true);
+
+        var deleted = await _store.DeleteAsync(WsA, created.Info.Id, CancellationToken.None);
+        deleted.Should().BeTrue();
+
+        (await _store.ValidateAsync(created.Plaintext, CancellationToken.None)).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WildcardKey_CreateWindowZero_DeadlineNull()
+    {
+        var created = await _store.CreateAsync(WsA, "agent", CancellationToken.None,
+            isWildcard: true, canCreate: true, createWindowHours: 0);
+
+        var r = await _store.ValidateAsync(created.Plaintext, CancellationToken.None);
+        r.IsValid.Should().BeTrue();
+        r.CanCreate.Should().BeTrue();
+        r.CreateDeadline.Should().BeNull();
+    }
 }

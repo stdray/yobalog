@@ -1,4 +1,6 @@
 @page
+@using YobaLog.Core
+@using YobaLog.Core.Admin
 @model YobaLog.Web.Pages.IndexModel
 @{
 	ViewData["Title"] = "Workspaces";
@@ -8,22 +10,55 @@
 
 @if (Model.Workspaces.Length == 0)
 {
-	<p class="opacity-70">No workspaces configured. Add API keys in <code class="kbd kbd-sm">appsettings.json</code>.</p>
+	<p class="opacity-70">No workspaces configured. Add API keys or ingest events with a wildcard key.</p>
 }
 else
 {
-	<ul class="menu bg-base-200 rounded-box border border-base-300 w-full" data-testid="workspace-list">
-		@foreach (var ws in Model.Workspaces)
-		{
+	@foreach (var group in Model.Groups)
+	{
+		<details open class="mb-3">
+			<summary class="cursor-pointer font-semibold text-sm opacity-80 mb-2">
+				@group.Key
+				<span class="badge badge-sm ml-2">@group.Count()</span>
+			</summary>
+			<ul class="menu bg-base-200 rounded-box border border-base-300 w-full">
+				@foreach (var ws in group)
+				{
+					<li>
+						<a asp-page="/Workspace" asp-route-id="@ws.Id.Value"
+							data-testid="workspace-link"
+							data-workspace-id="@ws.Id.Value"
+							class="flex items-center justify-between py-3">
+							<div>
+								<span class="font-mono">@ws.Id.Value</span>
+								@if (!string.IsNullOrEmpty(ws.Description))
+								{
+									<span class="text-xs opacity-50 block">@ws.Description</span>
+								}
+							</div>
+							<span class="text-sm opacity-60">View events →</span>
+						</a>
+					</li>
+				}
+			</ul>
+		</details>
+	}
+
+	<details class="mb-3">
+		<summary class="cursor-pointer font-semibold text-sm opacity-80 mb-2">
+			System
+			<span class="badge badge-sm ml-2">1</span>
+		</summary>
+		<ul class="menu bg-base-200 rounded-box border border-base-300 w-full">
 			<li>
-				<a asp-page="/Workspace" asp-route-id="@ws.Value"
+				<a asp-page="/Workspace" asp-route-id="@WorkspaceId.System.Value"
 					data-testid="workspace-link"
-					data-workspace-id="@ws.Value"
+					data-workspace-id="@WorkspaceId.System.Value"
 					class="flex items-center justify-between">
-					<span class="font-mono @(ws.IsSystem ? "text-secondary" : "")">@ws.Value</span>
-					<span class="text-sm opacity-60">View events →</span>
+					<span class="font-mono text-secondary">$system</span>
+					<span class="text-sm opacity-60">Self-observability →</span>
 				</a>
 			</li>
-		}
-	</ul>
+		</ul>
+	</details>
 }

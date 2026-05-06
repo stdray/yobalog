@@ -38,7 +38,7 @@ public sealed class AdminRetentionTests : IAsyncLifetime
         // Create via IWorkspaceStore so it shows up in /admin/retention's workspace dropdown.
         // SqliteWorkspaceStore.CreateAsync initializes all four meta stores (saved queries / masking
         // / share links / api keys) + logs.db, same path the admin UI would take.
-        await _app.Services.GetRequiredService<IWorkspaceStore>().CreateAsync(_ws, CancellationToken.None);
+        await _app.Services.GetRequiredService<IWorkspaceStore>().CreateAsync(_ws, ct: CancellationToken.None);
         await _app.Services.GetRequiredService<ISavedQueryStore>()
             .UpsertAsync(_ws, SavedName, "events | where Level >= 4", CancellationToken.None);
     }

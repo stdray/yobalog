@@ -51,7 +51,7 @@ public sealed class WorkspacesModel : PageModel
             return Page();
         }
 
-        await _store.CreateAsync(ws, ct);
+        await _store.CreateAsync(ws, ct: ct);
         FlashMessage = $"Created workspace '{ws.Value}'.";
         return RedirectToPage();
     }
