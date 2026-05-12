@@ -1,6 +1,5 @@
 using LinqToDB;
 using LinqToDB.Data;
-using Microsoft.Data.Sqlite;
 using YobaLog.Core.Auth;
 using YobaLog.Core.SavedQueries;
 using YobaLog.Core.Sharing;
@@ -111,27 +110,6 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         await _shareLinks.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
         await _apiKeyAdmin.InitializeWorkspaceAsync(id, ct).ConfigureAwait(false);
         return new WorkspaceInfo(id, now, description ?? "", agent ?? "", groupName ?? "");
-    }
-
-    public async ValueTask<WorkspaceInfo> GetOrCreateAsync(
-        WorkspaceId id,
-        string description,
-        string agent,
-        string groupName,
-        CancellationToken ct)
-    {
-        var existing = await GetAsync(id, ct).ConfigureAwait(false);
-        if (existing is not null)
-            return existing;
-
-        try
-        {
-            return await CreateAsync(id, description, agent, groupName, ct).ConfigureAwait(false);
-        }
-        catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // SQLITE_CONSTRAINT
-        {
-            return (await GetAsync(id, ct).ConfigureAwait(false))!;
-        }
     }
 
     public async ValueTask<bool> DeleteAsync(WorkspaceId id, CancellationToken ct)

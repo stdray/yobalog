@@ -150,38 +150,19 @@ static class IngestionHandlers
         if (!validation.IsWildcard)
             return (validation.Scope, null);
 
-        // Wildcard key: resolve target workspace from ?workspace= query parameter.
-        var wsParam = ctx.Request.Query["workspace"].FirstOrDefault();
-        if (string.IsNullOrEmpty(wsParam))
-            return (null, Results.BadRequest("wildcard key requires ?workspace="));
+        // Wildcard key: resolve target workspace from route.
+        var routeWs = ctx.Request.RouteValues["ws"] as string ?? "";
+        if (string.IsNullOrEmpty(routeWs))
+            return (null, Results.BadRequest("wildcard key requires workspace in path"));
 
-        if (!WorkspaceId.TryParse(wsParam, out var ws))
-            return (null, Results.BadRequest($"invalid workspace name: {wsParam}"));
+        if (!WorkspaceId.TryParse(routeWs, out var ws))
+            return (null, Results.BadRequest($"invalid workspace name: {routeWs}"));
 
-        // Check if workspace already exists.
         var existing = await workspaces.GetAsync(ws, ct);
-        if (existing is not null)
-            return (existing.Id, null);
+        if (existing is null)
+            return (null, Results.NotFound($"workspace not found: {routeWs}"));
 
-        // Workspace doesn't exist — can we create it?
-        if (!validation.CanCreate)
-            return (null, Results.Json("workspace not found and key cannot create",
-                statusCode: StatusCodes.Status403Forbidden));
-
-        if (validation.CreateDeadline is { } deadline && DateTimeOffset.UtcNow > deadline)
-            return (null, Results.Json("creation window expired; use existing workspace",
-                statusCode: StatusCodes.Status403Forbidden));
-
-        // Create the workspace.
-        var description = ctx.Request.Query["description"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(description))
-            return (null, Results.BadRequest("description required for workspace creation"));
-
-        var agent = validation.Title ?? "unknown";
-        var groupName = ctx.Request.Query["group"].FirstOrDefault() ?? agent;
-
-        var info = await workspaces.GetOrCreateAsync(ws, description, agent, groupName, ct);
-        return (info.Id, null);
+        return (existing.Id, null);
     }
 
     static void AccumulateResult(CleFLineResult line, List<LogEventCandidate> candidates, ref int errorCount)

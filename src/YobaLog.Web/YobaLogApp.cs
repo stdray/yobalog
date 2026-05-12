@@ -269,8 +269,9 @@ public static class YobaLogApp
             commitDate = Environment.GetEnvironmentVariable("GIT_COMMIT_DATE") ?? string.Empty,
         })).AllowAnonymous();
 
-        // Canonical versioned ingestion, one per wire format.
-        // Adding a new format = one more MapPost with a format-specific handler; nothing else moves.
+        // Canonical ingestion — workspace in path. Native CLEF plus workspace-suffix for
+        // backward compat with scoped keys (no path param needed).
+        app.MapPost("/api/v1/workspaces/{ws}/ingest/clef", IngestionHandlers.CleF).AllowAnonymous();
         app.MapPost("/api/v1/ingest/clef", IngestionHandlers.CleF).AllowAnonymous();
 
         // OTLP Logs (HTTP/Protobuf). Two aliases for the same handler:
@@ -278,22 +279,28 @@ public static class YobaLogApp
         //   /v1/logs            — OTel standard, lets clients hardcoding OTEL_EXPORTER_OTLP_ENDPOINT
         //                         = "https://host" + default suffix "v1/logs" just work.
         // Decision-log 2026-04-21 Rule 2. gRPC/HTTP+JSON deferred to Phase F+1.
+        app.MapPost("/ingest/otlp/v1/logs/{ws}", IngestionHandlers.OtlpLogs).AllowAnonymous();
         app.MapPost("/ingest/otlp/v1/logs", IngestionHandlers.OtlpLogs).AllowAnonymous();
+        app.MapPost("/v1/logs/{ws}", IngestionHandlers.OtlpLogs).AllowAnonymous();
         app.MapPost("/v1/logs", IngestionHandlers.OtlpLogs).AllowAnonymous();
 
         // OTLP Traces — same two-alias pattern. Phase H.2 of the OTel integration. Traces
         // land in ISpanStore.AppendBatchAsync ({workspace}.traces.db), not the log store.
+        app.MapPost("/ingest/otlp/v1/traces/{ws}", IngestionHandlers.OtlpTraces).AllowAnonymous();
         app.MapPost("/ingest/otlp/v1/traces", IngestionHandlers.OtlpTraces).AllowAnonymous();
+        app.MapPost("/v1/traces/{ws}", IngestionHandlers.OtlpTraces).AllowAnonymous();
         app.MapPost("/v1/traces", IngestionHandlers.OtlpTraces).AllowAnonymous();
 
-        // Agent query API — KQL → JSON. GET for short queries, POST for long ones.
-        // Auth via X-Seq-ApiKey (wildcard or scoped). Returns event-shaped or shape-changing
-        // results (project/extend/summarize) with cursor pagination for event-shaped queries.
-        app.MapGet("/api/v1/query", QueryHandlers.GetAsync).AllowAnonymous();
-        app.MapPost("/api/v1/query", QueryHandlers.PostAsync).AllowAnonymous();
+        // Workspace management API (X-Seq-ApiKey or cookie admin auth).
+        app.MapPut("/api/v1/workspaces/{ws}", WorkspaceHandlers.UpsertAsync).AllowAnonymous();
+        app.MapGet("/api/v1/workspaces/{ws}", WorkspaceHandlers.GetInfoAsync).AllowAnonymous();
+
+        // Query and share — workspace in path.
+        app.MapGet("/api/v1/workspaces/{ws}/query", QueryHandlers.GetAsync).AllowAnonymous();
+        app.MapPost("/api/v1/workspaces/{ws}/query", QueryHandlers.PostAsync).AllowAnonymous();
+        app.MapPost("/api/v1/workspaces/{ws}/share", ShareHandlers.CreateAsync).AllowAnonymous();
 
         // Interactive KQL share: create via API key, view anonymously.
-        app.MapPost("/api/v1/share", ShareHandlers.CreateAsync).AllowAnonymous();
         app.MapGet("/share/kql/{id}/rows", ShareHandlers.RowsFragmentAsync).AllowAnonymous();
 
         // Compatibility surface for third-party clients. Each vendor gets its own slot under
@@ -302,6 +309,7 @@ public static class YobaLogApp
         // "/api/events/raw" and just string-concat it to the base URL, so any path prefix
         // works as long as the suffix stays. Users configure their client base URL as
         // `https://yobalog/compat/seq` — the client produces `…/compat/seq/api/events/raw`.
+        app.MapPost("/compat/seq/{ws}/api/events/raw", IngestionHandlers.CleF).AllowAnonymous();
         app.MapPost("/compat/seq/api/events/raw", IngestionHandlers.CleF).AllowAnonymous();
 
         // /v1/admin/* — JSON CRUD for scripting/automation. Auth = personal admin tokens

@@ -319,14 +319,6 @@ sealed class InMemoryWorkspaceStore(params WorkspaceId[] ids) : IWorkspaceStore
         CancellationToken ct = default) =>
         throw new NotSupportedException();
 
-    public ValueTask<WorkspaceInfo> GetOrCreateAsync(
-        WorkspaceId id,
-        string description,
-        string agent,
-        string groupName,
-        CancellationToken ct) =>
-        throw new NotSupportedException();
-
     public ValueTask<bool> DeleteAsync(WorkspaceId id, CancellationToken ct) =>
         throw new NotSupportedException();
 }

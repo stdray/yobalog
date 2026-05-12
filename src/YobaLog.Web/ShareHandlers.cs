@@ -30,10 +30,12 @@ static class ShareHandlers
         if (body is null)
             return Results.BadRequest("invalid JSON body");
 
-        if (string.IsNullOrWhiteSpace(body.Workspace))
+        // Workspace from route (primary) or body (backward compat).
+        var wsStr = ctx.Request.RouteValues["ws"] as string ?? body.Workspace;
+        if (string.IsNullOrWhiteSpace(wsStr))
             return Results.BadRequest("workspace required");
-        if (!WorkspaceId.TryParse(body.Workspace, out var ws))
-            return Results.BadRequest($"invalid workspace: {body.Workspace}");
+        if (!WorkspaceId.TryParse(wsStr, out var ws))
+            return Results.BadRequest($"invalid workspace: {wsStr}");
         if (string.IsNullOrWhiteSpace(body.Kql))
             return Results.BadRequest("kql required");
 

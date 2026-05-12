@@ -8,22 +8,35 @@ X-Seq-ApiKey: @Model.AgentToken
 ```
 
 This token is **wildcard** — it can write to and read from any workspace.
-New workspaces are created lazily on first ingest.
 
 ## Creation window: @Model.WindowText
 
-You can create new workspaces for **@Model.WindowText** from now.
-**Create all workspaces you need immediately** — after the window, creation
-is blocked and you'll only be able to read/write existing workspaces.
+You can create new workspaces with this key for **@Model.WindowText** from now.
+**Create all workspaces you need immediately.**
 
 **Plan your spaces before writing logs.** Think: separate per-bug-investigation?
 Per-component? One space with KQL filters? Prefer fewer spaces with rich
 `@@mt` + properties over many spaces.
 
+## Setup: create a workspace
+
+```
+PUT https://yobalog.3po.su/api/v1/workspaces/{name}
+X-Seq-ApiKey: @Model.AgentToken
+Content-Type: application/json
+
+{"description": "debugging MacroPhase.BeforeInheritance", "group": "nemerle-compiler"}
+```
+
+- `200` — already exists (idempotent)
+- `201` — created
+- `403` — creation window expired
+- Body: `description` for UI context, `group` for folder grouping on main page
+
 ## Logging: ingest
 
 ```
-POST https://yobalog.3po.su/api/v1/ingest/clef?workspace=<slug>&description=<url-encoded>
+POST https://yobalog.3po.su/api/v1/workspaces/{name}/ingest/clef
 X-Seq-ApiKey: @Model.AgentToken
 Content-Type: text/plain
 
@@ -31,9 +44,7 @@ Content-Type: text/plain
 { "@@t":"...ISO8601...","@@l":"Information","@@mt":"Phase: {Phase}","Phase":"BeforeInheritance" }
 ```
 
-- `?workspace=` — **required for wildcard key.** Slug: `[a-z0-9][a-z0-9-]{1,39}`
-- `?description=` — **required when creating new workspace.** Be specific.
-- `?group=` — optional grouping name for UI (default: key title)
+- Workspace must already exist — `PUT /api/v1/workspaces/{name}` first
 - Body: CLEF format, NDJSON (one JSON object per line)
 - Fields: `@@t` (ISO 8601), `@@l` (Debug/Information/Warning/Error/Fatal), `@@mt` (message template), extra keys = properties
 
@@ -51,13 +62,13 @@ Good: `Log("Inheritance pass {Pass} of {Total}: type={Type}", pass, total, typeN
 ## Query: read logs
 
 ```
-GET https://yobalog.3po.su/api/v1/query?workspace=<slug>&kql=<url-encoded>&cursor=<prev-cursor>
+GET https://yobalog.3po.su/api/v1/workspaces/{name}/query?kql=<url-encoded>&cursor=<prev-cursor>
 X-Seq-ApiKey: @Model.AgentToken
 ```
 
 POST for long KQL:
 ```json
-{"workspace":"<slug>","kql":"events | where ...","cursor":null}
+{"kql":"events | where ...","cursor":null}
 ```
 
 **Response:** `{"columns":[...],"rows":[[...],...],"cursor":"...","truncated":false}`
@@ -79,11 +90,11 @@ events | project Timestamp, Message, Result
 ## Share: give a link to a human
 
 ```
-POST https://yobalog.3po.su/api/v1/share
+POST https://yobalog.3po.su/api/v1/workspaces/{name}/share
 X-Seq-ApiKey: @Model.AgentToken
 Content-Type: application/json
 
-{"workspace":"<slug>","kql":"events | where ... | order by ...","ttlHours":24}
+{"kql":"events | where ... | order by ...","ttlHours":24}
 ```
 
 Returns `{"url": ".../share/kql/<id>", "expiresAt": "..."}`.

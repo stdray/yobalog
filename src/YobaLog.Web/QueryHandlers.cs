@@ -19,7 +19,7 @@ static class QueryHandlers
         ILogStore store,
         CancellationToken ct)
     {
-        var workspace = ctx.Request.Query["workspace"].FirstOrDefault();
+        var workspace = ctx.Request.RouteValues["ws"] as string;
         var kql = ctx.Request.Query["kql"].FirstOrDefault();
         var cursor = ctx.Request.Query["cursor"].FirstOrDefault();
         return await HandleAsync(ctx, apiKeys, store, workspace, kql, cursor, ct);
@@ -35,7 +35,8 @@ static class QueryHandlers
             ctx.Request.Body, PostJsonOptions, ct);
         if (body is null)
             return Results.BadRequest("invalid JSON body");
-        return await HandleAsync(ctx, apiKeys, store, body.Workspace, body.Kql, body.Cursor, ct);
+        var workspace = ctx.Request.RouteValues["ws"] as string ?? body.Workspace;
+        return await HandleAsync(ctx, apiKeys, store, workspace, body.Kql, body.Cursor, ct);
     }
 
     static async Task<IResult> HandleAsync(
