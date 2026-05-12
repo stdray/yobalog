@@ -42,7 +42,7 @@ public sealed class AdminApiKeysTests : IAsyncLifetime
         await _page.GetByTestId("admin-workspace-create").ClickAsync();
 
         // Create a key with a title, capture the plaintext revealed once.
-        await _page.GotoAsync($"/ws/{slug}/admin/api-keys");
+        await _page.GotoAsync($"/admin/workspaces/{slug}/api-keys");
         await _page.GetByTestId("api-key-title").FillAsync("e2e-ingest");
         await _page.GetByTestId("api-key-create").ClickAsync();
 
