@@ -42,20 +42,6 @@ else if (Model.FlashMessage is not null)
 		placeholder="title (optional, e.g. 'prod-api')"
 		data-testid="api-key-title"
 		class="input input-bordered input-sm w-72" />
-	@if (Model.Workspace.IsSystem)
-	{
-		<label class="label cursor-pointer gap-2">
-			<input type="checkbox" name="isWildcard" value="true" class="checkbox checkbox-xs" />
-			<span class="text-xs opacity-70">wildcard</span>
-		</label>
-		<label class="label cursor-pointer gap-2">
-			<input type="checkbox" name="canCreate" value="true" class="checkbox checkbox-xs" />
-			<span class="text-xs opacity-70">can create</span>
-		</label>
-		<input type="number" name="createWindowHours" value="4" min="0" max="720"
-			placeholder="hours"
-			class="input input-bordered input-sm w-20 text-xs" />
-	}
 	<button type="submit" data-testid="api-key-create" class="btn btn-primary btn-sm">Create key</button>
 	<span class="opacity-60 text-xs">Plaintext shown once, after that only sha256 + 6-char prefix is kept.</span>
 </form>
