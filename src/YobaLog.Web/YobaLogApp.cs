@@ -289,11 +289,11 @@ public static class YobaLogApp
         // Agent query API — KQL → JSON. GET for short queries, POST for long ones.
         // Auth via X-Seq-ApiKey (wildcard or scoped). Returns event-shaped or shape-changing
         // results (project/extend/summarize) with cursor pagination for event-shaped queries.
-        app.MapGet("/api/v1/query", QueryHandlers.GetAsync);
-        app.MapPost("/api/v1/query", QueryHandlers.PostAsync);
+        app.MapGet("/api/v1/query", QueryHandlers.GetAsync).AllowAnonymous();
+        app.MapPost("/api/v1/query", QueryHandlers.PostAsync).AllowAnonymous();
 
         // Interactive KQL share: create via API key, view anonymously.
-        app.MapPost("/api/v1/share", ShareHandlers.CreateAsync);
+        app.MapPost("/api/v1/share", ShareHandlers.CreateAsync).AllowAnonymous();
         app.MapGet("/share/kql/{id}/rows", ShareHandlers.RowsFragmentAsync).AllowAnonymous();
 
         // Compatibility surface for third-party clients. Each vendor gets its own slot under
