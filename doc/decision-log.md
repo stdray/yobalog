@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-05-13 — DuckDB backend: оценка перехода после linq2db 6.3.0
+
+**Контекст.** linq2db 6.3.0 задокументирован в [Release Notes](https://github.com/linq2db/linq2db/wiki/Releases-and-Roadmap#release-630) с DuckDB-провайдером (PR #5451, смерджен 2026-05-10), но **не опубликован** на NuGet/GitHub Releases. Последний стабильный пакет — **6.2.1** (2026-03-17). YobaLog сейчас на linq2db 5.4.1 + SQLite.
+
+**Промежуточный шаг: бамп 5.4.1 → 6.2.1 на SQLite.** Это сокращает дистанцию до 6.3.0 до одного минорного бампа. Все breaking changes 5.x→6.x ловятся сейчас. DuckDB-реализация ждёт публикации 6.3.0 на NuGet.
+
+**Решение: переходить, но двухфазно — сначала linq2db-апгрейд на SQLite, потом DuckDB-реализация за feature-флагом.**
+
+**Плюсы DuckDB над SQLite:**
+- **Колоночное хранение** — агрегации/сканы на порядки быстрее row-based SQLite.
+- **MVCC** — читатели не блокируются писателем. Измеренный 66× query-latency penalty при mixed workload в `perf-baseline.md` (Tier 2) устраняется архитектурно.
+- **Нативный `DuckDBAppender`** — до 10× быстрее многострочного INSERT (по данным duckdb.net).
+- **PostgreSQL-совместимый SQL** — CTE, LATERAL, MERGE, window-функции богаче SQLite.
+- **Per-column сжатие** — меньший storage footprint.
+
+**Минусы и mitigation:**
+- **FTS5.** В DuckDB нет встроенного full-text search индекса. `has` (word-boundary) теряется. Mitigation: `has` → `contains` (LIKE) на старте, columnar scan на 100k даст 5-15ms — приемлемо. DuckDB `fts` extension — community, нестабильное API, не bundled с DuckDB.NET. Добавится когда стабилизируется.
+- **Нативная библиотека** — `libduckdb.so` (~15MB) в Docker-образе. `runtime-deps:10.0-noble-chiseled` включает libc, совместимо. Нужна проверка.
+- **Отсутствие асинхронности** — DuckDB.NET синхронный под капотом, как SQLite. Не регрессия.
+- **linq2db 5.4.1 → 6.3.0** — 4 мажорных версии breaking changes. Главные риски: `BulkCopyAsync` API, `DataConnection` lifetime, mapping-атрибуты, connection string format. Изолируется в отдельный PR.
+
+**Объём работ (оценка):** ~1100 LOC кода + ~500 LOC тестов. Основное — механический перенос DDL, connection factory, SQL-выражений. `KqlTransformer` и `KqlSpansTransformer` не трогаются (backend-agnostic). `ILogStore` изолирует storage от всего остального — ровно тот сценарий, под который проектировался интерфейс.
+
+**Feature-flag:** конфиг `Storage:Backend = "duckdb" | "sqlite"` (дефолт `sqlite` до стабилизации DuckDB на production-данных). Переключение требует миграции данных (SQLite `.db` → DuckDB `.duckdb` через скрипт/CLI).
+
+**Что НЕ делает DuckDB лучше:**
+- Single-node deployment (оба in-process)
+- Простота бэкапа (оба — один файл)
+- Транзакционность ingestion (оба ACID)
+
+**Rejected alternatives:**
+- **Оставить только SQLite** — сохраняет 66× contention при concurrent read/write, row-scan bottleneck на агрегатах.
+- **Перейти на PostgreSQL** — ломает single-file deployment (главное преимущество YobaLog перед Seq), требует отдельный процесс/контейнер.
+- **ClickHouse через linq2db** — overkill для single-node self-hosted; ClickHouse минимально 4GB RAM.
+- **Lucene.NET** — отдельный индексный слой поверх SQLite; сложнее, два storage вместо одного.
+
+**Откатили:** идею «ждать DuckDB FTS-extension для full parity с SQLite FTS5». Columnar scan + LIKE покрывает 80% use-case (UI-поиск по сообщению); word-boundary search через `has` — нишевый сценарий, возвращается когда FTS-extension стабилизируется.
 ## 2026-05-06 — Agent-oriented features: wildcard keys, JSON query API, KQL interactive share, UI folders
 
 **Wildcard API keys.** API-ключи с `IsWildcard=true` не привязаны к одному workspace — агент указывает `?workspace=` в query string ingest-запроса. `CanCreate` + `CreateWindowHours` контролируют ленивое создание workspace: в течение окна от создания ключа агент может создавать workspace при первом ingest'е, после окна — только read/write в существующие. `?description=` обязателен при создании. Agent/GrоupName берутся из Title ключа / `?group=` параметра. Модель: `ApiKeyValidation(Wildcard|Valid|Invalid factory)`, in-memory кеш `CacheEntry` в `SqliteApiKeyStore`, `GetOrCreateAsync` с обработкой гонок через `SQLITE_CONSTRAINT` в `SqliteWorkspaceStore`.

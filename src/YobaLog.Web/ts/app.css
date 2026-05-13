@@ -53,6 +53,7 @@
 	white-space: nowrap;
 	display: inline-block;
 	vertical-align: text-bottom;
+	color: inherit;
 	background-color: oklch(var(--p) / 0.08);
 	border-radius: 0.25rem;
 	padding-inline: 0.125rem;

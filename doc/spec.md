@@ -16,7 +16,7 @@
     - Стартовый backend — **SQLite + FTS5** через `linq2db`. Один файл `.db` на каждое хранилище (Workspace).
     - Обоснование: inverted index на `Message` через FTS5 — из коробки, без собственной реализации (главный UX-gap против Seq закрыт бесплатно); `linq2db` даёт общий путь трансляции KQL→SQL, тот же, что пригодится для DuckDB.
     - LiteDB пропускается: row-storage → row-storage — промежуточный шаг без выигрыша в архитектуре. Compile-time trade-off в пользу меньшего числа реализаций `ILogStore` (см. §11).
-    - Дальняя перспектива — **DuckDB** для колоночного хранения, после мёрджа [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451). PR авторства разработчика YobaLog — timeline в своих руках.
+- Дальняя перспектива — **DuckDB** для колоночного хранения. [linq2db#5451](https://github.com/linq2db/linq2db/pull/5451) смерджен в linq2db 6.3.0 (2026-05-10). Реализация — Фаза I в `doc/plan.md`, решение и анализ — `doc/decision-log.md` 2026-05-13.
 - **Схема документа (зафиксирована):**
     - Индексируемые поля (минимальный набор, расширение — только через миграцию): `Timestamp` (@t), `Level` (@l), `TemplateHash` (хеш от @mt), `TraceId` (@tr), `SpanId` (@sp).
     - Поле `Message` (@m) и `Exception` (@x) — без индекса; поиск по substring = full scan.
